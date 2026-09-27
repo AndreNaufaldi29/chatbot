@@ -5,6 +5,8 @@ export const metadata = {
   description: 'Enterprise WhatsApp Customer Service Chatbot with Google Gemini AI Integration & Real-time Analytics',
 };
 
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({ children }) {
   return (
     <html lang="id">
