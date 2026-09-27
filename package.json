@@ -16,7 +16,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@google/genai": "^2.24.0",
     "@prisma/client": "^6.4.1",
