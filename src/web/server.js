@@ -608,8 +608,8 @@ async function startServer(port = 3000) {
   });
 
   return new Promise((resolve) => {
-    app.listen(port, () => {
-      console.log(`[WebDashboard] Next.js Dashboard dan API aktif di: http://localhost:${port}`);
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`[WebDashboard] Next.js Dashboard dan API aktif di: http://0.0.0.0:${port}`);
       resolve(app);
     });
   });
