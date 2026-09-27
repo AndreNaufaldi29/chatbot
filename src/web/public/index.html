@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Chatbot WhatsApp Pelayanan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar / Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+            <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19.01L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.99 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67M9.53 7.33C9.33 7.33 9 7.41 8.76 7.68C8.5 7.95 7.82 8.59 7.82 9.87C7.82 11.15 8.77 12.38 8.9 12.56C9.03 12.74 10.74 15.39 13.36 16.52C13.98 16.79 14.47 16.95 14.85 17.07C15.48 17.27 16.05 17.24 16.5 17.18C17.01 17.1 18.06 16.54 18.28 15.92C18.5 15.3 18.5 14.77 18.43 14.66C18.36 14.55 18.19 14.49 17.92 14.36C17.65 14.23 16.32 13.57 16.07 13.48C15.82 13.39 15.64 13.35 15.46 13.62C15.28 13.89 14.77 14.49 14.62 14.66C14.47 14.83 14.32 14.85 14.05 14.72C13.78 14.59 12.92 14.3 11.9 13.39C11.1 12.68 10.57 11.8 10.42 11.53C10.27 11.26 10.4 11.11 10.54 10.98C10.66 10.86 10.81 10.66 10.95 10.5C11.08 10.33 11.13 10.21 11.22 10.03C11.31 9.85 11.26 9.69 11.2 9.56C11.13 9.43 10.62 8.18 10.41 7.68C10.2 7.18 10 7.25 9.84 7.24C9.69 7.23 9.53 7.23 9.53 7.33Z"/>
+          </svg>
+        </div>
+        <div>
+          <h2>WA Support</h2>
+          <span class="brand-subtitle">Pelayanan Pelanggan</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="tab-qr" id="nav-btn-qr">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          <span>Koneksi & QR Code</span>
+        </button>
+        <button class="nav-item" data-tab="tab-chats" id="nav-btn-chats">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span>Live Chat Log</span>
+          <span class="badge-counter" id="chat-counter">0</span>
+        </button>
+        <button class="nav-item" data-tab="tab-tickets" id="nav-btn-tickets">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          <span>Tiket Layanan</span>
+          <span class="badge-counter" id="ticket-counter">0</span>
+        </button>
+        <button class="nav-item" data-tab="tab-catalog" id="nav-btn-catalog">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+          <span>Katalog Produk</span>
+          <span class="badge-counter" id="catalog-counter">2</span>
+        </button>
+        <button class="nav-item" data-tab="tab-sender" id="nav-btn-sender">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          <span>Kirim Pesan Manual</span>
+        </button>
+        <button class="nav-item" data-tab="tab-settings" id="nav-btn-settings">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <span>Pengaturan Bot</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="connection-pill status-disconnected" id="sidebar-status-pill">
+          <span class="status-dot"></span>
+          <span id="sidebar-status-text">Memuat...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Topbar Header -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 id="page-title">Koneksi & QR Code Login</h1>
+          <p class="page-desc" id="page-subtitle">Scan QR code menggunakan aplikasi WhatsApp untuk menghubungkan bot</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary" id="btn-restart" title="Mulai ulang koneksi bot">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            <span>Restart</span>
+          </button>
+          <button class="btn btn-danger" id="btn-logout" title="Hapus sesi login dan generate QR baru">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            <span>Reset Sesi / Logout</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Content Sections (Tab Panels) -->
+      <div class="tab-content">
+        <!-- TAB 1: QR CODE & CONNECTION -->
+        <section class="tab-panel active" id="tab-qr">
+          <div class="qr-layout">
+            <!-- QR Card -->
+            <div class="card qr-box-card">
+              <div class="card-header">
+                <h3>Scan QR Code WhatsApp</h3>
+                <span class="tag-status" id="qr-status-tag">Menunggu</span>
+              </div>
+              <div class="qr-container">
+                <div class="qr-display" id="qr-display-box">
+                  <div class="qr-placeholder" id="qr-spinner">
+                    <div class="spinner"></div>
+                    <p>Menyiapkan sesi WhatsApp...</p>
+                  </div>
+                  <img id="qr-image" src="" alt="WhatsApp QR Code" style="display: none;" />
+                </div>
+                <div class="qr-timer" id="qr-tip-text">
+                  Arahkan kamera ponsel Anda ke QR code di atas
+                </div>
+              </div>
+
+              <div class="connection-success-card" id="connected-card" style="display: none;">
+                <div class="success-icon">
+                  <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#10b981" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                </div>
+                <h3>WhatsApp Terhubung & Siap Digunakan!</h3>
+                <p>Nomor Akun: <strong id="connected-phone">-</strong></p>
+                <p>Nama Akun: <span id="connected-name">-</span></p>
+                <div class="status-badge-connected">
+                  <span class="status-dot"></span> Online & Melayani Chat
+                </div>
+              </div>
+            </div>
+
+            <!-- Instructions Card -->
+            <div class="card instructions-card">
+              <div class="card-header">
+                <h3>Cara Menghubungkan WhatsApp</h3>
+              </div>
+              <div class="steps-list">
+                <div class="step-item">
+                  <div class="step-num">1</div>
+                  <div class="step-text">
+                    <h4>Buka WhatsApp di Ponsel Anda</h4>
+                    <p>Pastikan ponsel terhubung ke internet dan buka aplikasi WhatsApp.</p>
+                  </div>
+                </div>
+                <div class="step-item">
+                  <div class="step-num">2</div>
+                  <div class="step-text">
+                    <h4>Buka Menu Perangkat Tertaut</h4>
+                    <p>Ketuk ikon <strong>Titik Tiga</strong> (Android) atau <strong>Pengaturan</strong> (iOS) &gt; pilih <strong>Perangkat Tertaut</strong>.</p>
+                  </div>
+                </div>
+                <div class="step-item">
+                  <div class="step-num">3</div>
+                  <div class="step-text">
+                    <h4>Tautkan Perangkat</h4>
+                    <p>Ketuk tombol <strong>Tautkan Perangkat</strong> lalu arahkan kamera ponsel ke QR Code di sebelah kiri.</p>
+                  </div>
+                </div>
+                <div class="step-item">
+                  <div class="step-num">4</div>
+                  <div class="step-text">
+                    <h4>Bot Siap Melayani</h4>
+                    <p>Setelah scan berhasil, chatbot langsung aktif otomatis melayani pelanggan 24/7!</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="info-alert">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                <span><strong>Multi-Device:</strong> Sesi disimpan otomatis di folder lokal. Anda tidak perlu scan ulang setiap kali aplikasi dijalankan kembali.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 2: LIVE CHAT LOG -->
+        <section class="tab-panel" id="tab-chats">
+          <div class="card full-height-card">
+            <div class="card-header chat-header">
+              <div>
+                <h3>Aktivitas Pesan WhatsApp Real-Time</h3>
+                <p>Memantau pesan masuk dari pelanggan dan balasan otomatis chatbot</p>
+              </div>
+              <div class="chat-header-actions">
+                <button class="btn btn-secondary btn-sm" id="btn-clear-chat-log">
+                  Bersihkan Tampilan
+                </button>
+              </div>
+            </div>
+            <div class="chat-log-container" id="chat-log-box">
+              <div class="empty-state" id="empty-chat-state">
+                <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <p>Belum ada pesan yang diterima. Kirim pesan ke nomor WhatsApp bot untuk melihat log di sini!</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: TICKETS MANAGEMENT -->
+        <section class="tab-panel" id="tab-tickets">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>Daftar Tiket & Keluhan Pelanggan</h3>
+                <p>Tiket yang dibuat otomatis oleh pelanggan melalui chatbot WhatsApp (Menu 4)</p>
+              </div>
+              <button class="btn btn-primary btn-sm" id="btn-refresh-tickets">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                <span>Muat Ulang</span>
+              </button>
+            </div>
+
+            <!-- Table of Tickets -->
+            <div class="table-responsive">
+              <table class="data-table" id="tickets-table">
+                <thead>
+                  <tr>
+                    <th>ID Tiket</th>
+                    <th>Nama Pelapor</th>
+                    <th>No. WhatsApp</th>
+                    <th>Keluhan / Permintaan</th>
+                    <th>Status</th>
+                    <th>Prioritas</th>
+                    <th>Waktu Dibuat</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="tickets-tbody">
+                  <tr><td colspan="8" class="text-center">Memuat daftar tiket...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: KATALOG PRODUK -->
+        <section class="tab-panel" id="tab-catalog">
+          <div class="catalog-layout">
+            <!-- Left: Live WhatsApp Card Simulation -->
+            <div class="card phone-preview-card">
+              <div class="card-header">
+                <h3>Simulasi Tampilan WhatsApp</h3>
+                <span class="tag-status">Live Preview</span>
+              </div>
+              <p class="preview-note">Tampilan kartu interaktif seperti yang diterima pelanggan di WhatsApp:</p>
+              
+              <!-- Phone Mockup Container -->
+              <div class="phone-mockup">
+                <div class="phone-chat-header">
+                  <div class="chat-avatar">h.</div>
+                  <div class="chat-contact-info">
+                    <h4>Harbor <svg class="verified-icon" viewBox="0 0 24 24" width="14" height="14" fill="#3b82f6"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></h4>
+                    <span class="chat-status-text">online</span>
+                  </div>
+                </div>
+
+                <div class="phone-chat-body">
+                  <div class="carousel-nav-header">
+                    <span class="carousel-indicator-text">👉 Geser kartu ke samping:</span>
+                    <div class="carousel-nav-arrows">
+                      <button type="button" class="btn-carousel-nav" id="btn-carousel-prev" title="Kartu sebelumnya">&lsaquo;</button>
+                      <span id="carousel-page-indicator">1 / 3</span>
+                      <button type="button" class="btn-carousel-nav" id="btn-carousel-next" title="Kartu berikutnya">&rsaquo;</button>
+                    </div>
+                  </div>
+
+                  <!-- Carousel Track Viewport -->
+                  <div class="wa-carousel-viewport">
+                    <div class="wa-carousel-track" id="carousel-track">
+                      <!-- Dynamic cards injected via app.js -->
+                    </div>
+                  </div>
+
+                  <!-- Dots Indicator -->
+                  <div class="carousel-dots" id="carousel-dots"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Catalog Items List & Sender -->
+            <div class="card catalog-items-card">
+              <div class="card-header">
+                <div>
+                  <h3>Daftar Item Carousel Aktif</h3>
+                  <p>Koleksi produk yang otomatis dikirim sebagai carousel interaktif saat pelanggan meminta katalog</p>
+                </div>
+                <button class="btn btn-primary btn-sm" id="btn-test-send-carousel">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                  <span>Kirim Carousel Uji Coba</span>
+                </button>
+              </div>
+
+              <div class="catalog-list-grid" id="catalog-items-container">
+                <!-- Dynamically populated from config.catalog -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 4: DIRECT MESSAGE SENDER -->
+        <section class="tab-panel" id="tab-sender">
+          <div class="card max-w-lg">
+            <div class="card-header">
+              <h3>Kirim Pesan WhatsApp Langsung</h3>
+              <p>Kirim pesan broadcast atau balasan khusus ke nomor pelanggan tertentu</p>
+            </div>
+            <form id="form-send-message">
+              <div class="form-group">
+                <label for="send-phone">Nomor WhatsApp Tujuan</label>
+                <div class="input-phone-wrapper">
+                  <span class="phone-prefix">+62</span>
+                  <input type="text" id="send-phone" placeholder="Contoh: 81234567890" required>
+                </div>
+                <small class="helper-text">Format: 0812... atau 812... (otomatis diubah ke standar internasional)</small>
+              </div>
+              <div class="form-group">
+                <label for="send-text">Isi Pesan</label>
+                <textarea id="send-text" rows="5" placeholder="Ketik pesan yang ingin dikirim..." required></textarea>
+              </div>
+              <button type="submit" class="btn btn-primary" id="btn-submit-send">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                <span>Kirim Pesan</span>
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <!-- TAB 5: BOT & BUSINESS SETTINGS -->
+        <section class="tab-panel" id="tab-settings">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>Pengaturan Informasi Bisnis & Chatbot</h3>
+                <p>Ubah detail kontak, alamat, jam operasional, dan daftar layanan chatbot</p>
+              </div>
+              <button class="btn btn-primary" id="btn-save-settings">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                <span>Simpan Perubahan</span>
+              </button>
+            </div>
+
+            <div class="settings-grid">
+              <div class="settings-col">
+                <h4 class="settings-section-title">Profil Bisnis / Instansi</h4>
+                <div class="form-group">
+                  <label for="cfg-biz-name">Nama Perusahaan / Layanan</label>
+                  <input type="text" id="cfg-biz-name">
+                </div>
+                <div class="form-group">
+                  <label for="cfg-biz-tagline">Tagline Slogan</label>
+                  <input type="text" id="cfg-biz-tagline">
+                </div>
+                <div class="form-group">
+                  <label for="cfg-biz-phone">Nomor Telepon CS Resmi</label>
+                  <input type="text" id="cfg-biz-phone">
+                </div>
+                <div class="form-group">
+                  <label for="cfg-biz-email">Alamat Email Resmi</label>
+                  <input type="email" id="cfg-biz-email">
+                </div>
+                <div class="form-group">
+                  <label for="cfg-biz-website">Alamat Website</label>
+                  <input type="text" id="cfg-biz-website">
+                </div>
+              </div>
+
+              <div class="settings-col">
+                <h4 class="settings-section-title">Lokasi & Jam Kerja</h4>
+                <div class="form-group">
+                  <label for="cfg-biz-address">Alamat Kantor Fisik</label>
+                  <textarea id="cfg-biz-address" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                  <label for="cfg-biz-maps">Link Google Maps</label>
+                  <input type="text" id="cfg-biz-maps">
+                </div>
+                <div class="form-group">
+                  <label>Cabang Showroom Aktif (Menu 2)</label>
+                  <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.825rem; color: var(--text-secondary); background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+                    <div>📍 <strong>Jakarta:</strong> Senopati (09:00 - 21:00 WIB)</div>
+                    <div>📍 <strong>Bandung:</strong> Riau (08:00 - 20:00 WIB)</div>
+                    <div>📍 <strong>Bali:</strong> Canggu Batu Bolong (08:00 - 22:00 WITA)</div>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="cfg-bot-ignore-groups">
+                    <span>Abaikan pesan dari WhatsApp Group (hanya layani chat pribadi)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Ticket Status Modal -->
+  <div class="modal" id="ticket-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-ticket-title">Perbarui Tiket</h3>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="modal-ticket-desc" class="modal-desc"></p>
+        <div class="form-group">
+          <label for="modal-status-select">Status Tiket</label>
+          <select id="modal-status-select">
+            <option value="Open">Open (Baru)</option>
+            <option value="In Progress">In Progress (Sedang Diproses)</option>
+            <option value="Resolved">Resolved (Selesai)</option>
+            <option value="Closed">Closed (Ditutup)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="modal-notes">Catatan Petugas / Solusi</label>
+          <textarea id="modal-notes" rows="3" placeholder="Masukkan catatan penanganan atau solusi untuk pelanggan..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-cancel-btn">Batal</button>
+        <button class="btn btn-primary" id="modal-save-btn">Simpan Status</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WhatsApp Interactive Menu Pop-up Modal (Matches Image 3) -->
+  <div class="modal wa-bottom-sheet-modal-wrapper" id="wa-menu-modal">
+    <div class="modal-backdrop" id="wa-menu-backdrop"></div>
+    <div class="wa-popup-sheet">
+      <div class="wa-popup-handle-bar"></div>
+      <div class="wa-popup-header">
+        <button class="wa-popup-close-btn" id="wa-menu-close-btn" title="Tutup Menu">&times;</button>
+        <h4 class="wa-popup-title" id="wa-menu-title">Pilih Menu Layanan</h4>
+        <span class="wa-popup-badge" id="wa-menu-badge">3 Opsi</span>
+      </div>
+      <div class="wa-popup-items-container" id="wa-menu-items">
+        <!-- Dynamically injected items -->
+      </div>
+      <div class="wa-popup-footer-hint">
+        <span>Ketuk salah satu pilihan untuk memilih layanan</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+// Prisma Schema Configuration for Harbor Chatbot WA
+// Optimized for Vercel Deployment & Vercel Postgres / Neon / Supabase
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+// 1. Business Profile & Official Information
+model BusinessProfile {
+  id        Int      @id @default(autoincrement())
+  name      String   @default("Harbor") @db.VarChar(255)
+  tagline   String?  @default("Stoneware & Mindful Living") @db.VarChar(255)
+  phone     String?  @db.VarChar(100)
+  email     String?  @db.VarChar(255)
+  website   String?  @db.VarChar(255)
+  address   String?  @db.Text
+  mapsUrl   String?  @map("maps_url") @db.Text
+  hours     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("business_profile")
+}
+
+// 2. Ceramic Stoneware Product Catalog
+model CatalogProduct {
+  id         Int      @id @default(autoincrement())
+  code       String?  @unique @db.VarChar(100)
+  title      String   @db.VarChar(255)
+  subtitle   String?  @db.Text
+  footer     String?  @db.Text
+  price      String   @db.VarChar(100)
+  buttonText String?  @default("View collection ›") @map("button_text") @db.VarChar(100)
+  url        String?  @db.Text
+  image      String?  @default("catalog/everyday-set.jpg") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([code], map: "idx_catalog_code")
+  @@map("catalog_products")
+}
+
+// 3. Showroom Branches
+model Branch {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(255)
+  city      String?  @db.VarChar(100)
+  area      String?  @db.VarChar(100)
+  address   String?  @db.Text
+  hours     String?  @db.Text
+  phone     String?  @db.VarChar(100)
+  mapsUrl   String?  @map("maps_url") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("branches")
+}
+
+// 4. FAQs & Bot Knowledge
+model Faq {
+  id        Int      @id @default(autoincrement())
+  question  String   @db.Text
+  answer    String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("faqs")
+}
+
+// 5. Customer Service & Order Tickets
+model ServiceTicket {
+  id          String   @id @db.VarChar(100)
+  sender      String   @db.VarChar(100)
+  name        String   @db.VarChar(255)
+  contact     String?  @db.VarChar(100)
+  description String?  @db.Text
+  category    String?  @default("Layanan Umum") @db.VarChar(100)
+  status      String?  @default("Open") @db.VarChar(50)
+  priority    String?  @default("Normal") @db.VarChar(50)
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([category], map: "idx_tickets_category")
+  @@index([status], map: "idx_tickets_status")
+  @@map("service_tickets")
+}
+
+// 6. WhatsApp Real-time Chat Messages
+model ChatMessage {
+  id         String   @id @db.VarChar(150)
+  jid        String   @db.VarChar(150)
+  phone      String?  @db.VarChar(100)
+  senderName String?  @map("sender_name") @db.VarChar(255)
+  direction  String   @db.VarChar(10) // 'in' (pelanggan) | 'out' (bot / admin)
+  text       String?  @db.Text
+  mediaType  String?  @default("text") @map("media_type") @db.VarChar(50)
+  image      String?  @db.Text
+  isAi       Boolean? @default(false) @map("is_ai")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([jid], map: "idx_chat_messages_jid")
+  @@index([createdAt(sort: Desc)], map: "idx_chat_messages_created")
+  @@map("chat_messages")
+}
+
+// 7. Customer Contact & Phone Mapping
+model PhoneMapping {
+  jid       String   @id @db.VarChar(150)
+  phone     String   @db.VarChar(100)
+  name      String?  @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("phone_mappings")
+}

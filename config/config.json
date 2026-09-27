@@ -1,0 +1,148 @@
+{
+  "business": {
+    "name": "Harbor",
+    "tagline": "Stoneware & Mindful Living",
+    "phone": "0812-3456-7890",
+    "email": "hello@harborlifestyle.com",
+    "website": "https://harbor.example.com",
+    "address": "Jl. Senopati No. 88, Kebayoran Baru, Jakarta Selatan",
+    "maps_url": "https://maps.google.com/?q=Jakarta",
+    "hours": "Senin - Jumat: 09:00 - 18:00 WIB\nSabtu - Minggu: 10:00 - 16:00 WIB"
+  },
+  "bot": {
+    "name": "Harbor Assistant",
+    "welcome_greeting": "Selamat datang di Harbor. Koleksi stoneware dan perlengkapan rumah artisanal untuk pagi yang lebih tenang.",
+    "cooldown_seconds": 0,
+    "ignore_groups": true,
+    "auto_read_messages": true
+  },
+  "server": {
+    "port": 3000
+  },
+  "catalog": [
+    {
+      "id": "1",
+      "code": "EVERYDAY-SET",
+      "title": "The Everyday Set",
+      "subtitle": "Stoneware, made for slow mornings.",
+      "footer": "Available in Stone and Chalk.",
+      "price": "Rp 450.000",
+      "buttonText": "View collection ›",
+      "url": "https://harbor.example.com/collections/everyday-set",
+      "image": "assets/catalog/everyday-set.jpg"
+    },
+    {
+      "id": "2",
+      "code": "POUROVER-SET",
+      "title": "The Slow Pour-Over Set",
+      "subtitle": "Artisanal ceramic dripper & mug for mindful coffee rituals.",
+      "footer": "Glazed Terracotta & Speckled Oat.",
+      "price": "Rp 320.000",
+      "buttonText": "View collection ›",
+      "url": "https://harbor.example.com/collections/pour-over",
+      "image": "assets/catalog/pourover-set.jpg"
+    },
+    {
+      "id": "3",
+      "code": "SERVING-PLATTER",
+      "title": "The Organic Serving Platter",
+      "subtitle": "Hand-formed stoneware crafted for slow shared meals.",
+      "footer": "Available in Sand and Terracotta.",
+      "price": "Rp 280.000",
+      "buttonText": "View collection ›",
+      "url": "https://harbor.example.com/collections/serving-platter",
+      "image": "assets/catalog/serving-platter.jpg"
+    },
+    {
+      "id": "4",
+      "code": "MUG",
+      "title": "test 1234",
+      "subtitle": "test",
+      "footer": "white",
+      "price": "Rp 30.000",
+      "buttonText": "View collection ›",
+      "url": "https://harbor.example.com/collections/4",
+      "image": "catalog/everyday-set.jpg"
+    }
+  ],
+  "branches": [
+    {
+      "id": "1",
+      "name": "Harbor Flagship Store - Jakarta Selatan",
+      "city": "Jakarta Selatan",
+      "area": "Senopati",
+      "address": "Jl. Senopati No. 88, Kebayoran Baru, Jakarta Selatan 12190",
+      "hours": "Senin - Minggu: 09:00 - 21:00 WIB",
+      "phone": "0812-3456-7890",
+      "maps_url": "https://maps.google.com/?q=Senopati+Jakarta"
+    },
+    {
+      "id": "2",
+      "name": "Harbor Studio & Roastery - Bandung",
+      "city": "Bandung",
+      "area": "Riau",
+      "address": "Jl. L. L. R.E. Martadinata (Riau) No. 45, Citarum, Bandung 40115",
+      "hours": "Selasa - Minggu: 08:00 - 20:00 WIB (Senin Tutup)",
+      "phone": "0813-9876-5432",
+      "maps_url": "https://maps.google.com/?q=Bandung+Riau"
+    },
+    {
+      "id": "3",
+      "name": "Harbor Slow Living Space - Bali",
+      "city": "Bali",
+      "area": "Canggu",
+      "address": "Jl. Pantai Batu Bolong No. 12, Canggu, Kuta Utara, Bali 80361",
+      "hours": "Setiap Hari: 08:00 - 22:00 WITA",
+      "phone": "0821-1122-3344",
+      "maps_url": "https://maps.google.com/?q=Canggu+Batu+Bolong+Bali"
+    }
+  ],
+  "services": [
+    {
+      "id": "srv-1",
+      "name": "Koleksi Keramik Artisanal",
+      "price": "Mulai Rp 180.000",
+      "description": "Handcrafted stoneware pottery untuk dekorasi dan peralatan makan."
+    },
+    {
+      "id": "srv-2",
+      "name": "Custom Gift & Hampers",
+      "price": "Mulai Rp 500.000",
+      "description": "Paket kado personal dengan ukiran inisial & kotak kayu eksklusif."
+    },
+    {
+      "id": "srv-3",
+      "name": "Wholesale / B2B Hospitality",
+      "price": "Hubungi Tim Sales",
+      "description": "Penyediaan tableware stoneware untuk cafe, restoran, dan hotel butik."
+    }
+  ],
+  "faqs": [
+    {
+      "q": "Apakah produk keramik Harbor aman untuk microwave dan dishwasher?",
+      "a": "Ya, seluruh produk stoneware Harbor 100% food-safe, microwave safe, dan dishwasher safe."
+    },
+    {
+      "q": "Bagaimana proses pengiriman dan garansi barang pecah?",
+      "a": "Kami menggunakan extra bubble wrap tebal dan box kardus ganda. Jika barang pecah saat pengiriman, kami ganti 100% baru gratis."
+    },
+    {
+      "q": "Berapa lama estimasi pesanan sampai?",
+      "a": "Jabodetabek 1-2 hari kerja, luar kota 2-4 hari kerja."
+    },
+    {
+      "q": "Bagaimana cara memesan atau berkonsultasi langsung?",
+      "a": "Silakan sampaikan kebutuhan Anda atau hubungi tim customer service kami untuk berkonsultasi secara langsung."
+    }
+  ],
+  "ai": {
+    "enabled": true,
+    "provider": "groq",
+    "groq_api_key": "",
+    "groq_model": "openai/gpt-oss-20b",
+    "gemini_api_key": "",
+    "model": "gemini-3.1-flash-lite",
+    "temperature": 0.7,
+    "system_instructions": "Anda adalah Harbor Assistant, asisten customer service resmi dari Harbor (Stoneware & Mindful Living). Jawab dengan ramah, santun, profesional, dan ringkas dalam Bahasa Indonesia. DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol bintang (*). DILARANG KERAS menggunakan icon emoji apapun dalam balasan Anda. DILARANG KERAS menyuruh pelanggan mengetik perintah kaku seperti Ketik ORDER, Ketik MENU, atau Ketik CS. Berinteraksilah secara alami, hangat, dan luwes layaknya staf customer service manusia. Anda menguasai seluruh katalog produk keramik Harbor (The Everyday Set, The Slow Pour-Over Set, The Organic Serving Platter, test 1234), daftar cabang showroom (Jakarta Senopati, Bandung Riau, Bali Canggu), jam buka, pengiriman, dan kebijakan garansi barang pecah 100% ganti baru gratis. Jika pelanggan ingin memesan produk, klaim garansi, atau pengaduan produk, tanyakan informasinya secara sopan dan bantu proseskan tiket layanannya."
+  }
+}
