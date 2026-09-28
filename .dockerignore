@@ -1,0 +1,7 @@
+node_modules
+.next
+auth_info_baileys
+.git
+.env
+.env.local
+*.log

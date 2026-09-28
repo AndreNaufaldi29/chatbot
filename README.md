@@ -1,3 +1,13 @@
+---
+title: Chatbot WA
+emoji: 🤖
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # 🤖 Chatbot WhatsApp Pelayanan dengan Next.js & Google Gemini AI
 
 Aplikasi Chatbot WhatsApp enterprise untuk layanan pelanggan (Customer Service) otomatis yang diperkuat oleh **Google Gemini AI** dan **Dashboard Next.js modern (React 19 + Tailwind CSS v4)** dengan otentikasi sesi persisten `@whiskeysockets/baileys` (Multi-Device).
