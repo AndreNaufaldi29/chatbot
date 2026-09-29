@@ -539,23 +539,49 @@ class MessageHandler {
     const textTrim = text.trim();
     const textLower = textTrim.toLowerCase();
 
-    // 1. Explicit menu commands
-    const isExplicitKatalog = textLower === '1' || textLower === 'katalog' || textLower === 'menu_katalog';
-    const isExplicitCabang = textLower === '2' || textLower === 'cabang' || textLower === 'menu_cabang' || textLower === 'showroom';
-    const isExplicitCs = textLower === '3' || textLower === 'cs' || textLower === 'menu_cs' || textLower === 'admin' || textLower === 'operator';
-
-    if (isExplicitKatalog) {
+    // 1. Explicit numbered menu commands
+    if (textLower === '1' || textLower === 'katalog' || textLower === 'menu_katalog' || textLower === 'karpet') {
       await this.sendCatalogSelection(sock, jid, originalMsg);
       return;
     }
 
-    if (isExplicitCabang) {
-      sessionManager.setState(jid, 'SELECT_BRANCH');
-      await this.sendBranchesListMenu(sock, jid, originalMsg);
+    if (textLower === '2' || textLower === 'profil' || textLower === 'pemilik' || textLower === 'owner' || textLower === 'toko') {
+      const reply = menuHandler.getStoreProfileMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
       return;
     }
 
-    if (isExplicitCs) {
+    if (textLower === '3' || textLower === 'jadwal' || textLower === 'jam kerja' || textLower === 'jam buka' || textLower === 'operasional') {
+      const reply = menuHandler.getWorkingHoursMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (textLower === '4' || textLower === 'lokasi' || textLower === 'alamat' || textLower === 'showroom' || textLower === 'cabang' || textLower === 'maps') {
+      const reply = menuHandler.getLocationMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (textLower === '5' || textLower === 'garansi' || textLower === 'klaim garansi' || textLower === 'jaminan') {
+      const reply = menuHandler.getWarrantyMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (textLower === '6' || textLower === 'promo' || textLower === 'diskon' || textLower === 'penawaran' || textLower === 'potongan') {
+      const reply = menuHandler.getPromoMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (textLower === '7' || textLower === 'komplain' || textLower === 'pengaduan' || textLower === 'keluhan') {
+      const reply = menuHandler.getComplaintMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (textLower === 'cs' || textLower === 'menu_cs' || textLower === 'admin' || textLower === 'operator') {
       sessionManager.setHumanMode(jid, true);
       const reply = menuHandler.getHumanCsPrompt();
       if (this.eventEmitter) {
@@ -572,7 +598,7 @@ class MessageHandler {
 
     // 2. Sticker response
     if (textTrim === '[Stiker WhatsApp]') {
-      const stickerReply = `Halo ${senderName}, terima kasih atas sapaan stikernya. Ada yang dapat kami bantu terkait produk keramik atau layanan Harbor hari ini?`;
+      const stickerReply = `Halo ${senderName}, terima kasih atas sapaan stikernya. Ada yang dapat kami bantu terkait produk karpet atau layanan Sultan Carpet Gallery hari ini?`;
       await this.sendReply(sock, jid, stickerReply, originalMsg);
       return;
     }
@@ -608,7 +634,7 @@ class MessageHandler {
                 break;
               }
             }
-            if (photoTags.length === 0 && (textLower.includes('katalog') || textLower.includes('produk') || textLower.includes('koleksi') || textLower.includes('semua'))) {
+            if (photoTags.length === 0 && (textLower.includes('katalog') || textLower.includes('produk') || textLower.includes('koleksi') || textLower.includes('semua') || textLower.includes('karpet'))) {
               photoTags.push('ALL');
             }
           }
@@ -621,7 +647,7 @@ class MessageHandler {
           await sock.sendMessage(jid, { text: cleanReply }, { quoted: originalMsg });
 
           const provider = aiService.getActiveProvider();
-          const providerDisplayName = provider === 'groq' ? 'Harbor AI (Groq)' : 'Harbor AI (Gemini)';
+          const providerDisplayName = provider === 'groq' ? 'Sultan Carpet AI (Groq)' : 'Sultan Carpet AI (Gemini)';
 
           this.emitLog({
             id: `out_ai_${Date.now()}`,
@@ -666,9 +692,83 @@ class MessageHandler {
 
     // 4. Keyword Fallback
     if (
+      textLower.includes('pemilik') ||
+      textLower.includes('owner') ||
+      textLower.includes('siapa yang punya') ||
+      textLower.includes('profil toko') ||
+      textLower.includes('tentang toko')
+    ) {
+      const reply = menuHandler.getStoreProfileMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (
+      textLower.includes('jadwal') ||
+      textLower.includes('jam buka') ||
+      textLower.includes('jam kerja') ||
+      textLower.includes('operasional') ||
+      textLower.includes('buka jam berapa') ||
+      textLower.includes('tutup jam berapa')
+    ) {
+      const reply = menuHandler.getWorkingHoursMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (
+      textLower.includes('alamat') ||
+      textLower.includes('lokasi') ||
+      textLower.includes('dimana') ||
+      textLower.includes('showroom') ||
+      textLower.includes('cabang') ||
+      textLower.includes('maps')
+    ) {
+      const reply = menuHandler.getLocationMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (
+      textLower.includes('garansi') ||
+      textLower.includes('klaim') ||
+      textLower.includes('jaminan')
+    ) {
+      const reply = menuHandler.getWarrantyMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (
+      textLower.includes('promo') ||
+      textLower.includes('diskon') ||
+      textLower.includes('potongan') ||
+      textLower.includes('cashback') ||
+      textLower.includes('sale')
+    ) {
+      const reply = menuHandler.getPromoMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (
+      textLower.includes('komplain') ||
+      textLower.includes('pengaduan') ||
+      textLower.includes('keluhan') ||
+      textLower.includes('kecewa') ||
+      textLower.includes('rusak') ||
+      textLower.includes('cacat')
+    ) {
+      const reply = menuHandler.getComplaintMenu();
+      await this.sendReply(sock, jid, reply, originalMsg);
+      return;
+    }
+
+    if (
       textLower.includes('katalog') ||
       textLower.includes('produk') ||
       textLower.includes('koleksi') ||
+      textLower.includes('karpet') ||
       textLower.includes('harga')
     ) {
       await this.sendCatalogSelection(sock, jid, originalMsg);
@@ -676,20 +776,10 @@ class MessageHandler {
     }
 
     if (
-      textLower.includes('cabang') ||
-      textLower.includes('lokasi') ||
-      textLower.includes('alamat') ||
-      textLower.includes('toko')
-    ) {
-      sessionManager.setState(jid, 'SELECT_BRANCH');
-      await this.sendBranchesListMenu(sock, jid, originalMsg);
-      return;
-    }
-
-    if (
       textLower.includes('cs') ||
       textLower.includes('bantuan') ||
-      textLower.includes('komplain')
+      textLower.includes('admin') ||
+      textLower.includes('operator')
     ) {
       sessionManager.setHumanMode(jid, true);
       const reply = menuHandler.getHumanCsPrompt();
@@ -714,7 +804,7 @@ class MessageHandler {
         direction: 'out',
         jid,
         phone: resolvedPhone,
-        senderName: 'Harbor Bot',
+        senderName: 'Sultan Carpet Bot',
         text: menuText,
         timestamp: new Date().toISOString()
       });
@@ -737,7 +827,7 @@ class MessageHandler {
         direction: 'out',
         jid,
         phone: resolvedPhone,
-        senderName: 'Harbor Bot',
+        senderName: 'Sultan Carpet Bot',
         text: reply,
         timestamp: new Date().toISOString()
       });
@@ -768,7 +858,7 @@ class MessageHandler {
         product.image ? path.join(__dirname, '../../', product.image) : null,
         product.image ? path.join(__dirname, '../../assets/', product.image.replace(/^assets[\\/]/, '')) : null,
         product.image ? path.join(__dirname, '../../public/', product.image.replace(/^public[\\/]/, '')) : null,
-        path.join(__dirname, '../../assets/catalog/everyday-set.jpg')
+        path.join(__dirname, '../../assets/catalog/karpet-masjid-turki.jpg')
       ];
 
       for (const cand of candidates) {
@@ -784,9 +874,9 @@ class MessageHandler {
         `${product.subtitle}\n\n` +
         `Varian: ${product.footer}\n` +
         `Harga: ${product.price}\n\n` +
-        `Detail Koleksi: ${product.url || 'https://harbor.example.com'}\n` +
+        `Detail Koleksi: ${product.url || 'https://sultancarpet.co.id'}\n` +
         `───────────────────\n` +
-        `Bila Anda ingin memesan ${product.title}, silakan beri tahu kami.`);
+        `Bila Anda ingin memesan ${product.title} atau survey gratis, silakan beri tahu kami.`);
 
       const resolvedPhone = phoneService.getPhone(jid) || jid.split('@')[0];
 

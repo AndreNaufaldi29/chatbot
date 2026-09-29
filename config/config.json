@@ -1,17 +1,173 @@
 {
   "business": {
-    "name": "Harbor",
-    "tagline": "Stoneware & Mindful Living",
-    "phone": "0812-3456-7890",
-    "email": "hello@harborlifestyle.com",
-    "website": "https://harbor.example.com",
-    "address": "Jl. Senopati No. 88, Kebayoran Baru, Jakarta Selatan",
-    "maps_url": "https://maps.google.com/?q=Jakarta",
-    "hours": "Senin - Jumat: 09:00 - 18:00 WIB\nSabtu - Minggu: 10:00 - 16:00 WIB"
+    "name": "Sultan Carpet Gallery",
+    "owner": "H. Ahmad Fauzi & Hj. Maryam",
+    "tagline": "Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan",
+    "phone": "0812-9876-5432",
+    "phone_cs": "0811-2345-6789",
+    "email": "info@sultancarpet.co.id",
+    "website": "https://sultancarpet.co.id",
+    "address": "Jl. Fatmawati Raya No. 45, Cilandak, Jakarta Selatan 12430",
+    "maps_url": "https://maps.google.com/?q=Fatmawati+Jakarta+Selatan",
+    "hours": "Senin - Sabtu: 08:30 - 20:00 WIB\nMinggu & Libur Nasional: 09:00 - 18:00 WIB\nLayanan Survey & Pasang Masjid: 24 Jam (By Appointment)",
+    "established": "2012",
+    "legal": "NIB: 9120003481923 / SIUP: 510/089/PK/X/2012",
+    "description": "Sultan Carpet Gallery adalah penyedia karpet masjid import Turki kualitas terbaik, karpet klasik Persia sutra, karpet minimalis Scandinavia, karpet bulu shaggy, dan karpet tile kantor dengan pengalaman lebih dari 12 tahun."
+  },
+  "owner_info": {
+    "owner_name": "H. Ahmad Fauzi & Hj. Maryam",
+    "role": "Founder & Managing Director",
+    "experience": "12+ Tahun Melayani Seluruh Nusantara",
+    "story": "Didirikan pada tahun 2012 oleh H. Ahmad Fauzi dan Hj. Maryam, berawal dari kecintaan terhadap keindahan seni rajut karpet Turki dan Persia. Kini Sultan Carpet Gallery telah melayani lebih dari 1.500 masjid di seluruh Indonesia, ribuan hunian mewah, serta ratusan kantor korporat multinasional.",
+    "phone": "0812-9876-5432",
+    "email": "owner@sultancarpet.co.id",
+    "commitment": "Kami berkomitmen menghadirkan produk karpet 100% original berkualitas grade A dengan harga transparan, diiringi layanan purnajual terbaik, survey gratis, dan garansi penuh."
+  },
+  "schedule_info": {
+    "store_hours": "Senin - Sabtu: 08:30 - 20:00 WIB\nMinggu & Hari Libur: 09:00 - 18:00 WIB",
+    "survey_hours": "Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB (Bisa disesuaikan dengan waktu pengurus DKM masjid atau pemilik rumah)",
+    "installation_hours": "Pemasangan karpet masjid & kantor dapat dilakukan malam hari atau setelah waktu Isya agar tidak mengganggu ibadah/aktivitas kantor (Tersedia teknisi 20 jam)",
+    "shipping_schedule": "Pengiriman Jabodetabek: Setiap hari kerja (Sameday/Nextday armada sendiri)\nPengiriman Luar Kota/Pulau: Ekspedisi kargo terpercaya (Indah Cargo, Dakota, Baraka, Sentral Cargo)"
+  },
+  "location_info": {
+    "main_showroom": {
+      "id": "loc-1",
+      "type": "Showroom Utama",
+      "title": "Showroom Utama Fatmawati (Pusat Koleksi & Gallery)",
+      "address": "Jl. Fatmawati Raya No. 45, RT.04/RW.02, Cilandak Barat, Cilandak, Jakarta Selatan 12430",
+      "landmark": "500 meter dari Stasiun MRT Cipete Raya, seberang SPBU Shell Fatmawati",
+      "hours": "Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB",
+      "phone": "0812-9876-5432",
+      "maps_url": "https://maps.google.com/?q=Fatmawati+Jakarta+Selatan"
+    },
+    "warehouse": {
+      "id": "loc-2",
+      "type": "Gudang & Obras",
+      "title": "Gudang Pusat & Workshop Obras Bekasi",
+      "address": "Kawasan Industri & Pergudangan Bizpark No. 18, Jl. Raya Narogong KM 7, Bekasi",
+      "landmark": "Kawasan Bizpark Blok B-18, akses kontainer 40ft",
+      "hours": "Senin - Jumat: 08:00 - 17:00 WIB | Sabtu: 08:00 - 14:00 WIB",
+      "phone": "0813-8899-7766",
+      "maps_url": "https://maps.google.com/?q=Bekasi+Narogong"
+    },
+    "items": [
+      {
+        "id": "loc-1",
+        "type": "Showroom Utama",
+        "title": "Showroom Utama Fatmawati (Pusat Koleksi & Gallery)",
+        "address": "Jl. Fatmawati Raya No. 45, RT.04/RW.02, Cilandak Barat, Cilandak, Jakarta Selatan 12430",
+        "landmark": "500 meter dari Stasiun MRT Cipete Raya, seberang SPBU Shell Fatmawati",
+        "hours": "Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB",
+        "phone": "0812-9876-5432",
+        "maps_url": "https://maps.google.com/?q=Fatmawati+Jakarta+Selatan"
+      },
+      {
+        "id": "loc-2",
+        "type": "Gudang & Obras",
+        "title": "Gudang Pusat & Workshop Obras Bekasi",
+        "address": "Kawasan Industri & Pergudangan Bizpark No. 18, Jl. Raya Narogong KM 7, Bekasi",
+        "landmark": "Kawasan Bizpark Blok B-18, akses kontainer 40ft",
+        "hours": "Senin - Jumat: 08:00 - 17:00 WIB | Sabtu: 08:00 - 14:00 WIB",
+        "phone": "0813-8899-7766",
+        "maps_url": "https://maps.google.com/?q=Bekasi+Narogong"
+      },
+      {
+        "id": "loc-3",
+        "type": "Cabang Gallery",
+        "title": "Galeri Sultan Carpet Bandung",
+        "address": "Jl. L.L.R.E. Martadinata (Riau) No. 82, Citarum, Bandung 40115",
+        "landmark": "Samping Heritage Factory Outlet, seberang Bank Mandiri",
+        "hours": "Senin - Minggu: 09:00 - 20:00 WIB",
+        "phone": "0813-2233-4455",
+        "maps_url": "https://maps.google.com/?q=Bandung+Riau"
+      },
+      {
+        "id": "loc-4",
+        "type": "Cabang Gallery",
+        "title": "Galeri Sultan Carpet Surabaya",
+        "address": "Jl. Mayjen HR. Muhammad No. 102, Pradahkalikendal, Dukuhpakis, Surabaya 60226",
+        "landmark": "Dekat bundaran HR Muhammad, seberang Mayapada Hospital",
+        "hours": "Senin - Minggu: 09:00 - 20:00 WIB",
+        "phone": "0821-3344-5566",
+        "maps_url": "https://maps.google.com/?q=Surabaya+HR+Muhammad"
+      }
+    ]
+  },
+  "warranty_info": {
+    "title": "Jaminan Kualitas & Garansi Resmi Sultan Carpet",
+    "summary": "Garansi 100% benang asli impor Turki & Persia, garansi obras & pasang 1 tahun, serta garansi tukar baru 14 hari.",
+    "items": [
+      {
+        "title": "Garansi 100% Benang Asli Impor",
+        "desc": "Kami menjamin seluruh karpet masjid impor kami 100% didatangkan langsung dari Turki dan karpet klasik dari Persia dengan sertifikat keaslian dan grade resmi."
+      },
+      {
+        "title": "Garansi Pemasangan & Obras 1 Tahun",
+        "desc": "Garansi jahitan obras rapi dan tidak mudah lepas selama 12 bulan penuh. Jika ada obrasan terbuka atau sambungan bergeser, teknisi kami siap perbaiki gratis."
+      },
+      {
+        "title": "Garansi Tukar Baru 14 Hari (Cacat Pabrik)",
+        "desc": "Jika ditemukan cacat produksi atau benang cacat saat barang tiba, kami tukar dengan karpet baru tanpa biaya tambahan apapun."
+      },
+      {
+        "title": "Jaminan Kerapian Potong Presisi",
+        "desc": "Pemotongan karpet mengikuti sudut ruangan, lekukan tiang/pilar masjid, serta kemiringan shaf kiblat dengan toleransi presisi tinggi."
+      }
+    ],
+    "claim_steps": "1. Foto atau videokan bagian karpet yang mengalami kendala\n2. Kirim pesan ke nomor WhatsApp layanan garansi kami atau laporkan melalui menu Komplain\n3. Tim teknisi akan melakukan verifikasi dalam 1x24 jam dan menjadwalkan kunjungan servis"
+  },
+  "promo_info": {
+    "title": "Promo & Penawaran Spesial Karpet",
+    "active_promos": [
+      {
+        "id": "PROMO-MASJID",
+        "title": "Promo Berkah Masjid & Musholla",
+        "discount": "Diskon hingga 25% + Gratis Obras Keliling",
+        "desc": "Dapatkan potongan harga spesial untuk pemesanan karpet masjid minimal 5 roll. Gratis obras sambungan, gratis parfum karpet masjid wangi tahan lama, dan subsidi ongkir se-Jawa.",
+        "badge": "Terpopuler",
+        "valid_until": "Akhir Bulan Ini"
+      },
+      {
+        "id": "PROMO-RUMAH",
+        "title": "Promo Gebyar Karpet Rumah Minimalis",
+        "discount": "Cashback Rp 200.000 + Free Keset Mewah",
+        "desc": "Beli karpet ruang tamu Nordic Scandinavia atau Bulu Shaggy, gratis keset kaki memory foam microfiber anti-slip premium.",
+        "badge": "Bestseller",
+        "valid_until": "Stok Terbatas"
+      },
+      {
+        "id": "PROMO-KANTOR",
+        "title": "Paket Renovasi Karpet Kantor & Komersial",
+        "discount": "Gratis Pemasangan untuk Luas > 100 m²",
+        "desc": "Pemesanan karpet tile komersial heavy duty diatas 100 m² mendapatkan gratis lem khusus karpet dan jasa pasang teknisi berpengalaman.",
+        "badge": "Spesial B2B",
+        "valid_until": "Berlaku Selama Kuota Ada"
+      },
+      {
+        "id": "PROMO-SURVEY",
+        "title": "Layanan Survey & Bawa Sampel GRATIS",
+        "discount": "Gratis 100% Tanpa Syarat",
+        "desc": "Bingung memilih motif dan mengukur ruangan? Tim kami siap datang membawakan contoh bahan karpet fisik dan melakukan pengukuran langsung ke lokasi Anda (Jabodetabek).",
+        "badge": "Gratis",
+        "valid_until": "Setiap Hari"
+      }
+    ]
+  },
+  "complaint_info": {
+    "title": "Pusat Layanan Pengaduan & Komplain Pelanggan",
+    "sla": "Respon Cepat Maksimal 1x24 Jam Kerja",
+    "contact_manager": "0811-2345-6789 (Hotline Layanan Konsumen)",
+    "workflow": [
+      "Langkah 1: Sampaikan keluhan Anda melalui WhatsApp bot, formulir web, atau telepon langsung.",
+      "Langkah 2: Sistem kami otomatis menerbitkan Nomor Tiket Komplain resmi (contoh: #TK-XXXXX).",
+      "Langkah 3: Customer Care Officer kami memverifikasi laporan dan menghubungi Anda dalam 1x24 jam.",
+      "Langkah 4: Jika diperlukan perbaikan fisik/tukar karpet, tim teknisi akan dijadwalkan datang ke lokasi Anda.",
+      "Langkah 5: Tiket selesai setelah Anda merasa puas dengan penyelesaian yang diberikan."
+    ]
   },
   "bot": {
-    "name": "Harbor Assistant",
-    "welcome_greeting": "Selamat datang di Harbor. Koleksi stoneware dan perlengkapan rumah artisanal untuk pagi yang lebih tenang.",
+    "name": "Sultan Carpet Assistant",
+    "welcome_greeting": "Selamat datang di Sultan Carpet Gallery. Pusat karpet masjid import Turki kualitas terbaik, karpet klasik Persia sutra, karpet minimalis Scandinavia, karpet bulu shaggy, dan karpet tile kantor dengan layanan survey dan obras gratis.",
     "cooldown_seconds": 0,
     "ignore_groups": true,
     "auto_read_messages": true
@@ -22,117 +178,138 @@
   "catalog": [
     {
       "id": "1",
-      "code": "EVERYDAY-SET",
-      "title": "The Everyday Set",
-      "subtitle": "Stoneware, made for slow mornings.",
-      "footer": "Available in Stone and Chalk.",
-      "price": "Rp 450.000",
-      "buttonText": "View collection ›",
-      "url": "https://harbor.example.com/collections/everyday-set",
-      "image": "assets/catalog/everyday-set.jpg"
+      "code": "MASJID-TURKI-A",
+      "title": "Karpet Masjid Sultan Turki Grade A+",
+      "subtitle": "Tebal 14mm, benang Polypropylene Heatset ultra-soft, motif kubah mihrab gold rapi & empuk untuk sujud.",
+      "footer": "Warna: Hijau Emerald & Merah Ruby. Ukuran: Roll 1.2m x 6m (bisa potong meteran).",
+      "price": "Rp 3.850.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/karpet-masjid-turki",
+      "image": "catalog/karpet-masjid-turki.jpg"
     },
     {
       "id": "2",
-      "code": "POUROVER-SET",
-      "title": "The Slow Pour-Over Set",
-      "subtitle": "Artisanal ceramic dripper & mug for mindful coffee rituals.",
-      "footer": "Glazed Terracotta & Speckled Oat.",
-      "price": "Rp 320.000",
-      "buttonText": "View collection ›",
-      "url": "https://harbor.example.com/collections/pour-over",
-      "image": "assets/catalog/pourover-set.jpg"
+      "code": "PERSIA-TABRIZ",
+      "title": "Karpet Klasik Persia Royal Tabriz Sutra & Wol",
+      "subtitle": "Rajutan tangan padat 1.5 juta knot, motif medali floral mewah warisan Persia kuno bernilai estetika tinggi.",
+      "footer": "Warna: Royal Navy Blue & Cream Gold. Ukuran: 200 x 300 cm.",
+      "price": "Rp 7.500.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/karpet-persia-tabriz",
+      "image": "catalog/karpet-persia-mewah.jpg"
     },
     {
       "id": "3",
-      "code": "SERVING-PLATTER",
-      "title": "The Organic Serving Platter",
-      "subtitle": "Hand-formed stoneware crafted for slow shared meals.",
-      "footer": "Available in Sand and Terracotta.",
-      "price": "Rp 280.000",
-      "buttonText": "View collection ›",
-      "url": "https://harbor.example.com/collections/serving-platter",
-      "image": "assets/catalog/serving-platter.jpg"
+      "code": "NORDIC-SCANDI",
+      "title": "Karpet Minimalis Scandinavia Nordic Line",
+      "subtitle": "Karpet ruang tamu modern minimalis bertekstur lembut, anti-slip backing, motif geometris kontemporer chic.",
+      "footer": "Warna: Warm Beige, Ivory Cream & Charcoal. Ukuran: 160 x 230 cm.",
+      "price": "Rp 1.450.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/karpet-nordic-scandi",
+      "image": "catalog/karpet-scandi-modern.jpg"
     },
     {
       "id": "4",
-      "code": "MUG",
-      "title": "test 1234",
-      "subtitle": "test",
-      "footer": "white",
-      "price": "Rp 30.000",
-      "buttonText": "View collection ›",
-      "url": "https://harbor.example.com/collections/4",
-      "image": "catalog/everyday-set.jpg"
+      "code": "SHAGGY-CLOUD",
+      "title": "Karpet Bulu Shaggy Fluffy Cloud Luxury",
+      "subtitle": "Bulu shaggy tebal 5 cm sangat halus dan empuk, lapisan busa memory foam, nyaman untuk kamar tidur & ruang keluarga.",
+      "footer": "Warna: Ivory White, Soft Grey, Mocca Brown. Ukuran: 150 x 200 cm.",
+      "price": "Rp 850.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/karpet-shaggy-fluffy",
+      "image": "catalog/karpet-shaggy-bulu.jpg"
+    },
+    {
+      "id": "5",
+      "code": "OFFICE-TILE-50",
+      "title": "Karpet Tile Kantor Heavy Duty Commercial",
+      "subtitle": "Modular tile 50x50 cm tahan gesekan roda kursi kerja, tahan noda, tahan api (fire retardant) & anti-statis.",
+      "footer": "Warna: Charcoal Heather & Slate Blue. Isi: 20 pcs / box (5 m²).",
+      "price": "Rp 975.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/karpet-tile-office",
+      "image": "catalog/karpet-kantor-tile.jpg"
     }
   ],
   "branches": [
     {
       "id": "1",
-      "name": "Harbor Flagship Store - Jakarta Selatan",
+      "name": "Sultan Carpet Gallery - Jakarta Selatan (Pusat)",
       "city": "Jakarta Selatan",
-      "area": "Senopati",
-      "address": "Jl. Senopati No. 88, Kebayoran Baru, Jakarta Selatan 12190",
-      "hours": "Senin - Minggu: 09:00 - 21:00 WIB",
-      "phone": "0812-3456-7890",
-      "maps_url": "https://maps.google.com/?q=Senopati+Jakarta"
+      "area": "Fatmawati",
+      "address": "Jl. Fatmawati Raya No. 45, RT.04/RW.02, Cilandak, Jakarta Selatan 12430",
+      "hours": "Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB",
+      "phone": "0812-9876-5432",
+      "maps_url": "https://maps.google.com/?q=Fatmawati+Jakarta+Selatan"
     },
     {
       "id": "2",
-      "name": "Harbor Studio & Roastery - Bandung",
+      "name": "Sultan Carpet Gallery - Bandung",
       "city": "Bandung",
-      "area": "Riau",
-      "address": "Jl. L. L. R.E. Martadinata (Riau) No. 45, Citarum, Bandung 40115",
-      "hours": "Selasa - Minggu: 08:00 - 20:00 WIB (Senin Tutup)",
-      "phone": "0813-9876-5432",
+      "area": "Riau / Martadinata",
+      "address": "Jl. L.L.R.E. Martadinata (Riau) No. 82, Citarum, Bandung 40115",
+      "hours": "Senin - Minggu: 09:00 - 20:00 WIB",
+      "phone": "0813-2233-4455",
       "maps_url": "https://maps.google.com/?q=Bandung+Riau"
     },
     {
       "id": "3",
-      "name": "Harbor Slow Living Space - Bali",
-      "city": "Bali",
-      "area": "Canggu",
-      "address": "Jl. Pantai Batu Bolong No. 12, Canggu, Kuta Utara, Bali 80361",
-      "hours": "Setiap Hari: 08:00 - 22:00 WITA",
-      "phone": "0821-1122-3344",
-      "maps_url": "https://maps.google.com/?q=Canggu+Batu+Bolong+Bali"
+      "name": "Sultan Carpet Gallery - Surabaya",
+      "city": "Surabaya",
+      "area": "HR Muhammad",
+      "address": "Jl. Mayjen HR. Muhammad No. 102, Pradahkalikendal, Dukuhpakis, Surabaya 60226",
+      "hours": "Senin - Minggu: 09:00 - 20:00 WIB",
+      "phone": "0821-3344-5566",
+      "maps_url": "https://maps.google.com/?q=Surabaya+HR+Muhammad"
     }
   ],
   "services": [
     {
       "id": "srv-1",
-      "name": "Koleksi Keramik Artisanal",
-      "price": "Mulai Rp 180.000",
-      "description": "Handcrafted stoneware pottery untuk dekorasi dan peralatan makan."
+      "name": "Pemasangan & Obras Karpet Masjid di Tempat",
+      "price": "Mulai Rp 25.000 / meter",
+      "description": "Teknisi profesional lengkap dengan mesin obras portable. Pemotongan presisi mengikuti sudut pilar dan arah shaf kiblat."
     },
     {
       "id": "srv-2",
-      "name": "Custom Gift & Hampers",
-      "price": "Mulai Rp 500.000",
-      "description": "Paket kado personal dengan ukiran inisial & kotak kayu eksklusif."
+      "name": "Layanan Survey Lokasi & Bawa Sampel GRATIS",
+      "price": "Gratis (Jabodetabek)",
+      "description": "Tim kami datang langsung ke masjid, kantor, atau rumah Anda membawakan sampel karpet fisik dan melakukan pengukuran akurat."
     },
     {
       "id": "srv-3",
-      "name": "Wholesale / B2B Hospitality",
-      "price": "Hubungi Tim Sales",
-      "description": "Penyediaan tableware stoneware untuk cafe, restoran, dan hotel butik."
+      "name": "Custom Handtufted Carpet (Desain Khusus)",
+      "price": "Hubungi Tim Proyek",
+      "description": "Pesan karpet eksklusif dengan logo perusahaan, desain kustom, ketebalan khusus untuk hotel, ballroom, dan kantor."
+    },
+    {
+      "id": "srv-4",
+      "name": "Cuci Karpet & Deep Cleaning Spesialis",
+      "price": "Mulai Rp 35.000 / meter",
+      "description": "Pencucian karpet dengan teknologi hidrolik anti-bakteri, membunuh tungau dan wangi tahan lama."
     }
   ],
   "faqs": [
     {
-      "q": "Apakah produk keramik Harbor aman untuk microwave dan dishwasher?",
-      "a": "Ya, seluruh produk stoneware Harbor 100% food-safe, microwave safe, dan dishwasher safe."
+      "q": "Apakah karpet masjid bisa dipotong dan diobras langsung di lokasi masjid?",
+      "a": "Ya, betul. Tim teknisi Sultan Carpet membawa mesin obras portable ke lokasi masjid Anda sehingga pemotongan dan obras dilakukan langsung mengikuti lekukan pilar dan arah shaf kiblat dengan sangat presisi."
     },
     {
-      "q": "Bagaimana proses pengiriman dan garansi barang pecah?",
-      "a": "Kami menggunakan extra bubble wrap tebal dan box kardus ganda. Jika barang pecah saat pengiriman, kami ganti 100% baru gratis."
+      "q": "Bagaimana ketentuan garansi karpet di Sultan Carpet Gallery?",
+      "a": "Kami memberikan garansi 100% keaslian benang impor Turki dan Persia, garansi jahitan obras dan pemasangan selama 1 tahun, serta garansi tukar baru 14 hari bila ada cacat pabrik saat barang diterima."
     },
     {
-      "q": "Berapa lama estimasi pesanan sampai?",
-      "a": "Jabodetabek 1-2 hari kerja, luar kota 2-4 hari kerja."
+      "q": "Apakah ada promo untuk pemesanan karpet masjid?",
+      "a": "Ya! Saat ini tersedia Promo Berkah Masjid dengan diskon hingga 25%, gratis obras sambungan keliling, gratis parfum karpet masjid wangi tahan lama, dan subsidi ongkir se-Jawa."
     },
     {
-      "q": "Bagaimana cara memesan atau berkonsultasi langsung?",
-      "a": "Silakan sampaikan kebutuhan Anda atau hubungi tim customer service kami untuk berkonsultasi secara langsung."
+      "q": "Bagaimana cara melakukan klaim garansi atau komplain jika ada kendala?",
+      "a": "Cukup sampaikan keluhan Anda ke bot ini atau WhatsApp kami dengan menyertakan foto/video kendala. Sistem kami akan membuat tiket layanan resmi dan tim kami akan merespons dalam 1x24 jam kerja."
+    },
+    {
+      "q": "Apakah bisa minta survey dan dibawakan contoh bahan karpet ke rumah atau masjid?",
+      "a": "Bisa sekali! Layanan survey dan pengukuran beserta bawakan sampel fisik karpet kami sediakan 100% GRATIS untuk wilayah Jabodetabek dan sekitarnya."
     }
   ],
   "ai": {
@@ -143,6 +320,6 @@
     "gemini_api_key": "",
     "model": "gemini-3.1-flash-lite",
     "temperature": 0.7,
-    "system_instructions": "Anda adalah Harbor Assistant, asisten customer service resmi dari Harbor (Stoneware & Mindful Living). Jawab dengan ramah, santun, profesional, dan ringkas dalam Bahasa Indonesia. DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol bintang (*). DILARANG KERAS menggunakan icon emoji apapun dalam balasan Anda. DILARANG KERAS menyuruh pelanggan mengetik perintah kaku seperti Ketik ORDER, Ketik MENU, atau Ketik CS. Berinteraksilah secara alami, hangat, dan luwes layaknya staf customer service manusia. Anda menguasai seluruh katalog produk keramik Harbor (The Everyday Set, The Slow Pour-Over Set, The Organic Serving Platter, test 1234), daftar cabang showroom (Jakarta Senopati, Bandung Riau, Bali Canggu), jam buka, pengiriman, dan kebijakan garansi barang pecah 100% ganti baru gratis. Jika pelanggan ingin memesan produk, klaim garansi, atau pengaduan produk, tanyakan informasinya secara sopan dan bantu proseskan tiket layanannya."
+    "system_instructions": "Anda adalah Sultan Carpet Assistant, asisten customer service resmi dari Sultan Carpet Gallery (Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan). Pemilik toko adalah H. Ahmad Fauzi & Hj. Maryam, berdiri sejak 2012 dengan reputasi terpercaya melayani lebih dari 1.500 masjid di seluruh Indonesia. Jawab pertanyaan pelanggan dengan sangat ramah, santun, profesional, solutif, dan ringkas dalam Bahasa Indonesia. DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol bintang (*). DILARANG KERAS menggunakan icon emoji apapun dalam balasan Anda. DILARANG KERAS menyuruh pelanggan mengetik perintah kaku seperti Ketik ORDER, Ketik MENU, atau Ketik CS. Berinteraksilah secara alami, hangat, dan luwes layaknya konsultan karpet profesional berpengalaman. Anda menguasai seluruh katalog karpet (Karpet Masjid Sultan Turki Grade A+, Karpet Klasik Persia Royal Tabriz Sutra & Wol, Karpet Minimalis Scandinavia Nordic Line, Karpet Bulu Shaggy Fluffy Cloud Luxury, Karpet Tile Kantor Heavy Duty Commercial), jam operasional showroom (Senin-Sabtu 08:30-20:00 WIB, Minggu 09:00-18:00 WIB), jadwal survey gratis dan pasang karpet 24 jam by appointment, alamat showroom utama di Jl. Fatmawati Raya No. 45 Jakarta Selatan beserta cabang Bandung dan Surabaya, kebijakan garansi 1 tahun pemasangan & 100% benang asli, promo diskon hingga 25% + free obras, serta alur penanganan komplain 1x24 jam. Jika pelanggan ingin memesan produk, survey gratis, klaim garansi, atau komplain, tanyakan detail kebutuhannya secara ramah dan bantu proseskan tiket layanannya."
   }
 }

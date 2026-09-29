@@ -144,17 +144,26 @@ class GroqService {
   buildSystemInstruction() {
     const config = menuHandler.getConfig();
     const b = config.business || {};
+    const o = config.owner_info || {};
+    const s = config.schedule_info || {};
+    const w = config.warranty_info || {};
+    const p = config.promo_info || {};
+    const c = config.complaint_info || {};
     const catalog = config.catalog || [];
     const branches = config.branches || [];
     const faqs = config.faqs || [];
 
     let catalogSummary = catalog.map((item, idx) => 
-      `${idx + 1}. ${item.title} - Harga: ${item.price} | Varian: ${item.footer} | Keterangan: ${item.subtitle}`
+      `${idx + 1}. [${item.code || item.id}] ${item.title} - Harga: ${item.price} | Varian: ${item.footer} | Spesifikasi: ${item.subtitle}`
     ).join('\n');
 
     let branchSummary = branches.map((br, idx) => 
-      `${idx + 1}. ${br.name} (${br.city} - ${br.area})\n   Alamat: ${br.address}\n   Jam Buka: ${br.hours}\n   Maps: ${br.maps_url}`
+      `${idx + 1}. ${br.name} (${br.city} - ${br.area})\n   Alamat: ${br.address}\n   Jam Buka: ${br.hours}\n   Telepon: ${br.phone}\n   Maps: ${br.maps_url}`
     ).join('\n\n');
+
+    let promoSummary = (p.active_promos || []).map((pr, idx) =>
+      `${idx + 1}. [${pr.badge || 'PROMO'}] ${pr.title}: ${pr.discount} (${pr.desc}) - Periode: ${pr.valid_until}`
+    ).join('\n');
 
     let faqSummary = faqs.map(f => `Tanya: ${f.q}\nJawab: ${f.a}`).join('\n');
 
@@ -162,41 +171,59 @@ class GroqService {
 
     return `${customPrompt}
 
-=== INFORMASI RESMI BISNIS ===
-Nama Toko: ${b.name} (${b.tagline || 'Stoneware & Mindful Living'})
+=== INFORMASI RESMI TOKO & PEMILIK ===
+Nama Toko: ${b.name} (${b.tagline})
+Pemilik / Founder: ${o.owner_name || b.owner || 'H. Ahmad Fauzi & Hj. Maryam'}
+Jabatan: ${o.role || 'Founder & Managing Director'}
+Tahun Berdiri: Sejak ${b.established || '2012'} (${o.experience || '12+ Tahun Melayani Seluruh Indonesia'})
 Alamat Utama: ${b.address}
-Jam Operasional: ${b.hours}
 Telepon/WA: ${b.phone}
 Email: ${b.email}
 Website: ${b.website}
 
-=== KATALOG PRODUK KERAMIK ARTISANAL ===
+=== JADWAL DAN JAM KERJA OPERASIONAL ===
+Jam Operasional Showroom: ${s.store_hours || b.hours}
+Jadwal Survey Gratis & Ukur Lokasi: ${s.survey_hours || 'Setiap Hari: 08:00 - 21:00 WIB (Gratis Jabodetabek)'}
+Jadwal Pasang & Obras: ${s.installation_hours || 'Tersedia teknisi 24 jam (bisa malam hari setelah Isya agar tidak mengganggu ibadah/kerja)'}
+
+=== KETENTUAN GARANSI RESMI SULTAN CARPET ===
+${w.summary || 'Garansi 100% benang asli impor Turki & Persia, garansi obras & pasang 1 tahun, serta garansi tukar baru 14 hari bila ada cacat pabrik.'}
+Alur Klaim: ${w.claim_steps || 'Kirimkan foto/video kendala, tim kami proses dalam 1x24 jam.'}
+
+=== PROMO & DISKON SPESIAL AKTIF ===
+${promoSummary || 'Promo Berkah Masjid diskon 25% + free obras, promo karpet rumah cashback Rp 200rb, promo karpet kantor free pasang.'}
+
+=== PUSAT KOMPLAIN & PENGADUAN KONSUMEN ===
+Waktu Respon (SLA): ${c.sla || 'Maksimal 1x24 Jam Kerja'}
+Hotline Manajer CS: ${c.contact_manager || b.phone_cs || b.phone}
+Kebijakan: Setiap keluhan pelanggan akan segera diterbitkan tiket penanganan resmi dan ditindaklanjuti hingga tuntas.
+
+=== KATALOG PRODUK KOLEKSI KARPET ===
 ${catalogSummary}
 
-=== DAFTAR CABANG & SHOWROOM TOKO FISIK ===
+=== DAFTAR CABANG & SHOWROOM FISIK ===
 ${branchSummary}
 
-=== PERTANYAAN UMUM (FAQ) & KEBIJAKAN ===
+=== PERTANYAAN UMUM (FAQ) ===
 ${faqSummary}
-Garansi Barang Pecah: 100% Ganti Baru Gratis jika terjadi kerusakan atau pecah saat pengiriman ekspedisi.
 
 === ATURAN MUTLAK FORMAT DAN GAYA BAHASA ===
 1. Berinteraksilah secara luwes, santun, ramah, dan solutif dalam Bahasa Indonesia.
 2. DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol asterisk (*).
 3. DILARANG KERAS menggunakan icon emoji apapun dalam seluruh balasan Anda. Pesan harus bersih dan elegan.
-4. DILARANG KERAS menyuruh pelanggan mengetik perintah tertentu seperti 'Ketik ORDER', 'Ketik MENU', 'Ketik CS', atau sejenisnya. Tawarkan bantuan secara alami seperti konsultan customer service profesional (misal: 'Bila Anda berminat dengan koleksi ini, silakan beri tahu kami agar dapat kami bantu proseskan').
+4. DILARANG KERAS menyuruh pelanggan mengetik perintah tertentu seperti 'Ketik ORDER', 'Ketik MENU', 'Ketik CS', atau sejenisnya. Tawarkan bantuan secara alami seperti konsultan karpet profesional berpengalaman.
 5. Pahami maksud pelanggan dengan cerdas:
-   - Jika pelanggan ingin membeli produk, tanyakan nama dan alamat atau bantu proseskan pembeliannya.
-   - Jika pelanggan mengalami barang pecah atau ingin klaim garansi, sampaikan permohonan maaf dan minta foto bukti barang pecah untuk kami proseskan ganti baru gratis.
-   - Jika pelanggan menyampaikan keluhan atau pengaduan produk, tanggapi dengan empati dan jelaskan bahwa tiket pengaduan akan segera ditindaklanjuti tim kami.
+   - Jika pelanggan ingin memesan karpet atau minta survey lokasi gratis, tanyakan ukuran ruangan atau jenis karpet yang diminati serta nomor kontak dan alamatnya.
+   - Jika pelanggan ingin tahu jadwal buka, lokasi alamat, garansi resmi, promo aktif, atau ingin menyampaikan komplain, berikan penjelasan yang lengkap, transparan, dan menenangkan.
 6. Buat balasan ringkas, padat, dan nyaman dibaca (maksimal 2-3 paragraf singkat).
-7. Jangan pernah mengarang informasi di luar data resmi toko di atas.
-8. FITUR FOTO PRODUK: Jika pelanggan meminta foto/gambar produk (seperti 'kirim foto piring', 'lihat gambar everyday set', 'ada foto produk?', 'spill fotonya', 'tampilkan katalog foto') atau Anda merekomendasikan produk katalog, sertakan tag di paling akhir teks balasan Anda:
+7. FITUR FOTO PRODUK: Jika pelanggan meminta foto/gambar produk karpet atau Anda merekomendasikan produk katalog, sertakan tag di paling akhir teks balasan Anda:
 [KIRIM_FOTO: KODE_PRODUK]
-Contoh:
-- The Everyday Set: [KIRIM_FOTO: EVERYDAY-SET]
-- The Slow Pour-Over Set: [KIRIM_FOTO: POUROVER-SET]
-- The Organic Serving Platter: [KIRIM_FOTO: SERVING-PLATTER]
+Contoh kode:
+- Karpet Masjid Turki: [KIRIM_FOTO: MASJID-TURKI-A]
+- Karpet Persia Tabriz: [KIRIM_FOTO: PERSIA-TABRIZ]
+- Karpet Scandi Nordic: [KIRIM_FOTO: NORDIC-SCANDI]
+- Karpet Bulu Shaggy: [KIRIM_FOTO: SHAGGY-CLOUD]
+- Karpet Tile Kantor: [KIRIM_FOTO: OFFICE-TILE-50]
 - Seluruh koleksi: [KIRIM_FOTO: ALL]
 Sistem bot WhatsApp kami akan otomatis membaca tag tersebut dan mengirimkan foto produk berkualitas tinggi ke WhatsApp pelanggan.`;
   }

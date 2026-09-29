@@ -42,11 +42,24 @@ import {
   Menu,
   ArrowLeft,
   Database,
-  Smartphone
+  Smartphone,
+  Award,
+  Calendar,
+  MapPin,
+  ShieldCheck,
+  Tag,
+  HelpCircle,
+  FileText,
+  PhoneCall,
+  Mail,
+  Map,
+  Flame,
+  Percent,
+  ShieldAlert
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState('chats'); // 'chats' | 'gemini' | 'qr' | 'tickets' | 'catalog' | 'sender' | 'settings'
+  const [activeTab, setActiveTab] = useState('chats'); // 'chats' | 'gemini' | 'qr' | 'tickets' | 'catalog' | 'store_profile' | 'schedule' | 'location' | 'warranty' | 'promo' | 'complaint' | 'sender' | 'settings'
 
   // Mobile Navigation & View States
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -98,17 +111,17 @@ export default function Dashboard() {
   const [aiTestResult, setAiTestResult] = useState(null);
 
   // Gemini Simulator State
-  const [simPrompt, setSimPrompt] = useState('Halo, apakah keramik Harbor tahan dimasukkan ke microwave?');
+  const [simPrompt, setSimPrompt] = useState('Halo, apakah karpet masjid bisa dipotong dan diobras langsung di lokasi?');
   const [simulating, setSimulating] = useState(false);
   const [simHistory, setSimHistory] = useState([
     {
       role: 'user',
-      text: 'Halo, saya mau tanya apakah piring keramiknya aman buat microwave?',
+      text: 'Halo, saya mau tanya apakah karpet masjid Turki bisa dipasang dan diobras di tempat?',
       time: '19:10',
     },
     {
       role: 'ai',
-      text: 'Halo Kak, ya tentu saja. Seluruh produk keramik artisanal dari Harbor 100% food-safe, aman untuk microwave, maupun dishwasher. Apakah ada produk tertentu yang sedang Kakak cari seperti The Everyday Set?',
+      text: 'Halo Kak, ya tentu saja. Teknisi Sultan Carpet Gallery membawa mesin obras portable ke lokasi masjid Anda sehingga pemotongan presisi mengikuti sudut pilar dan arah shaf kiblat dengan sangat rapi. Ada yang dapat kami bantu untuk survey lokasi atau sampel karpet?',
       time: '19:10',
     }
   ]);
@@ -128,14 +141,209 @@ export default function Dashboard() {
 
   // Business Settings State
   const [businessSettings, setBusinessSettings] = useState({
-    name: 'Harbor',
-    tagline: 'Stoneware & Mindful Living',
-    phone: '',
-    email: '',
-    website: '',
-    address: '',
-    hours: ''
+    name: 'Sultan Carpet Gallery',
+    owner: 'H. Ahmad Fauzi & Hj. Maryam',
+    tagline: 'Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan',
+    phone: '0812-9876-5432',
+    phone_cs: '0811-2345-6789',
+    email: 'info@sultancarpet.co.id',
+    website: 'https://sultancarpet.co.id',
+    address: 'Jl. Fatmawati Raya No. 45, Cilandak, Jakarta Selatan 12430',
+    hours: 'Senin - Sabtu: 08:30 - 20:00 WIB\nMinggu & Libur Nasional: 09:00 - 18:00 WIB\nLayanan Survey & Pasang: 24 Jam (By Appointment)'
   });
+
+  // Store Pages State (Nama Toko/Pemilik, Jadwal Kerja, Lokasi Alamat, Garansi, Promo, Komplain)
+  const [ownerSettings, setOwnerSettings] = useState({
+    owner_name: 'H. Ahmad Fauzi & Hj. Maryam',
+    role: 'Founder & Managing Director',
+    experience: '12+ Tahun Melayani Seluruh Nusantara',
+    story: 'Didirikan pada tahun 2012 oleh H. Ahmad Fauzi dan Hj. Maryam, berawal dari kecintaan terhadap keindahan seni rajut karpet Turki dan Persia. Kini Sultan Carpet Gallery telah melayani lebih dari 1.500 masjid di seluruh Indonesia, ribuan hunian mewah, serta ratusan kantor korporat multinasional.',
+    phone: '0812-9876-5432',
+    email: 'owner@sultancarpet.co.id',
+    commitment: 'Kami berkomitmen menghadirkan produk karpet 100% original berkualitas grade A dengan harga transparan, diiringi layanan purnajual terbaik, survey gratis, dan garansi penuh.'
+  });
+
+  const [scheduleSettings, setScheduleSettings] = useState({
+    store_hours: 'Senin - Sabtu: 08:30 - 20:00 WIB\nMinggu & Hari Libur: 09:00 - 18:00 WIB',
+    survey_hours: 'Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB (Gratis Jabodetabek, jadwal fleksibel)',
+    installation_hours: 'Tersedia teknisi 24 jam (bisa malam hari setelah Isya agar tidak mengganggu ibadah/kerja)',
+    shipping_schedule: 'Jabodetabek: Setiap hari kerja (Armada sendiri)\nLuar Kota/Pulau: Ekspedisi kargo terpercaya (Indah, Dakota, Baraka, Sentral)'
+  });
+
+  const [locationSettings, setLocationSettings] = useState({
+    main_showroom: {
+      title: 'Showroom Utama Fatmawati (Pusat Koleksi & Gallery)',
+      address: 'Jl. Fatmawati Raya No. 45, RT.04/RW.02, Cilandak Barat, Cilandak, Jakarta Selatan 12430',
+      phone: '0812-9876-5432',
+      hours: 'Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB',
+      maps_url: 'https://maps.google.com/?q=Fatmawati+Jakarta+Selatan',
+      landmark: '500 meter dari Stasiun MRT Cipete Raya, seberang SPBU Shell Fatmawati'
+    },
+    warehouse: {
+      title: 'Gudang Pusat & Workshop Obras',
+      address: 'Kawasan Industri & Pergudangan Bizpark No. 18, Jl. Raya Narogong KM 7, Bekasi',
+      phone: '0813-8899-7766',
+      hours: 'Senin - Jumat: 08:00 - 17:00 WIB | Sabtu: 08:00 - 14:00 WIB',
+      maps_url: 'https://maps.google.com/?q=Bekasi+Narogong'
+    },
+    items: [
+      {
+        id: 'loc-1',
+        type: 'Showroom Utama',
+        title: 'Showroom Utama Fatmawati (Pusat Koleksi & Gallery)',
+        address: 'Jl. Fatmawati Raya No. 45, RT.04/RW.02, Cilandak Barat, Cilandak, Jakarta Selatan 12430',
+        landmark: '500 meter dari Stasiun MRT Cipete Raya, seberang SPBU Shell Fatmawati',
+        hours: 'Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB',
+        phone: '0812-9876-5432',
+        maps_url: 'https://maps.google.com/?q=Fatmawati+Jakarta+Selatan'
+      },
+      {
+        id: 'loc-2',
+        type: 'Gudang & Obras',
+        title: 'Gudang Pusat & Workshop Obras Bekasi',
+        address: 'Kawasan Industri & Pergudangan Bizpark No. 18, Jl. Raya Narogong KM 7, Bekasi',
+        landmark: 'Kawasan Bizpark Blok B-18, akses kontainer 40ft',
+        hours: 'Senin - Jumat: 08:00 - 17:00 WIB | Sabtu: 08:00 - 14:00 WIB',
+        phone: '0813-8899-7766',
+        maps_url: 'https://maps.google.com/?q=Bekasi+Narogong'
+      },
+      {
+        id: 'loc-3',
+        type: 'Cabang Gallery',
+        title: 'Galeri Sultan Carpet Bandung',
+        address: 'Jl. L.L.R.E. Martadinata (Riau) No. 82, Citarum, Bandung 40115',
+        landmark: 'Samping Heritage Factory Outlet, seberang Bank Mandiri',
+        hours: 'Senin - Minggu: 09:00 - 20:00 WIB',
+        phone: '0813-2233-4455',
+        maps_url: 'https://maps.google.com/?q=Bandung+Riau'
+      },
+      {
+        id: 'loc-4',
+        type: 'Cabang Gallery',
+        title: 'Galeri Sultan Carpet Surabaya',
+        address: 'Jl. Mayjen HR. Muhammad No. 102, Pradahkalikendal, Dukuhpakis, Surabaya 60226',
+        landmark: 'Dekat bundaran HR Muhammad, seberang Mayapada Hospital',
+        hours: 'Senin - Minggu: 09:00 - 20:00 WIB',
+        phone: '0821-3344-5566',
+        maps_url: 'https://maps.google.com/?q=Surabaya+HR+Muhammad'
+      }
+    ]
+  });
+
+  const [warrantySettings, setWarrantySettings] = useState({
+    title: 'Jaminan Kualitas & Garansi Resmi Sultan Carpet',
+    summary: 'Garansi 100% benang asli impor Turki & Persia, garansi obras & pasang 1 tahun, serta garansi tukar baru 14 hari.',
+    items: [
+      {
+        title: 'Garansi 100% Benang Asli Impor',
+        desc: 'Kami menjamin seluruh karpet masjid impor kami 100% didatangkan langsung dari Turki dan karpet klasik dari Persia dengan sertifikat keaslian dan grade resmi.'
+      },
+      {
+        title: 'Garansi Pemasangan & Obras 1 Tahun',
+        desc: 'Garansi jahitan obras rapi dan tidak mudah lepas selama 12 bulan penuh. Jika ada obrasan terbuka atau sambungan bergeser, teknisi kami siap perbaiki gratis.'
+      },
+      {
+        title: 'Garansi Tukar Baru 14 Hari (Cacat Pabrik)',
+        desc: 'Jika ditemukan cacat produksi atau benang cacat saat barang tiba, kami tukar dengan karpet baru tanpa biaya tambahan apapun.'
+      },
+      {
+        title: 'Jaminan Kerapian Potong Presisi',
+        desc: 'Pemotongan karpet mengikuti sudut ruangan, lekukan tiang/pilar masjid, serta kemiringan shaf kiblat dengan toleransi presisi tinggi.'
+      }
+    ],
+    claim_steps: '1. Foto atau videokan bagian karpet yang mengalami kendala\n2. Kirim pesan ke nomor WhatsApp layanan garansi kami atau laporkan melalui menu Komplain\n3. Tim teknisi akan melakukan verifikasi dalam 1x24 jam dan menjadwalkan kunjungan servis'
+  });
+
+  const [promoSettings, setPromoSettings] = useState({
+    title: 'Promo & Penawaran Spesial Karpet',
+    active_promos: [
+      {
+        id: 'PROMO-MASJID',
+        title: 'Promo Berkah Masjid & Musholla',
+        discount: 'Diskon hingga 25% + Gratis Obras Keliling',
+        desc: 'Dapatkan potongan harga spesial untuk pemesanan karpet masjid minimal 5 roll. Gratis obras sambungan, gratis parfum karpet masjid wangi tahan lama, dan subsidi ongkir se-Jawa.',
+        badge: 'Terpopuler',
+        valid_until: 'Akhir Bulan Ini'
+      },
+      {
+        id: 'PROMO-RUMAH',
+        title: 'Promo Gebyar Karpet Rumah Minimalis',
+        discount: 'Cashback Rp 200.000 + Free Keset Mewah',
+        desc: 'Beli karpet ruang tamu Nordic Scandinavia atau Bulu Shaggy, gratis keset kaki memory foam microfiber anti-slip premium.',
+        badge: 'Bestseller',
+        valid_until: 'Stok Terbatas'
+      },
+      {
+        id: 'PROMO-KANTOR',
+        title: 'Paket Renovasi Karpet Kantor & Komersial',
+        discount: 'Gratis Pemasangan untuk Luas > 100 m²',
+        desc: 'Pemesanan karpet tile komersial heavy duty diatas 100 m² mendapatkan gratis lem khusus karpet dan jasa pasang teknisi berpengalaman.',
+        badge: 'Spesial B2B',
+        valid_until: 'Berlaku Selama Kuota Ada'
+      },
+      {
+        id: 'PROMO-SURVEY',
+        title: 'Layanan Survey & Bawa Sampel GRATIS',
+        discount: 'Gratis 100% Tanpa Syarat',
+        desc: 'Bingung memilih motif dan mengukur ruangan? Tim kami siap datang membawakan contoh bahan karpet fisik dan melakukan pengukuran langsung ke lokasi Anda (Jabodetabek).',
+        badge: 'Gratis',
+        valid_until: 'Setiap Hari'
+      }
+    ]
+  });
+
+  const [complaintSettings, setComplaintSettings] = useState({
+    title: 'Pusat Layanan Pengaduan & Komplain Pelanggan',
+    sla: 'Respon Cepat Maksimal 1x24 Jam Kerja',
+    contact_manager: '0811-2345-6789 (Hotline Layanan Konsumen)',
+    workflow: [
+      'Langkah 1: Sampaikan keluhan Anda melalui WhatsApp bot, formulir web, atau telepon langsung.',
+      'Langkah 2: Sistem kami otomatis menerbitkan Nomor Tiket Komplain resmi (contoh: #TK-XXXXX).',
+      'Langkah 3: Customer Care Officer kami memverifikasi laporan dan menghubungi Anda dalam 1x24 jam.',
+      'Langkah 4: Jika diperlukan perbaikan fisik/tukar karpet, tim teknisi akan dijadwalkan datang ke lokasi Anda.',
+      'Langkah 5: Tiket selesai setelah Anda merasa puas dengan penyelesaian yang diberikan.'
+    ]
+  });
+
+  // Complaint Submission Form State
+  const [showComplaintModal, setShowComplaintModal] = useState(false);
+  const [complaintForm, setComplaintForm] = useState({
+    name: '',
+    phone: '',
+    category: 'Pengaduan Produk',
+    issueType: 'Kualitas / Obras Karpet',
+    description: '',
+    priority: 'Tinggi'
+  });
+  const [submittingComplaint, setSubmittingComplaint] = useState(false);
+
+  // Promo Modal Form State
+  const [showPromoModal, setShowPromoModal] = useState(false);
+  const [promoForm, setPromoForm] = useState({
+    id: '',
+    title: '',
+    discount: '',
+    desc: '',
+    badge: 'Spesial',
+    valid_until: 'Akhir Bulan'
+  });
+  const [editingPromoIndex, setEditingPromoIndex] = useState(null);
+
+  // Location Modal Form State
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [editingLocationIndex, setEditingLocationIndex] = useState(null);
+  const [locationForm, setLocationForm] = useState({
+    id: '',
+    type: 'Showroom Utama',
+    title: '',
+    address: '',
+    landmark: '',
+    hours: 'Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB',
+    phone: '0812-9876-5432',
+    maps_url: ''
+  });
+
+  const [savingStoreInfo, setSavingStoreInfo] = useState(false);
 
   // Product Catalog State & Modal
   const [showProductModal, setShowProductModal] = useState(false);
@@ -147,10 +355,10 @@ export default function Dashboard() {
     subtitle: '',
     footer: '',
     url: '',
-    image: 'catalog/everyday-set.jpg',
+    image: 'catalog/karpet-masjid-turki.jpg',
     imageBase64: '',
   });
-  const [imagePreview, setImagePreview] = useState('/catalog/everyday-set.jpg');
+  const [imagePreview, setImagePreview] = useState('/catalog/karpet-masjid-turki.jpg');
   const [savingProduct, setSavingProduct] = useState(false);
   const [deletingProductId, setDeletingProductId] = useState(null);
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -465,11 +673,221 @@ export default function Dashboard() {
       if (data.business) {
         setBusinessSettings(data.business);
       }
+      if (data.owner_info) {
+        setOwnerSettings(data.owner_info);
+      }
+      if (data.schedule_info) {
+        setScheduleSettings(data.schedule_info);
+      }
+      if (data.location_info) {
+        const locInfo = data.location_info;
+        if (!locInfo.items || locInfo.items.length === 0) {
+          locInfo.items = [
+            {
+              id: 'loc-1',
+              type: 'Showroom Utama',
+              title: locInfo.main_showroom?.title || 'Showroom Utama Fatmawati (Pusat Koleksi & Gallery)',
+              address: locInfo.main_showroom?.address || 'Jl. Fatmawati Raya No. 45, Cilandak, Jakarta Selatan 12430',
+              landmark: locInfo.main_showroom?.landmark || '500 meter dari Stasiun MRT Cipete Raya',
+              hours: locInfo.main_showroom?.hours || 'Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB',
+              phone: locInfo.main_showroom?.phone || '0812-9876-5432',
+              maps_url: locInfo.main_showroom?.maps_url || 'https://maps.google.com/?q=Fatmawati+Jakarta+Selatan'
+            },
+            {
+              id: 'loc-2',
+              type: 'Gudang & Obras',
+              title: locInfo.warehouse?.title || 'Gudang Pusat & Workshop Obras Bekasi',
+              address: locInfo.warehouse?.address || 'Kawasan Industri & Pergudangan Bizpark No. 18, Jl. Raya Narogong KM 7, Bekasi',
+              landmark: 'Kawasan Bizpark Blok B-18, akses kontainer 40ft',
+              hours: locInfo.warehouse?.hours || 'Senin - Jumat: 08:00 - 17:00 WIB | Sabtu: 08:00 - 14:00 WIB',
+              phone: locInfo.warehouse?.phone || '0813-8899-7766',
+              maps_url: locInfo.warehouse?.maps_url || 'https://maps.google.com/?q=Bekasi+Narogong'
+            }
+          ];
+        }
+        setLocationSettings(locInfo);
+      }
+      if (data.warranty_info) {
+        setWarrantySettings(data.warranty_info);
+      }
+      if (data.promo_info) {
+        setPromoSettings(data.promo_info);
+      }
+      if (data.complaint_info) {
+        setComplaintSettings(data.complaint_info);
+      }
     } catch (err) {
       console.error('Error fetching config:', err);
     } finally {
       setLoadingConfig(false);
     }
+  };
+
+  const handleSaveStoreSection = async (sectionKey, sectionData, successMessage) => {
+    if (!config) return;
+    const updated = {
+      ...config,
+      [sectionKey]: sectionData,
+    };
+    setSavingStoreInfo(true);
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConfig(updated);
+        showToastMsg(successMessage || 'Informasi toko berhasil disimpan!', 'success');
+      } else {
+        showToastMsg(data.error || 'Gagal menyimpan', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Error: ' + err.message, 'error');
+    } finally {
+      setSavingStoreInfo(false);
+    }
+  };
+
+  const handleCreateComplaintTicket = async (e) => {
+    if (e) e.preventDefault();
+    if (!complaintForm.name.trim() || !complaintForm.description.trim()) {
+      showToastMsg('Nama dan rincian keluhan wajib diisi!', 'error');
+      return;
+    }
+    setSubmittingComplaint(true);
+    try {
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender: complaintForm.phone || 'Tamu Web',
+          name: complaintForm.name,
+          contact: complaintForm.phone || '-',
+          description: `[${complaintForm.issueType}] ${complaintForm.description}`,
+          category: complaintForm.category || 'Pengaduan Produk',
+          priority: complaintForm.priority || 'Tinggi',
+          status: 'Open',
+        }),
+      });
+      const created = await res.json();
+      if (created && created.id) {
+        setTickets((prev) => [created, ...prev]);
+        showToastMsg(`Tiket komplain #${created.id} berhasil diterbitkan! Tim Customer Care akan segera merespons.`, 'success');
+        setComplaintForm({
+          name: '',
+          phone: '',
+          category: 'Pengaduan Produk',
+          issueType: 'Kualitas / Obras Karpet',
+          description: '',
+          priority: 'Tinggi',
+        });
+        setShowComplaintModal(false);
+      }
+    } catch (err) {
+      showToastMsg('Gagal membuat tiket: ' + err.message, 'error');
+    } finally {
+      setSubmittingComplaint(false);
+    }
+  };
+
+  const handleSavePromo = async (e) => {
+    if (e) e.preventDefault();
+    if (!promoForm.title.trim() || !promoForm.discount.trim()) {
+      showToastMsg('Judul promo dan penawaran wajib diisi!', 'error');
+      return;
+    }
+    const currentPromos = [...(promoSettings.active_promos || [])];
+    if (editingPromoIndex !== null) {
+      currentPromos[editingPromoIndex] = promoForm;
+    } else {
+      const newId = `PROMO-${Date.now().toString().slice(-4)}`;
+      currentPromos.push({ ...promoForm, id: promoForm.id || newId });
+    }
+    const updatedPromoSettings = { ...promoSettings, active_promos: currentPromos };
+    setPromoSettings(updatedPromoSettings);
+    await handleSaveStoreSection('promo_info', updatedPromoSettings, 'Daftar promo berhasil diperbarui!');
+    setShowPromoModal(false);
+    setEditingPromoIndex(null);
+  };
+
+  const handleDeletePromo = async (indexToDelete) => {
+    if (!confirm('Hapus promo ini?')) return;
+    const currentPromos = (promoSettings.active_promos || []).filter((_, idx) => idx !== indexToDelete);
+    const updatedPromoSettings = { ...promoSettings, active_promos: currentPromos };
+    setPromoSettings(updatedPromoSettings);
+    await handleSaveStoreSection('promo_info', updatedPromoSettings, 'Promo berhasil dihapus!');
+  };
+
+  const handleOpenAddLocation = () => {
+    setEditingLocationIndex(null);
+    setLocationForm({
+      id: `loc-${Date.now().toString().slice(-4)}`,
+      type: 'Showroom Utama',
+      title: '',
+      address: '',
+      landmark: '',
+      hours: 'Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB',
+      phone: '0812-9876-5432',
+      maps_url: ''
+    });
+    setShowLocationModal(true);
+  };
+
+  const handleOpenEditLocation = (loc, index) => {
+    setEditingLocationIndex(index);
+    setLocationForm({
+      id: loc.id || `loc-${index}`,
+      type: loc.type || 'Showroom Utama',
+      title: loc.title || loc.name || '',
+      address: loc.address || '',
+      landmark: loc.landmark || '',
+      hours: loc.hours || '',
+      phone: loc.phone || '',
+      maps_url: loc.maps_url || ''
+    });
+    setShowLocationModal(true);
+  };
+
+  const handleSaveLocation = async (e) => {
+    if (e) e.preventDefault();
+    if (!locationForm.title.trim() || !locationForm.address.trim()) {
+      showToastMsg('Nama lokasi dan alamat lengkap wajib diisi!', 'error');
+      return;
+    }
+
+    const currentItems = [...(locationSettings.items || [])];
+    if (editingLocationIndex !== null && editingLocationIndex >= 0) {
+      currentItems[editingLocationIndex] = locationForm;
+    } else {
+      currentItems.push(locationForm);
+    }
+
+    const updatedLocationSettings = {
+      ...locationSettings,
+      items: currentItems,
+      main_showroom: currentItems[0] || locationSettings.main_showroom,
+      warehouse: currentItems.find((item) => item.type && item.type.includes('Gudang')) || currentItems[1] || locationSettings.warehouse
+    };
+
+    setLocationSettings(updatedLocationSettings);
+    await handleSaveStoreSection('location_info', updatedLocationSettings, 'Data lokasi & alamat berhasil disimpan!');
+    setShowLocationModal(false);
+    setEditingLocationIndex(null);
+  };
+
+  const handleDeleteLocation = async (indexToDelete, locTitle) => {
+    if (!confirm(`Hapus lokasi "${locTitle || 'ini'}"?`)) return;
+    const currentItems = (locationSettings.items || []).filter((_, idx) => idx !== indexToDelete);
+    const updatedLocationSettings = {
+      ...locationSettings,
+      items: currentItems,
+      main_showroom: currentItems[0] || locationSettings.main_showroom,
+      warehouse: currentItems.find((item) => item.type && item.type.includes('Gudang')) || currentItems[1] || locationSettings.warehouse
+    };
+    setLocationSettings(updatedLocationSettings);
+    await handleSaveStoreSection('location_info', updatedLocationSettings, 'Lokasi berhasil dihapus!');
   };
 
   const fetchTickets = async () => {
@@ -720,16 +1138,16 @@ export default function Dashboard() {
       subtitle: '',
       footer: '',
       url: '',
-      image: 'catalog/everyday-set.jpg',
+      image: 'catalog/karpet-masjid-turki.jpg',
       imageBase64: '',
     });
-    setImagePreview('/catalog/everyday-set.jpg');
+    setImagePreview('/catalog/karpet-masjid-turki.jpg');
     setShowProductModal(true);
   };
 
   const handleOpenEditProduct = (product) => {
     setEditingProduct(product);
-    const cleanImg = (product.image || 'catalog/everyday-set.jpg').replace(/^assets\//, '');
+    const cleanImg = (product.image || 'catalog/karpet-masjid-turki.jpg').replace(/^assets\//, '');
     setProductForm({
       title: product.title || '',
       code: product.code || '',
@@ -737,7 +1155,7 @@ export default function Dashboard() {
       subtitle: product.subtitle || '',
       footer: product.footer || '',
       url: product.url || '',
-      image: product.image || 'catalog/everyday-set.jpg',
+      image: product.image || 'catalog/karpet-masjid-turki.jpg',
       imageBase64: '',
     });
     setImagePreview(cleanImg.startsWith('http') || cleanImg.startsWith('data:') ? cleanImg : `/${cleanImg}`);
@@ -1103,12 +1521,12 @@ export default function Dashboard() {
               {/* Drawer Header */}
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold text-lg">
-                    🏺
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold text-lg">
+                    🕌
                   </div>
                   <div>
-                    <h1 className="font-bold text-base text-white">Harbor CS</h1>
-                    <p className="text-[11px] text-slate-400">WhatsApp AI Assistant</p>
+                    <h1 className="font-bold text-base text-white">Sultan Carpet</h1>
+                    <p className="text-[11px] text-slate-400">Pusat Karpet Masjid & Mewah</p>
                   </div>
                 </div>
                 <button
@@ -1120,13 +1538,13 @@ export default function Dashboard() {
               </div>
 
               {/* Navigation Items */}
-              <nav className="space-y-1.5">
+              <nav className="space-y-1 overflow-y-auto max-h-[calc(100vh-210px)] pr-1">
                 <button
                   onClick={() => {
                     setActiveTab('chats');
                     setMobileDrawerOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
                     activeTab === 'chats'
                       ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -1148,7 +1566,7 @@ export default function Dashboard() {
                     setActiveTab('gemini');
                     setMobileDrawerOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
                     activeTab === 'gemini'
                       ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -1170,7 +1588,7 @@ export default function Dashboard() {
                     setActiveTab('qr');
                     setMobileDrawerOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
                     activeTab === 'qr'
                       ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -1189,10 +1607,128 @@ export default function Dashboard() {
 
                 <button
                   onClick={() => {
+                    setActiveTab('catalog');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'catalog'
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>Katalog Karpet</span>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
+                    {config?.catalog?.length || 5}
+                  </span>
+                </button>
+
+                <div className="pt-2 pb-1 px-3">
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Informasi Toko Karpet</p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('store_profile');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'store_profile'
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Award className="w-4 h-4 text-emerald-400" />
+                  <span>Profil & Pemilik Toko</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('schedule');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'schedule'
+                      ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Calendar className="w-4 h-4 text-sky-400" />
+                  <span>Jadwal & Jam Kerja</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('location');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'location'
+                      ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <MapPin className="w-4 h-4 text-amber-400" />
+                  <span>Lokasi & Alamat</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('warranty');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'warranty'
+                      ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                  <span>Ketentuan Garansi</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('promo');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'promo'
+                      ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Tag className="w-4 h-4 text-rose-400" />
+                  <span>Promo & Diskon</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('complaint');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'complaint'
+                      ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <ShieldAlert className="w-4 h-4 text-purple-400" />
+                  <span>Pusat Komplain & CS</span>
+                </button>
+
+                <div className="pt-2 pb-1 px-3">
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Layanan & Sistem</p>
+                </div>
+
+                <button
+                  onClick={() => {
                     setActiveTab('tickets');
                     setMobileDrawerOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
                     activeTab === 'tickets'
                       ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -1209,30 +1745,10 @@ export default function Dashboard() {
 
                 <button
                   onClick={() => {
-                    setActiveTab('catalog');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-                    activeTab === 'catalog'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <ShoppingBag className="w-4 h-4" />
-                    <span>Katalog Produk</span>
-                  </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                    {config?.catalog?.length || 3}
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => {
                     setActiveTab('sender');
                     setMobileDrawerOpen(false);
                   }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
                     activeTab === 'sender'
                       ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -1247,14 +1763,14 @@ export default function Dashboard() {
                     setActiveTab('settings');
                     setMobileDrawerOpen(false);
                   }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
                     activeTab === 'settings'
                       ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
                   <Settings className="w-4 h-4" />
-                  <span>Pengaturan & Database</span>
+                  <span>Pengaturan Bisnis</span>
                 </button>
               </nav>
             </div>
@@ -1303,39 +1819,39 @@ export default function Dashboard() {
 
       {/* DESKTOP SIDEBAR NAVIGATION */}
       <aside className="hidden md:flex md:w-72 shrink-0 border-r border-slate-800/80 bg-[#0f172a]/70 backdrop-blur-xl flex-col justify-between p-4">
-        <div>
+        <div className="flex flex-col h-[calc(100vh-130px)]">
           {/* Logo & Brand */}
-          <div className="flex items-center gap-3.5 px-3 py-3 mb-6 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-sky-500/5 to-transparent border border-emerald-500/20">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold text-lg">
-              🏺
+          <div className="flex items-center gap-3.5 px-3 py-3 mb-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-amber-500/5 to-transparent border border-emerald-500/20 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold text-lg">
+              🕌
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h1 className="font-bold text-base tracking-wide text-white">Harbor CS</h1>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Gemini
+                <h1 className="font-bold text-base tracking-wide text-white">Sultan Carpet</h1>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  Gallery
                 </span>
               </div>
-              <p className="text-xs text-slate-400">WhatsApp AI Assistant</p>
+              <p className="text-xs text-slate-400">Pusat Karpet Masjid & Mewah</p>
             </div>
           </div>
 
           {/* Navigation Items */}
-          <nav className="space-y-1.5">
+          <nav className="space-y-1 overflow-y-auto pr-1 flex-1">
             <button
               onClick={() => setActiveTab('chats')}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                 activeTab === 'chats'
                   ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 <MessageSquare className="w-4 h-4" />
                 <span>Obrolan WhatsApp</span>
               </div>
               {conversations.length > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
+                <span className="text-[11px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
                   {conversations.length}
                 </span>
               )}
@@ -1343,17 +1859,17 @@ export default function Dashboard() {
 
             <button
               onClick={() => setActiveTab('gemini')}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                 activeTab === 'gemini'
                   ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm shadow-purple-500/10'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 <Sparkles className="w-4 h-4 text-purple-400" />
                 <span>AI Studio (Groq / Gemini)</span>
               </div>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
+              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
                 aiProvider === 'groq' ? 'bg-amber-500/30 text-amber-200' : 'bg-purple-500/30 text-purple-200'
               }`}>
                 {aiProvider === 'groq' ? '⚡ Groq' : '🔮 Gemini'}
@@ -1362,13 +1878,13 @@ export default function Dashboard() {
 
             <button
               onClick={() => setActiveTab('qr')}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                 activeTab === 'qr'
                   ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 <QrCode className="w-4 h-4" />
                 <span>Koneksi WhatsApp</span>
               </div>
@@ -1380,42 +1896,129 @@ export default function Dashboard() {
             </button>
 
             <button
-              onClick={() => setActiveTab('tickets')}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                activeTab === 'tickets'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Ticket className="w-4 h-4" />
-                <span>Tiket Layanan</span>
-              </div>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                {tickets.length}
-              </span>
-            </button>
-
-            <button
               onClick={() => setActiveTab('catalog')}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                 activeTab === 'catalog'
                   ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 <ShoppingBag className="w-4 h-4" />
-                <span>Katalog Produk</span>
+                <span>Katalog Karpet</span>
               </div>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                {config?.catalog?.length || 3}
+              <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 font-semibold">
+                {config?.catalog?.length || 5}
+              </span>
+            </button>
+
+            <div className="pt-2 pb-1 px-3">
+              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Informasi Toko Resmi</p>
+            </div>
+
+            <button
+              onClick={() => setActiveTab('store_profile')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'store_profile'
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <Award className="w-4 h-4 text-emerald-400" />
+              <span>Profil & Pemilik Toko</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('schedule')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'schedule'
+                  ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <Calendar className="w-4 h-4 text-sky-400" />
+              <span>Jadwal & Jam Kerja</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('location')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'location'
+                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <MapPin className="w-4 h-4 text-amber-400" />
+              <span>Lokasi & Alamat</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('warranty')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'warranty'
+                  ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-indigo-400" />
+              <span>Ketentuan Garansi</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('promo')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'promo'
+                  ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <Tag className="w-4 h-4 text-rose-400" />
+              <span>Promo & Diskon</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('complaint')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'complaint'
+                  ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-purple-400" />
+                <span>Pusat Komplain & CS</span>
+              </div>
+              {tickets.filter(t => (t.category || '').includes('Pengaduan') || (t.category || '').includes('Garansi')).length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold">
+                  {tickets.filter(t => (t.category || '').includes('Pengaduan') || (t.category || '').includes('Garansi')).length}
+                </span>
+              )}
+            </button>
+
+            <div className="pt-2 pb-1 px-3">
+              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Layanan & Sistem</p>
+            </div>
+
+            <button
+              onClick={() => setActiveTab('tickets')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'tickets'
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Ticket className="w-4 h-4" />
+                <span>Tiket Layanan</span>
+              </div>
+              <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 font-semibold">
+                {tickets.length}
               </span>
             </button>
 
             <button
               onClick={() => setActiveTab('sender')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                 activeTab === 'sender'
                   ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -1427,7 +2030,7 @@ export default function Dashboard() {
 
             <button
               onClick={() => setActiveTab('settings')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                 activeTab === 'settings'
                   ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -1441,17 +2044,6 @@ export default function Dashboard() {
 
         {/* Status Pill in Footer */}
         <div className="pt-4 border-t border-slate-800/80 space-y-2">
-          {/* Prisma Status Indicator */}
-          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
-            <div className="flex items-center gap-2">
-              <Database className={`w-3.5 h-3.5 ${dbStatus.connected ? 'text-emerald-400' : 'text-indigo-400'}`} />
-              <span className="text-slate-300 text-[11px]">
-                {dbStatus.connected ? 'Prisma Aktif' : 'Prisma ORM Ready'}
-              </span>
-            </div>
-            <span className={`w-2 h-2 rounded-full ${dbStatus.connected ? 'bg-emerald-400' : 'bg-indigo-400'}`} />
-          </div>
-
           <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
             <div className="flex items-center gap-2.5">
               <span
@@ -1499,26 +2091,12 @@ export default function Dashboard() {
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2">
-              <span className="text-lg">🏺</span>
-              <h1 className="font-bold text-sm text-white">Harbor CS</h1>
+              <span className="text-lg">👑</span>
+              <h1 className="font-bold text-sm text-white">Sultan Carpet CS</h1>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Prisma Mini Pill */}
-            <div
-              onClick={() => setActiveTab('settings')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-mono cursor-pointer ${
-                dbStatus.connected
-                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-                  : 'bg-indigo-950/40 border-indigo-500/30 text-indigo-300'
-              }`}
-              title={dbStatus.connected ? 'Prisma Terhubung' : 'Prisma ORM Ready (Klik untuk setting)'}
-            >
-              <Database className="w-3 h-3" />
-              <span>{dbStatus.connected ? 'Prisma OK' : 'Prisma'}</span>
-            </div>
-
             {/* WA Status Dot */}
             <div
               onClick={() => setActiveTab('qr')}
@@ -1547,42 +2125,19 @@ export default function Dashboard() {
               {activeTab === 'gemini' && 'AI Studio & Playground (Groq & Google Gemini)'}
               {activeTab === 'qr' && 'Koneksi & QR Code WhatsApp'}
               {activeTab === 'tickets' && 'Daftar Tiket Layanan Pelanggan'}
-              {activeTab === 'catalog' && 'Katalog Produk & Preview Kartu'}
+              {activeTab === 'catalog' && 'Katalog Karpet Sultan & Koleksi Lengkap'}
+              {activeTab === 'store_profile' && 'Profil Toko & Pemilik Karpet'}
+              {activeTab === 'schedule' && 'Jadwal & Jam Operasional Toko'}
+              {activeTab === 'location' && 'Alamat & Lokasi Showroom'}
+              {activeTab === 'warranty' && 'Garansi & Kebijakan Klaim Karpet'}
+              {activeTab === 'promo' && 'Promo & Penawaran Diskon Aktif'}
+              {activeTab === 'complaint' && 'Pusat Pengaduan & Layanan Komplain'}
               {activeTab === 'sender' && 'Kirim Pesan WhatsApp Langsung'}
-              {activeTab === 'settings' && 'Pengaturan Bisnis & Database'}
+              {activeTab === 'settings' && 'Pengaturan Bisnis'}
             </h2>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-mono">
-              Next.js 16 • Tailwind v4
-            </span>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Prisma Status Badge */}
-            <div
-              onClick={() => setActiveTab('settings')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition ${
-                dbStatus.connected
-                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300 hover:bg-emerald-900/40'
-                  : 'bg-indigo-950/40 border-indigo-500/30 text-indigo-300 hover:bg-indigo-900/40'
-              }`}
-              title="Klik untuk membuka konfigurasi database Prisma"
-            >
-              <Database className="w-3.5 h-3.5 text-indigo-400" />
-              <span>{dbStatus.connected ? 'Prisma Terhubung' : 'Prisma ORM Ready'}</span>
-              <span className={`w-1.5 h-1.5 rounded-full ${dbStatus.connected ? 'bg-emerald-400' : 'bg-indigo-400'}`}></span>
-            </div>
-
-            {/* AI Status Badge */}
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${
-              aiProvider === 'groq' 
-                ? 'bg-amber-950/40 border-amber-500/30 text-amber-200' 
-                : 'bg-purple-950/40 border-purple-500/30 text-purple-200'
-            }`}>
-              <Zap className={`w-3.5 h-3.5 ${aiProvider === 'groq' ? 'text-amber-400' : 'text-purple-400'}`} />
-              <span>{aiProvider === 'groq' ? `Groq: ${groqModel}` : `Gemini: ${geminiModel}`}</span>
-              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${aiProvider === 'groq' ? 'bg-amber-400' : 'bg-purple-400'}`}></span>
-            </div>
-
             {/* Restart Button */}
             <button
               onClick={handleRestart}
@@ -2009,12 +2564,12 @@ export default function Dashboard() {
                                   {isAi ? (
                                     <span className="text-purple-300 flex items-center gap-1">
                                       <Sparkles className="w-3 h-3 text-purple-400" />
-                                      {msg.senderName || 'Harbor AI'}
+                                      {msg.senderName || 'Sultan Carpet AI'}
                                     </span>
                                   ) : isAdmin ? (
                                     <span className="text-sky-300">Admin (Balasan Manual)</span>
                                   ) : (
-                                    <span className="text-emerald-300">Harbor Bot</span>
+                                    <span className="text-emerald-300">Sultan Carpet Bot</span>
                                   )}
                                 </div>
                               )}
@@ -2024,7 +2579,7 @@ export default function Dashboard() {
                                 <div className="mb-2 rounded-xl overflow-hidden border border-slate-700/60 bg-slate-950/60 max-w-xs shadow-md">
                                   <img
                                     src={msg.image.startsWith('/') ? msg.image : `/${msg.image}`}
-                                    alt="Foto Produk Harbor"
+                                    alt="Foto Produk Karpet"
                                     className="w-full h-44 object-cover hover:scale-105 transition-transform duration-300"
                                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                   />
@@ -2063,10 +2618,11 @@ export default function Dashboard() {
                         Template:
                       </span>
                       {[
-                        { label: 'Sapa Pelanggan', text: 'Halo Kak, ada yang bisa kami bantu seputar produk keramik Harbor?' },
-                        { label: 'Kirim Info Katalog', text: 'Berikut tautan katalog stoneware artisanal Harbor. Silakan pilih produk yang diminati agar dapat kami bantu proses pemesanannya.' },
-                        { label: 'Lokasi Showroom', text: 'Showroom fisik Harbor berlokasi di Jakarta Senopati, Bandung Riau, dan Bali Canggu.' },
-                        { label: 'Garansi Pecah', text: 'Seluruh pesanan Harbor dilindungi Garansi 100% Ganti Baru Gratis jika terjadi kerusakan saat pengiriman.' },
+                        { label: 'Sapa Pelanggan', text: 'Halo Kak, selamat datang di Sultan Carpet Gallery. Ada yang bisa kami bantu seputar koleksi karpet kami?' },
+                        { label: 'Kirim Info Katalog', text: 'Berikut tautan katalog karpet impor Turki, Persia, dan modern kami. Silakan pilih motif atau ukuran yang diminati agar dapat kami buatkan penawaran terbaik.' },
+                        { label: 'Lokasi Showroom', text: 'Showroom fisik kami berlokasi di Jl. Fatmawati Raya No. 45 Jakarta Selatan, Bandung Riau, dan Surabaya HR Muhammad.' },
+                        { label: 'Garansi Karpet', text: 'Seluruh karpet Sultan Carpet bergaransi 100% benang impor asli, garansi obras & pasang 1 tahun, serta garansi tukar cacat pabrik 14 hari.' },
+                        { label: 'Survey Gratis', text: 'Kami menyediakan layanan survey dan bawa sampel bahan gratis langsung ke lokasi Anda se-Jabodetabek.' },
                         { label: 'Hubungkan CS', text: 'Baik Kak, pesan Anda sedang kami teruskan ke tim Customer Service kami.' },
                       ].map((chip, i) => (
                         <button
@@ -2374,7 +2930,7 @@ export default function Dashboard() {
                         Simulator Percakapan AI ({aiProvider === 'groq' ? 'Groq LPU' : 'Gemini'})
                       </h3>
                       <p className="text-xs text-slate-400">
-                        Uji respons langsung dengan pengetahuan katalog stoneware & showroom Harbor
+                        Uji respons langsung dengan pengetahuan katalog karpet & showroom Sultan Carpet Gallery
                       </p>
                     </div>
                   </div>
@@ -2396,7 +2952,7 @@ export default function Dashboard() {
                       <div className="text-[10px] text-slate-500 mb-1 px-1">
                         {item.role === 'user' 
                           ? 'Simulasi Pelanggan' 
-                          : `Harbor AI (${item.provider === 'groq' ? '⚡ Groq' : '🔮 Gemini'})`} • {item.time}
+                          : `Sultan Carpet AI (${item.provider === 'groq' ? '⚡ Groq' : '🔮 Gemini'})`} • {item.time}
                       </div>
                       <div
                         className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-md ${
@@ -2843,17 +3399,18 @@ export default function Dashboard() {
           {/* TAB 5: CATALOG */}
           {activeTab === 'catalog' && (
             <div className="space-y-6">
+
               {/* Header with Title, Search, and Tambah Produk Button */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
                 <div>
                   <div className="flex items-center gap-2.5">
-                    <h3 className="text-lg font-bold text-white">Koleksi Produk Artisanal Harbor</h3>
+                    <h3 className="text-lg font-bold text-white">Koleksi Karpet Eksklusif Sultan Carpet Gallery</h3>
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
-                      {config?.catalog?.length || 0} Produk
+                      {config?.catalog?.length || 0} Produk Karpet
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Produk stoneware yang terintegrasi otomatis dengan bot WhatsApp dan memori AI
+                    Koleksi karpet masjid, permadani persia, dan karpet modern yang terintegrasi otomatis dengan bot WhatsApp dan memori AI
                   </p>
                 </div>
 
@@ -2864,7 +3421,7 @@ export default function Dashboard() {
                       type="text"
                       value={catalogSearch}
                       onChange={(e) => setCatalogSearch(e.target.value)}
-                      placeholder="Cari produk..."
+                      placeholder="Cari karpet..."
                       className="rounded-xl bg-slate-900 border border-slate-700/80 pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-44"
                     />
                   </div>
@@ -2898,7 +3455,7 @@ export default function Dashboard() {
                         {catalogSearch ? 'Tidak ada produk yang cocok dengan pencarian' : 'Belum ada produk di katalog'}
                       </p>
                       <p className="text-xs text-slate-500 mt-1 mb-4">
-                        Klik tombol di bawah untuk menambahkan produk stoneware baru ke katalog Anda.
+                        Klik tombol di bawah untuk menambahkan produk karpet baru ke katalog Anda.
                       </p>
                       <button
                         onClick={handleOpenAddProduct}
@@ -2914,7 +3471,7 @@ export default function Dashboard() {
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredCatalog.map((item) => {
-                      const cleanImg = (item.image || 'catalog/everyday-set.jpg').replace(/^assets\//, '');
+                      const cleanImg = (item.image || 'catalog/karpet-masjid-turki.jpg').replace(/^assets\//, '');
                       const imgSrc = cleanImg.startsWith('http') || cleanImg.startsWith('data:') ? cleanImg : `/${cleanImg}`;
 
                       return (
@@ -2927,7 +3484,7 @@ export default function Dashboard() {
                               src={imgSrc}
                               alt={item.title}
                               onError={(e) => {
-                                e.target.src = '/catalog/everyday-set.jpg';
+                                e.target.src = '/catalog/karpet-masjid-turki.jpg';
                               }}
                               className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                             />
@@ -2999,6 +3556,1004 @@ export default function Dashboard() {
                   </div>
                 );
               })()}
+            </div>
+          )}
+
+          
+          {/* TAB: STORE PROFILE & OWNER */}
+          {activeTab === 'store_profile' && (
+            <div className="space-y-6">
+
+              {/* Hero Banner with Store Showroom Image */}
+              <div className="relative rounded-3xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
+                <div className="absolute inset-0 z-0">
+                  <img
+                    src="/images/toko-karpet-showroom.jpg"
+                    alt="Sultan Carpet Gallery Showroom"
+                    className="w-full h-full object-cover opacity-30 filter saturate-150"
+                    onError={(e) => { e.currentTarget.src = '/catalog/karpet-masjid-turki.jpg'; }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#090d16] via-[#090d16]/90 to-transparent"></div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#090d16] via-transparent to-transparent"></div>
+                </div>
+
+                <div className="relative z-10 p-6 sm:p-10 space-y-4 max-w-3xl">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold backdrop-blur-md">
+                    <Award className="w-3.5 h-3.5" />
+                    <span>GALERI KARPET PREMIUM SEJAK 2012</span>
+                  </div>
+                  <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
+                    Sultan Carpet Gallery
+                  </h2>
+                  <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
+                    Pusat distribusi karpet masjid impor Turki & permadani klasik Persia nomor satu di Indonesia.
+                    Didirikan dan dipimpin langsung oleh <strong className="text-emerald-400 font-bold">{ownerSettings.owner_name}</strong> ({ownerSettings.role}).
+                  </p>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                    <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md">
+                      <p className="text-emerald-400 font-bold text-lg sm:text-xl font-mono">12+ Thn</p>
+                      <p className="text-slate-400 text-xs">Pengalaman Melayani</p>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md">
+                      <p className="text-emerald-400 font-bold text-lg sm:text-xl font-mono">1.500+</p>
+                      <p className="text-slate-400 text-xs">Masjid Terpasang</p>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md">
+                      <p className="text-emerald-400 font-bold text-lg sm:text-xl font-mono">10.000+</p>
+                      <p className="text-slate-400 text-xs">Pelanggan Puas</p>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md">
+                      <p className="text-emerald-400 font-bold text-lg sm:text-xl font-mono">100%</p>
+                      <p className="text-slate-400 text-xs">Benang Asli Grade A</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2-Column: Owner Story & Direct Live Editor Form */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left Column: Story & Direct Details */}
+                <div className="lg:col-span-7 space-y-6">
+                  {/* Story Card */}
+                  <div className="p-6 sm:p-7 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                    <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                        <Award className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-white text-base">Sejarah & Filosofi Pendiri</h3>
+                        <p className="text-xs text-slate-400">Dedikasi menghadirkan kemuliaan sajadah & kehangatan hunian</p>
+                      </div>
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                      {ownerSettings.story}
+                    </p>
+                    <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-200 text-xs leading-relaxed space-y-1">
+                      <p className="font-bold flex items-center gap-1.5 text-emerald-300">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Komitmen Manajemen:</span>
+                      </p>
+                      <p>{ownerSettings.commitment}</p>
+                    </div>
+                  </div>
+
+                  {/* Highlights / Features Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/50 space-y-2">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center font-semibold text-xs">
+                        🕌
+                      </div>
+                      <h4 className="font-bold text-white text-sm">Spesialis Karpet Masjid</h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Layanan survey gratis, pembawaan sampel bahan fisik, dan pengukuran presisi dengan akurasi arah kiblat.
+                      </p>
+                    </div>
+                    <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/50 space-y-2">
+                      <div className="w-8 h-8 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center font-semibold text-xs">
+                        👑
+                      </div>
+                      <h4 className="font-bold text-white text-sm">Permadani Klasik Persia</h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Koleksi eksklusif sutra alami dan wool Tabriz bernilai seni tinggi, tahan puluhan tahun dengan sertifikat.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Direct Contact & Live Settings Form */}
+                <div className="lg:col-span-5 space-y-6">
+                  {/* Contact Owner Quick Card */}
+                  <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                    <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                      <PhoneCall className="w-4 h-4 text-emerald-400" />
+                      <span>Kontak Pemilik & Kantor Pusat</span>
+                    </h3>
+                    <div className="space-y-3 text-xs">
+                      <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-mono">Telepon / WhatsApp</p>
+                          <p className="font-bold text-white font-mono">{ownerSettings.phone}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleCopyText(ownerSettings.phone, 'Telepon Pemilik')}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                            title="Salin Nomor"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActiveTab('sender');
+                              setManualMessage(`Halo Bapak/Ibu ${ownerSettings.owner_name}, saya ingin berkonsultasi seputar pesanan karpet.`);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px]"
+                          >
+                            Chat WA
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-mono">Email Resmi</p>
+                          <p className="font-bold text-white">{ownerSettings.email}</p>
+                        </div>
+                        <button
+                          onClick={() => handleCopyText(ownerSettings.email, 'Email Pemilik')}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                          title="Salin Email"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Live Edit Store & Owner Info Form */}
+                  <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                    <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Edit3 className="w-4 h-4 text-emerald-400" />
+                      <span>Edit Profil Toko & Pemilik</span>
+                    </h3>
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <label className="text-slate-400 block mb-1">Nama Pemilik / Founder</label>
+                        <input
+                          type="text"
+                          value={ownerSettings.owner_name}
+                          onChange={(e) => setOwnerSettings((prev) => ({ ...prev, owner_name: e.target.value }))}
+                          className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-slate-400 block mb-1">Jabatan / Role</label>
+                        <input
+                          type="text"
+                          value={ownerSettings.role}
+                          onChange={(e) => setOwnerSettings((prev) => ({ ...prev, role: e.target.value }))}
+                          className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-slate-400 block mb-1">Nomor WhatsApp</label>
+                          <input
+                            type="text"
+                            value={ownerSettings.phone}
+                            onChange={(e) => setOwnerSettings((prev) => ({ ...prev, phone: e.target.value }))}
+                            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-400 block mb-1">Email Resmi</label>
+                          <input
+                            type="text"
+                            value={ownerSettings.email}
+                            onChange={(e) => setOwnerSettings((prev) => ({ ...prev, email: e.target.value }))}
+                            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-slate-400 block mb-1">Sejarah & Kisah Toko</label>
+                        <textarea
+                          rows={3}
+                          value={ownerSettings.story}
+                          onChange={(e) => setOwnerSettings((prev) => ({ ...prev, story: e.target.value }))}
+                          className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-emerald-500 focus:outline-none leading-relaxed"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-slate-400 block mb-1">Komitmen Pelayanan</label>
+                        <textarea
+                          rows={2}
+                          value={ownerSettings.commitment}
+                          onChange={(e) => setOwnerSettings((prev) => ({ ...prev, commitment: e.target.value }))}
+                          className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-emerald-500 focus:outline-none leading-relaxed"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleSaveStoreSection('owner_info', ownerSettings, 'Profil toko & pemilik berhasil disimpan!')}
+                        disabled={savingStoreInfo}
+                        className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50"
+                      >
+                        {savingStoreInfo ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        <span>{savingStoreInfo ? 'Menyimpan...' : 'Simpan Perubahan Profil'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SCHEDULE & WORKING HOURS */}
+          {activeTab === 'schedule' && (
+            <div className="space-y-6">
+
+              {/* Status Header */}
+              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-sky-500/20 text-sky-400 flex items-center justify-center">
+                    <Calendar className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-white text-lg">Jadwal & Jam Operasional Toko</h3>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Showroom Buka Hari Ini
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Pelayanan konsultasi, survey pengukuran gratis, pengiriman kargo, dan pemasangan karpet 24 jam.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('sender');
+                    setManualMessage('Halo Sultan Carpet Gallery, saya ingin membuat janji survey dan pengukuran karpet ke lokasi kami.');
+                  }}
+                  className="py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs transition flex items-center gap-2 shrink-0 shadow-lg shadow-sky-600/20"
+                >
+                  <Clock className="w-4 h-4" />
+                  <span>Jadwalkan Survey Gratis</span>
+                </button>
+              </div>
+
+              {/* 4 Working Hours Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 1. Jam Showroom */}
+                <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                  <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                      <ShoppingBag className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white text-sm">1. Jam Buka Showroom & Galeri</h4>
+                      <p className="text-xs text-slate-400">Kunjungan langsung, melihat motif, & cek ketebalan benang</p>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Senin - Sabtu:</span>
+                      <span className="font-bold text-emerald-400 font-mono">08:30 - 20:00 WIB</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Minggu & Hari Libur:</span>
+                      <span className="font-bold text-emerald-400 font-mono">09:00 - 18:00 WIB</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Showroom kami siap menyambut Anda dengan ribuan gulungan sampel karpet fisik dan katalog motif terlengkap.
+                  </p>
+                </div>
+
+                {/* 2. Jam Survey */}
+                <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                  <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                    <div className="w-10 h-10 rounded-2xl bg-sky-500/20 text-sky-400 flex items-center justify-center">
+                      <MapPin className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white text-sm">2. Jam Layanan Survey & Bawa Sampel</h4>
+                      <p className="text-xs text-slate-400">GRATIS area Jabodetabek tanpa dipungut biaya apapun</p>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Setiap Hari (Senin - Minggu):</span>
+                      <span className="font-bold text-sky-400 font-mono">08:00 - 21:00 WIB</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Termasuk hari Minggu dan hari libur nasional (jadwal disesuaikan dengan janji temu).
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Konsultan teknis kami datang membawa meteran laser digital presisi dan contoh potongan bahan karpet grade A hingga premium.
+                  </p>
+                </div>
+
+                {/* 3. Jam Pasang & Obras 24 Jam */}
+                <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                  <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                    <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                      <Zap className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white text-sm">3. Instalasi, Pasang & Obras 24 Jam</h4>
+                      <p className="text-xs text-slate-400">Jadwal fleksibel tanpa mengganggu jadwal ibadah / kerja</p>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Layanan Teknisi:</span>
+                      <span className="font-bold text-purple-400 font-mono">24 Jam (By Appointment)</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Khusus masjid, pemasangan biasa dilakukan malam hari setelah salat Isya hingga menjelang Subuh.
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Menggunakan mesin obras portabel heavy duty untuk menjahit sambungan karpet dan lekukan tiang pilar secara presisi di tempat.
+                  </p>
+                </div>
+
+                {/* 4. Jadwal Pengiriman */}
+                <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                  <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                      <Send className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white text-sm">4. Jadwal Ekspedisi & Pengiriman Kargo</h4>
+                      <p className="text-xs text-slate-400">Armada internal & ekspedisi kargo resmi ke seluruh Nusantara</p>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Jabodetabek:</span>
+                      <span className="font-bold text-amber-400 font-mono">Setiap Hari Kerja</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Luar Kota / Pulau:</span>
+                      <span className="font-bold text-amber-400 font-mono">Indah, Dakota, Baraka</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Setiap gulungan karpet dipacking rapat 2 lapis plastik tebal tahan air dan karung pengaman untuk perlindungan maksimal selama perjalanan.
+                  </p>
+                </div>
+              </div>
+
+              {/* Live Form Editor for Schedules */}
+              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-sky-400" />
+                  <span>Edit Data Jadwal & Jam Kerja</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Jam Operasional Showroom</label>
+                    <textarea
+                      rows={2}
+                      value={scheduleSettings.store_hours}
+                      onChange={(e) => setScheduleSettings((prev) => ({ ...prev, store_hours: e.target.value }))}
+                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-sky-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Jadwal Survey Lokasi</label>
+                    <textarea
+                      rows={2}
+                      value={scheduleSettings.survey_hours}
+                      onChange={(e) => setScheduleSettings((prev) => ({ ...prev, survey_hours: e.target.value }))}
+                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-sky-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Jadwal Pasang & Obras</label>
+                    <textarea
+                      rows={2}
+                      value={scheduleSettings.installation_hours}
+                      onChange={(e) => setScheduleSettings((prev) => ({ ...prev, installation_hours: e.target.value }))}
+                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-sky-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Jadwal Pengiriman Kargo</label>
+                    <textarea
+                      rows={2}
+                      value={scheduleSettings.shipping_schedule}
+                      onChange={(e) => setScheduleSettings((prev) => ({ ...prev, shipping_schedule: e.target.value }))}
+                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-sky-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={() => handleSaveStoreSection('schedule_info', scheduleSettings, 'Jadwal operasional berhasil disimpan!')}
+                    disabled={savingStoreInfo}
+                    className="py-2.5 px-6 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-sky-600/20 disabled:opacity-50"
+                  >
+                    {savingStoreInfo ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    <span>{savingStoreInfo ? 'Menyimpan...' : 'Simpan Perubahan Jadwal'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: LOCATION & ADDRESS */}
+          {activeTab === 'location' && (
+            <div className="space-y-6">
+              {/* Header with Title, Search, and Tambah Lokasi Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <MapPin className="w-5 h-5 text-amber-400" />
+                      <span>Lokasi Alamat Showroom & Gudang Sultan Carpet Gallery</span>
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold text-xs">
+                      {(locationSettings.items || []).length} Lokasi Terdaftar
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Kelola showroom resmi, gudang, workshop obras, dan galeri cabang Sultan Carpet Gallery
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <a
+                    href={locationSettings.main_showroom?.maps_url || 'https://maps.google.com'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-2 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition border border-slate-700 flex items-center gap-1.5 shrink-0"
+                  >
+                    <Map className="w-4 h-4 text-amber-400" />
+                    <span>Peta Utama</span>
+                  </a>
+                  <button
+                    onClick={handleOpenAddLocation}
+                    className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition shadow-lg shadow-amber-600/20 flex items-center gap-1.5 shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Tambah Lokasi Baru</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Dynamic Location Cards Grid */}
+              {(() => {
+                const locationsList = (locationSettings.items && locationSettings.items.length > 0)
+                  ? locationSettings.items
+                  : [
+                      {
+                        id: 'loc-1',
+                        type: 'Showroom Utama',
+                        title: locationSettings.main_showroom?.title || 'Showroom Utama Fatmawati',
+                        address: locationSettings.main_showroom?.address || 'Jl. Fatmawati Raya No. 45, Cilandak, Jakarta Selatan 12430',
+                        landmark: locationSettings.main_showroom?.landmark || '500 meter dari Stasiun MRT Cipete Raya',
+                        hours: locationSettings.main_showroom?.hours || 'Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB',
+                        phone: locationSettings.main_showroom?.phone || '0812-9876-5432',
+                        maps_url: locationSettings.main_showroom?.maps_url || 'https://maps.google.com/?q=Fatmawati+Jakarta+Selatan'
+                      }
+                    ];
+
+                if (locationsList.length === 0) {
+                  return (
+                    <div className="p-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/30">
+                      <MapPin className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                      <p className="font-semibold text-slate-400 text-sm">
+                        Belum ada lokasi showroom atau cabang tersimpan
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1 mb-4">
+                        Klik tombol di bawah untuk menambahkan alamat showroom atau workshop baru.
+                      </p>
+                      <button
+                        onClick={handleOpenAddLocation}
+                        className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs inline-flex items-center gap-1.5 transition"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Tambah Lokasi Sekarang</span>
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {locationsList.map((loc, idx) => {
+                      const typeStr = loc.type || 'Showroom';
+                      const badgeClass = typeStr.includes('Utama')
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : typeStr.includes('Gudang') || typeStr.includes('Obras')
+                        ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                        : 'bg-purple-500/20 text-purple-300 border-purple-500/40';
+
+                      return (
+                        <div
+                          key={loc.id || idx}
+                          className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl flex flex-col justify-between space-y-4 hover:border-slate-700 transition group"
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`px-2.5 py-1 rounded-full border text-xs font-bold ${badgeClass}`}>
+                                {loc.type || 'Showroom'}
+                              </span>
+                              <div className="flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
+                                <button
+                                  onClick={() => handleOpenEditLocation(loc, idx)}
+                                  title="Edit Lokasi & Alamat"
+                                  className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteLocation(idx, loc.title)}
+                                  title="Hapus Lokasi"
+                                  className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-900/50 transition"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <h4 className="font-bold text-white text-base leading-snug group-hover:text-amber-300 transition">
+                              {loc.title}
+                            </h4>
+
+                            <p className="text-xs text-slate-300 leading-relaxed">
+                              {loc.address}
+                            </p>
+
+                            <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 text-xs space-y-1.5">
+                              {loc.landmark && (
+                                <p className="text-slate-400">
+                                  <strong className="text-slate-300">Landmark:</strong> {loc.landmark}
+                                </p>
+                              )}
+                              {loc.hours && (
+                                <p className="text-slate-400">
+                                  <strong className="text-slate-300">Jam Buka:</strong> {loc.hours}
+                                </p>
+                              )}
+                              {loc.phone && (
+                                <p className="text-slate-400">
+                                  <strong className="text-slate-300">Telepon/WA:</strong>{' '}
+                                  <span className="font-mono text-emerald-400 font-semibold">{loc.phone}</span>
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                            <button
+                              onClick={() => handleCopyText(loc.address, `Alamat ${loc.title}`)}
+                              className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs flex items-center justify-center gap-1.5 transition"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>{copiedField === `Alamat ${loc.title}` ? 'Tersalin!' : 'Salin Alamat'}</span>
+                            </button>
+
+                            {loc.maps_url && (
+                              <a
+                                href={loc.maps_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-2 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 transition shrink-0"
+                                title="Buka di Google Maps"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                setActiveTab('sender');
+                                setManualMessage(`Halo Sultan Carpet, saya ingin berkunjung ke ${loc.title} (${loc.address}). Apakah hari ini buka?`);
+                              }}
+                              className="p-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 transition shrink-0"
+                              title="Hubungi WhatsApp Cabang"
+                            >
+                              <PhoneCall className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {activeTab === 'warranty' && (
+            <div className="space-y-6">
+
+              {/* Certificate-Style Header */}
+              <div className="relative rounded-3xl overflow-hidden border border-indigo-500/30 bg-gradient-to-br from-indigo-950/60 via-[#0f172a] to-[#0f172a] p-6 sm:p-8 shadow-2xl space-y-3">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-xs font-semibold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>GARANSI RESMI RESELLER UTAMA</span>
+                </div>
+                <h3 className="text-xl sm:text-3xl font-extrabold text-white">
+                  {warrantySettings.title || 'Jaminan Kualitas & Garansi Resmi Sultan Carpet'}
+                </h3>
+                <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
+                  {warrantySettings.summary}
+                </p>
+              </div>
+
+              {/* 4 Warranty Pillars Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {(warrantySettings.items || []).map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-3 hover:border-indigo-500/40 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold font-mono">
+                        0{idx + 1}
+                      </div>
+                      <h4 className="font-bold text-white text-sm sm:text-base">{item.title}</h4>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed pl-13">
+                      {item.desc}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Procedure & Quick Claim CTA */}
+              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-800">
+                  <div>
+                    <h4 className="font-bold text-white text-base">Tata Cara Klaim Garansi Cepat</h4>
+                    <p className="text-xs text-slate-400">Tim teknisi kami siap merespons laporan Anda dalam 1x24 jam</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowComplaintModal(true)}
+                      className="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Ajukan Klaim Garansi</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveTab('sender');
+                        setManualMessage('Halo Tim Garansi Sultan Carpet, saya ingin mengajukan klaim garansi untuk produk karpet kami.');
+                      }}
+                      className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition flex items-center gap-1.5"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Konsultasi WA</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs pt-2">
+                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1">
+                    <p className="font-bold text-indigo-400">Langkah 1: Dokumentasi</p>
+                    <p className="text-slate-300">Ambil foto atau video bagian jahitan obras / benang yang ingin diklaim.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1">
+                    <p className="font-bold text-indigo-400">Langkah 2: Lapor & Tiket</p>
+                    <p className="text-slate-300">Kirim laporan melalui formulir klaim atau WhatsApp. Nomor tiket resmi langsung terbit.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1">
+                    <p className="font-bold text-indigo-400">Langkah 3: Perbaikan Teknisi</p>
+                    <p className="text-slate-300">Teknisi berkunjung ke lokasi untuk obras ulang atau proses tukar baru tanpa dipungut biaya.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Form Editor for Warranty */}
+              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-indigo-400" />
+                  <span>Edit Kebijakan Garansi</span>
+                </h3>
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Judul Dokumen Garansi</label>
+                    <input
+                      type="text"
+                      value={warrantySettings.title}
+                      onChange={(e) => setWarrantySettings((prev) => ({ ...prev, title: e.target.value }))}
+                      className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Ringkasan Garansi</label>
+                    <textarea
+                      rows={2}
+                      value={warrantySettings.summary}
+                      onChange={(e) => setWarrantySettings((prev) => ({ ...prev, summary: e.target.value }))}
+                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Panduan Langkah Klaim</label>
+                    <textarea
+                      rows={3}
+                      value={warrantySettings.claim_steps}
+                      onChange={(e) => setWarrantySettings((prev) => ({ ...prev, claim_steps: e.target.value }))}
+                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-indigo-500 focus:outline-none leading-relaxed"
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => handleSaveStoreSection('warranty_info', warrantySettings, 'Ketentuan garansi berhasil disimpan!')}
+                      disabled={savingStoreInfo}
+                      className="py-2.5 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+                    >
+                      {savingStoreInfo ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      <span>{savingStoreInfo ? 'Menyimpan...' : 'Simpan Ketentuan Garansi'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: PROMO & DISCOUNTS */}
+          {activeTab === 'promo' && (
+            <div className="space-y-6">
+
+              {/* Header with Tambah Promo button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <Tag className="w-5 h-5 text-rose-400" />
+                      <span>{promoSettings.title || 'Promo & Penawaran Spesial Karpet'}</span>
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 font-semibold text-xs">
+                      {(promoSettings.active_promos || []).length} Promo Aktif
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Daftar potongan harga, cashback, dan bonus aksesoris yang otomatis terhubung dengan balasan bot WhatsApp
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setEditingPromoIndex(null);
+                    setPromoForm({
+                      id: '',
+                      title: '',
+                      discount: '',
+                      desc: '',
+                      badge: 'Spesial',
+                      valid_until: 'Akhir Bulan'
+                    });
+                    setShowPromoModal(true);
+                  }}
+                  className="py-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-lg shadow-rose-600/20 flex items-center gap-1.5 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tambah Promo Baru</span>
+                </button>
+              </div>
+
+              {/* Active Promos Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {(promoSettings.active_promos || []).map((promo, idx) => (
+                  <div
+                    key={promo.id || idx}
+                    className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl flex flex-col justify-between space-y-4 hover:border-rose-500/30 transition group"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 font-bold text-xs">
+                          {promo.badge || 'Promo'}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-mono">
+                          Masa Berlaku: <strong className="text-slate-300">{promo.valid_until || 'Tersedia'}</strong>
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-white text-base group-hover:text-rose-300 transition">
+                        {promo.title}
+                      </h4>
+                      <div className="p-3 rounded-2xl bg-rose-950/20 border border-rose-500/20 text-rose-300 font-bold text-sm">
+                        🎉 {promo.discount}
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {promo.desc}
+                      </p>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const text = `🔥 *${promo.title}*\n${promo.discount}\n\n${promo.desc}\n\n*Berlaku:* ${promo.valid_until}\nInfo pemesanan: Hubungi Sultan Carpet Gallery`;
+                            handleCopyText(text, `Promo ${promo.id || idx}`);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center gap-1"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>{copiedField === `Promo ${promo.id || idx}` ? 'Tersalin!' : 'Salin'}</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveTab('sender');
+                            setManualMessage(`Halo! Saya tertarik dengan penawaran: *${promo.title}* (${promo.discount}). Mohon rincian lengkapnya.`);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-semibold border border-emerald-500/30 transition flex items-center gap-1"
+                        >
+                          <span>Kirim via WA</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setEditingPromoIndex(idx);
+                            setPromoForm(promo);
+                            setShowPromoModal(true);
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                          title="Edit Promo"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeletePromo(idx)}
+                          className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-900/50"
+                          title="Hapus Promo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: COMPLAINT & SERVICE CENTER */}
+          {activeTab === 'complaint' && (
+            <div className="space-y-6">
+
+              {/* SLA & CS Hotline Header */}
+              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                    <ShieldAlert className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-white text-lg">Pusat Layanan Komplain & Pengaduan Pelanggan</h3>
+                      <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 text-[11px] font-semibold">
+                        SLA 1x24 Jam
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Hotline Manajer CS: <strong className="text-white font-mono">{complaintSettings.contact_manager}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowComplaintModal(true)}
+                  className="py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shrink-0 shadow-lg shadow-purple-600/20"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Buat Laporan Komplain Baru</span>
+                </button>
+              </div>
+
+              {/* 5-Step Workflow Cards */}
+              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                <h4 className="font-bold text-white text-sm">Alur & Standar Operasional Penanganan Keluhan (SOP)</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+                  {(complaintSettings.workflow || []).map((step, i) => (
+                    <div key={i} className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1.5 flex flex-col justify-between">
+                      <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-300 font-bold font-mono text-xs flex items-center justify-center">
+                        {i + 1}
+                      </div>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">{step}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Integrated Complaint Tickets Table */}
+              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                    <Ticket className="w-4 h-4 text-emerald-400" />
+                    <span>Daftar Tiket Pengaduan & Layanan Aktif</span>
+                  </h4>
+                  <span className="text-xs text-slate-400">
+                    Total {tickets.length} Tiket Terdaftar
+                  </span>
+                </div>
+
+                {tickets.length === 0 ? (
+                  <div className="p-8 text-center rounded-2xl border border-dashed border-slate-800 text-slate-500 text-xs">
+                    Belum ada tiket komplain aktif. Semua layanan berjalan lancar!
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-300">
+                      <thead className="bg-slate-900/80 text-slate-400 uppercase font-mono text-[10px] border-b border-slate-800">
+                        <tr>
+                          <th className="py-2.5 px-3">No. Tiket</th>
+                          <th className="py-2.5 px-3">Pelanggan</th>
+                          <th className="py-2.5 px-3">Kategori & Masalah</th>
+                          <th className="py-2.5 px-3">Prioritas</th>
+                          <th className="py-2.5 px-3">Status</th>
+                          <th className="py-2.5 px-3 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-sans">
+                        {tickets.slice(0, 10).map((ticket) => (
+                          <tr key={ticket.id} className="hover:bg-slate-800/30 transition">
+                            <td className="py-3 px-3 font-mono font-bold text-emerald-400">
+                              #{ticket.id}
+                            </td>
+                            <td className="py-3 px-3">
+                              <p className="font-semibold text-white">{ticket.name || ticket.sender || '-'}</p>
+                              <p className="text-[10px] text-slate-500 font-mono">{ticket.contact || ticket.sender || '-'}</p>
+                            </td>
+                            <td className="py-3 px-3 max-w-xs">
+                              <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-medium inline-block mb-0.5">
+                                {ticket.category || 'Komplain'}
+                              </span>
+                              <p className="text-slate-300 truncate" title={ticket.description}>
+                                {ticket.description}
+                              </p>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                ticket.priority === 'Tinggi' || ticket.priority === 'High'
+                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                  : 'bg-slate-800 text-slate-300'
+                              }`}>
+                                {ticket.priority || 'Normal'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                                ticket.status === 'Open'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : ticket.status === 'In Progress'
+                                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                                  : 'bg-slate-800 text-slate-400'
+                              }`}>
+                                {ticket.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <button
+                                onClick={() => {
+                                  setActiveTab('tickets');
+                                  setSelectedTicket(ticket);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs transition"
+                              >
+                                Detail
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -3136,115 +4691,6 @@ export default function Dashboard() {
                     className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20"
                   >
                     Simpan Perubahan Bisnis
-                  </button>
-                </form>
-              </div>
-
-              {/* PRISMA DATABASE CARD */}
-              <div className="p-6 md:p-8 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-2xl space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
-                      <Database className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-white flex flex-wrap items-center gap-2">
-                        <span>Database Prisma ORM</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono uppercase font-bold border ${
-                          dbStatus.connected
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                            : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
-                        }`}>
-                          {dbStatus.connected ? 'Terhubung' : 'Prisma Ready'}
-                        </span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                          Vercel Ready
-                        </span>
-                      </h3>
-                      <p className="text-xs text-slate-400">
-                        Didukung Prisma Client v6 di <code className="text-indigo-300 font-mono text-[11px]">prisma/schema.prisma</code> siap sambung ke Vercel Postgres / Neon / Supabase
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={fetchDbStatus}
-                    className="self-start sm:self-auto px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1.5 transition border border-slate-700"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Cek Status</span>
-                  </button>
-                </div>
-
-                {/* Live DB Statistics */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] text-slate-400">Katalog Produk</p>
-                      <p className="text-lg font-bold text-white font-mono">{dbStatus.counts?.products ?? 0}</p>
-                    </div>
-                    <ShoppingBag className="w-5 h-5 text-emerald-400 opacity-60" />
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] text-slate-400">Tiket Layanan</p>
-                      <p className="text-lg font-bold text-white font-mono">{dbStatus.counts?.tickets ?? 0}</p>
-                    </div>
-                    <Ticket className="w-5 h-5 text-sky-400 opacity-60" />
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] text-slate-400">Pesan Tersimpan</p>
-                      <p className="text-lg font-bold text-white font-mono">{dbStatus.counts?.chats ?? 0}</p>
-                    </div>
-                    <MessageSquare className="w-5 h-5 text-purple-400 opacity-60" />
-                  </div>
-                </div>
-
-                {/* Connection Form */}
-                <form onSubmit={handleSaveDbConfig} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-                      <span>DATABASE_URL (Prisma Connection String)</span>
-                      <span className="text-[10px] text-indigo-400 font-mono">Vercel Postgres / Neon / Supabase</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={dbForm.databaseUrl}
-                      onChange={(e) => setDbForm({ ...dbForm, databaseUrl: e.target.value })}
-                      placeholder="postgresql://user:password@host:port/database?schema=public"
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
-                    />
-                    <p className="text-[11px] text-slate-500">
-                      Format: postgresql://[user]:[password]@[host]:[port]/[database]?schema=public
-                    </p>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400 space-y-2">
-                    <div className="flex items-start gap-2">
-                      <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <span>
-                        Sistem menggunakan <strong>Prisma Client</strong> untuk seluruh query data (Tiket, Katalog, Chat). Jika database belum terhubung, sistem otomatis berjalan dengan penyimpanan lokal JSON tanpa crash.
-                      </span>
-                    </div>
-                    <div className="flex items-start gap-2 pt-1 border-t border-slate-800/80">
-                      <Database className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                      <span>
-                        <strong>Sinkronisasi Skema ke Vercel:</strong> Cukup jalankan <code className="text-indigo-300 font-mono font-semibold">npm run db:push</code> di terminal untuk membuat seluruh tabel secara otomatis di cloud Vercel / Neon.
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={savingDb}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {savingDb ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-                    <span>{savingDb ? 'Menyimpan Konfigurasi...' : 'Simpan Konfigurasi Prisma (.env)'}</span>
                   </button>
                 </form>
               </div>
@@ -3459,10 +4905,10 @@ export default function Dashboard() {
                 <div className="flex flex-col sm:flex-row items-center gap-4 p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800">
                   <div className="w-24 h-24 rounded-xl overflow-hidden bg-slate-950 border border-slate-700 flex items-center justify-center shrink-0 relative">
                     <img
-                      src={imagePreview || '/catalog/everyday-set.jpg'}
+                      src={imagePreview || '/catalog/karpet-masjid-turki.jpg'}
                       alt="Preview"
                       onError={(e) => {
-                        e.target.src = '/catalog/everyday-set.jpg';
+                        e.target.src = '/catalog/karpet-masjid-turki.jpg';
                       }}
                       className="w-full h-full object-cover"
                     />
@@ -3486,14 +4932,16 @@ export default function Dashboard() {
                       </button>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Mendukung format JPG, PNG, WEBP (maks. 5MB). Atau pilih preset gambar di bawah:
+                      Mendukung format JPG, PNG, WEBP (maks. 5MB). Atau pilih preset foto karpet di bawah:
                     </p>
                     {/* Presets */}
-                    <div className="flex items-center gap-1.5 pt-1">
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
                       {[
-                        { label: 'Everyday Set', path: 'catalog/everyday-set.jpg' },
-                        { label: 'Pour-Over', path: 'catalog/pourover-set.jpg' },
-                        { label: 'Platter', path: 'catalog/serving-platter.jpg' },
+                        { label: 'Karpet Masjid', path: 'catalog/karpet-masjid-turki.jpg' },
+                        { label: 'Permadani Persia', path: 'catalog/karpet-persia-mewah.jpg' },
+                        { label: 'Nordic Scandi', path: 'catalog/karpet-scandi-modern.jpg' },
+                        { label: 'Bulu Shaggy', path: 'catalog/karpet-shaggy-bulu.jpg' },
+                        { label: 'Karpet Tile Kantor', path: 'catalog/karpet-kantor-tile.jpg' },
                       ].map((preset) => (
                         <button
                           key={preset.path}
@@ -3563,7 +5011,7 @@ export default function Dashboard() {
                     type="text"
                     value={productForm.footer}
                     onChange={(e) => setProductForm((prev) => ({ ...prev, footer: e.target.value }))}
-                    placeholder="Contoh: Tersedia warna Stone & Sage Green."
+                    placeholder="Contoh: Tersedia Hijau Emerald, Merah Ruby, & Sapphire."
                     className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -3576,7 +5024,7 @@ export default function Dashboard() {
                   rows={2}
                   value={productForm.subtitle}
                   onChange={(e) => setProductForm((prev) => ({ ...prev, subtitle: e.target.value }))}
-                  placeholder="Contoh: Mug keramik artisanal 250ml berbahan stoneware tahan microwave untuk ritual kopi dan teh pagi."
+                  placeholder="Contoh: Karpet masjid grade A benang polypropylene heattwist lembut, tebal 15mm dengan motif mihrab mewah."
                   className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 leading-relaxed font-sans"
                 />
               </div>
@@ -3588,7 +5036,7 @@ export default function Dashboard() {
                   type="text"
                   value={productForm.url}
                   onChange={(e) => setProductForm((prev) => ({ ...prev, url: e.target.value }))}
-                  placeholder="https://harbor.example.com/collections/..."
+                  placeholder="https://sultancarpet.co.id/koleksi/..."
                   className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono text-[11px]"
                 />
               </div>
@@ -3770,6 +5218,360 @@ export default function Dashboard() {
                     <Check className="w-3.5 h-3.5" />
                   )}
                   <span>{savingProfile ? 'Menyimpan...' : 'Simpan Perubahan'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* COMPLAINT SUBMISSION MODAL */}
+      {showComplaintModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-800 bg-[#0f172a] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-sm">Formulir Pengaduan & Klaim Garansi</h3>
+                  <p className="text-[11px] text-slate-400">Nomor tiket otomatis terbit & diteruskan ke CS Manager</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowComplaintModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateComplaintTicket} className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Nama Pelapor / Pemesan *</label>
+                  <input
+                    type="text"
+                    required
+                    value={complaintForm.name}
+                    onChange={(e) => setComplaintForm((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="Contoh: DKM Masjid Al-Ikhlas / Bpk Rudi"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Nomor WhatsApp / Kontak *</label>
+                  <input
+                    type="text"
+                    required
+                    value={complaintForm.phone}
+                    onChange={(e) => setComplaintForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="0812xxxxxxxx"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Kategori Pengaduan</label>
+                  <select
+                    value={complaintForm.category}
+                    onChange={(e) => setComplaintForm((prev) => ({ ...prev, category: e.target.value }))}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="Pengaduan Produk">Pengaduan Produk / Karpet</option>
+                    <option value="Klaim Garansi Obras">Klaim Garansi Obras & Jahitan</option>
+                    <option value="Pengiriman & Logistik">Pengiriman & Logistik Kargo</option>
+                    <option value="Lainnya">Pertanyaan & Lainnya</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Jenis Kendala</label>
+                  <select
+                    value={complaintForm.issueType}
+                    onChange={(e) => setComplaintForm((prev) => ({ ...prev, issueType: e.target.value }))}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="Kualitas / Obras Karpet">Kualitas / Obras Karpet</option>
+                    <option value="Ukuran / Kemiringan Kiblat">Ukuran / Potongan Kemiringan Kiblat</option>
+                    <option value="Cacat Benang Impor">Cacat Benang / Tenun Pabrik</option>
+                    <option value="Jadwal Pasang Terlambat">Keterlambatan Teknisi Pasang</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold">Detail Keluhan / Rincian Kendala *</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={complaintForm.description}
+                  onChange={(e) => setComplaintForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Ceritakan kendala yang dihadapi secara detail..."
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 leading-relaxed"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowComplaintModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingComplaint}
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-purple-600/20 disabled:opacity-50"
+                >
+                  {submittingComplaint ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  <span>{submittingComplaint ? 'Menerbitkan...' : 'Kirim Laporan Komplain'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* LOCATION FORM MODAL */}
+      {showLocationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-800 bg-[#0f172a] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-sm">
+                    {editingLocationIndex !== null ? 'Edit Lokasi & Alamat' : 'Tambah Lokasi Baru'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Data showroom otomatis sinkron dengan WhatsApp bot</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLocationModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveLocation} className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Nama / Judul Lokasi *</label>
+                  <input
+                    type="text"
+                    required
+                    value={locationForm.title}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, title: e.target.value }))}
+                    placeholder="Contoh: Showroom Fatmawati Jakarta Selatan"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Tipe / Kategori Lokasi</label>
+                  <select
+                    value={locationForm.type}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, type: e.target.value }))}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="Showroom Utama">Showroom Utama</option>
+                    <option value="Gudang & Obras">Gudang & Workshop Obras</option>
+                    <option value="Cabang Gallery">Cabang Gallery Resmi</option>
+                    <option value="Workshop Jahit">Workshop Jahit & Obras</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold">Alamat Lengkap *</label>
+                <textarea
+                  rows={2}
+                  required
+                  value={locationForm.address}
+                  onChange={(e) => setLocationForm((prev) => ({ ...prev, address: e.target.value }))}
+                  placeholder="Contoh: Jl. Fatmawati Raya No. 45, Cilandak, Jakarta Selatan 12430"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 leading-relaxed"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Petunjuk / Landmark</label>
+                  <input
+                    type="text"
+                    value={locationForm.landmark}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, landmark: e.target.value }))}
+                    placeholder="Contoh: 500m dari Stasiun MRT Cipete Raya"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Telepon / WhatsApp *</label>
+                  <input
+                    type="text"
+                    required
+                    value={locationForm.phone}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="Contoh: 0812-9876-5432"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Jam Operasional</label>
+                  <input
+                    type="text"
+                    value={locationForm.hours}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, hours: e.target.value }))}
+                    placeholder="Contoh: Senin - Sabtu: 08:30 - 20:00 WIB"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Tautan Google Maps</label>
+                  <input
+                    type="text"
+                    value={locationForm.maps_url}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, maps_url: e.target.value }))}
+                    placeholder="https://maps.google.com/?q=..."
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono text-[11px]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowLocationModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-amber-600/20"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Simpan Lokasi</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PROMO FORM MODAL */}
+      {showPromoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-800 bg-[#0f172a] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center">
+                  <Tag className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-sm">
+                    {editingPromoIndex !== null ? 'Edit Promo Karpet' : 'Tambah Promo Baru'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Promo langsung aktif di dashboard & bot WhatsApp</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPromoModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePromo} className="p-6 space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold">Judul Promo *</label>
+                <input
+                  type="text"
+                  required
+                  value={promoForm.title}
+                  onChange={(e) => setPromoForm((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Contoh: Promo Gebyar Karpet Masjid Berkah"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Potongan / Diskon / Benefit *</label>
+                  <input
+                    type="text"
+                    required
+                    value={promoForm.discount}
+                    onChange={(e) => setPromoForm((prev) => ({ ...prev, discount: e.target.value }))}
+                    placeholder="Contoh: Diskon 20% + Gratis Obras"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">Badge Label</label>
+                  <select
+                    value={promoForm.badge}
+                    onChange={(e) => setPromoForm((prev) => ({ ...prev, badge: e.target.value }))}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:border-rose-500"
+                  >
+                    <option value="Terpopuler">Terpopuler</option>
+                    <option value="Bestseller">Bestseller</option>
+                    <option value="Spesial B2B">Spesial B2B</option>
+                    <option value="Gratis 100%">Gratis 100%</option>
+                    <option value="Diskon Akbar">Diskon Akbar</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold">Masa Berlaku</label>
+                <input
+                  type="text"
+                  value={promoForm.valid_until}
+                  onChange={(e) => setPromoForm((prev) => ({ ...prev, valid_until: e.target.value }))}
+                  placeholder="Contoh: Akhir Bulan Ini / Stok Terbatas"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold">Deskripsi Syarat & Ketentuan</label>
+                <textarea
+                  rows={3}
+                  value={promoForm.desc}
+                  onChange={(e) => setPromoForm((prev) => ({ ...prev, desc: e.target.value }))}
+                  placeholder="Keterangan lengkap promo dan syarat pemesanan..."
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 leading-relaxed"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowPromoModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-rose-600/20"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Simpan Promo</span>
                 </button>
               </div>
             </form>

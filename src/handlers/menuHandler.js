@@ -13,10 +13,11 @@ class MenuHandler {
       console.error('[MenuHandler] Gagal membaca config.json:', err.message);
       return {
         business: {
-          name: "Harbor",
-          tagline: "Stoneware & Mindful Living",
-          phone: "0812-3456-7890",
-          hours: "Senin - Jumat 09:00 - 18:00 WIB"
+          name: "Sultan Carpet Gallery",
+          owner: "H. Ahmad Fauzi & Hj. Maryam",
+          tagline: "Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan",
+          phone: "0812-9876-5432",
+          hours: "Senin - Sabtu 08:30 - 20:00 WIB"
         },
         catalog: [],
         services: [],
@@ -75,26 +76,188 @@ class MenuHandler {
     const config = this.getConfig();
     const b = config.business;
 
-    return stripStarsAndEmojis(`Halo ${senderName}, selamat datang di ${b.name} (${b.tagline || 'Stoneware & Mindful Living'}).
+    return stripStarsAndEmojis(`Halo ${senderName}, selamat datang di ${b.name}.
+${b.tagline}
 
-Layanan yang dapat kami bantu:
-1. Katalog Koleksi Produk
-2. Lokasi dan Jam Buka Showroom
-3. Layanan Pelanggan (Customer Service)
+Layanan dan informasi yang dapat kami bantu:
+1. Katalog Koleksi Karpet
+2. Profil Toko & Nama Pemilik
+3. Jadwal & Jam Kerja
+4. Lokasi & Alamat Showroom
+5. Ketentuan Garansi Resmi
+6. Promo & Diskon Spesial
+7. Layanan Komplain & Customer Service
 
-Silakan beri tahu kami apa yang ingin Anda tanyakan atau pilih salah satu layanan di atas.`);
+Silakan sebutkan kebutuhan Anda atau pilih nomor layanan di atas.`);
+  }
+
+  getStoreProfileMenu() {
+    const config = this.getConfig();
+    const b = config.business;
+    const o = config.owner_info || {};
+
+    return stripStarsAndEmojis(`PROFIL TOKO & NAMA PEMILIK
+${b.name.toUpperCase()}
+
+Nama Toko: ${b.name}
+Pemilik / Founder: ${o.owner_name || b.owner || 'H. Ahmad Fauzi & Hj. Maryam'}
+Jabatan: ${o.role || 'Founder & Managing Director'}
+Tahun Berdiri: Sejak ${b.established || '2012'} (${o.experience || '12+ Tahun Melayani Seluruh Indonesia'})
+Legalitas Usaha: ${b.legal || 'NIB: 9120003481923 / SIUP: 510/089/PK/X/2012'}
+
+Sejarah Singkat:
+${o.story || b.description}
+
+Komitmen Kami:
+${o.commitment || 'Menghadirkan karpet bermutu tinggi dengan harga transparan dan bergaransi resmi.'}
+
+Kontak Manajemen:
+- Telepon/WhatsApp: ${o.phone || b.phone}
+- Email: ${o.email || b.email}
+- Website: ${b.website}`);
+  }
+
+  getWorkingHoursMenu() {
+    const config = this.getConfig();
+    const s = config.schedule_info || {};
+    const b = config.business;
+
+    return stripStarsAndEmojis(`JADWAL DAN JAM KERJA OPERASIONAL
+${b.name.toUpperCase()}
+
+1. Jam Operasional Showroom:
+${s.store_hours || b.hours}
+
+2. Jadwal Layanan Survey & Ukur Lokasi:
+${s.survey_hours || 'Setiap Hari: 08:00 - 21:00 WIB (Gratis Jabodetabek, jadwal fleksibel mengikuti waktu pengurus masjid/konsumen)'}
+
+3. Jadwal Pemasangan & Obras Karpet:
+${s.installation_hours || 'Tersedia 24 Jam teknisi khusus masjid & kantor (bisa malam hari setelah Isya agar tidak mengganggu ibadah/kerja)'}
+
+4. Jadwal Pengiriman:
+${s.shipping_schedule || 'Jabodetabek: Setiap hari kerja (Armada sendiri)\nLuar Kota/Pulau: Ekspedisi kargo terpercaya'}
+
+Silakan hubungi kami bila ingin membuat janji survey atau kunjungan ke showroom.`);
+  }
+
+  getLocationMenu() {
+    const config = this.getConfig();
+    const loc = config.location_info || {};
+    const main = loc.main_showroom || {};
+    const wh = loc.warehouse || {};
+    const branches = config.branches || [];
+
+    let text = `LOKASI DAN ALAMAT SHOWROOM
+${config.business.name.toUpperCase()}
+
+1. SHOWROOM UTAMA (JAKARTA SELATAN):
+Alamat: ${main.address || config.business.address}
+Patokan / Landmark: ${main.landmark || 'Dekat Stasiun MRT Cipete Raya'}
+Jam Buka: ${main.hours || config.business.hours}
+Telepon: ${main.phone || config.business.phone}
+Google Maps: ${main.maps_url || config.business.maps_url}
+
+2. GUDANG PUSAT & WORKSHOP OBRAS:
+Alamat: ${wh.address || 'Kawasan Industri Bizpark No. 18, Jl. Narogong KM 7, Bekasi'}
+Jam Operasional: ${wh.hours || 'Senin - Sabtu: 08:00 - 17:00 WIB'}
+
+3. CABANG LAINNYA:
+`;
+
+    branches.forEach((br, idx) => {
+      text += `- Cabang ${br.city} (${br.area || 'Gallery'}): ${br.address} (Telp: ${br.phone})\n`;
+    });
+
+    text += `\nSilakan kunjungi showroom terdekat kami untuk melihat dan merasakan langsung tekstur karpet impian Anda.`;
+    return stripStarsAndEmojis(text);
+  }
+
+  getWarrantyMenu() {
+    const config = this.getConfig();
+    const w = config.warranty_info || {};
+    const items = w.items || [];
+
+    let text = `KETENTUAN GARANSI RESMI
+${config.business.name.toUpperCase()}
+
+${w.summary || 'Kami menjamin setiap karpet yang kami jual memiliki mutu terbaik dan bergaransi penuh.'}
+
+Rincian Garansi:
+`;
+
+    items.forEach((item, idx) => {
+      text += `${idx + 1}. ${item.title}\n   ${item.desc}\n\n`;
+    });
+
+    text += `Alur Klaim Garansi:
+${w.claim_steps || '1. Foto/videokan kendala karpet Anda\n2. Hubungi WhatsApp CS kami\n3. Tim teknisi akan memproses dalam 1x24 jam'}`;
+
+    return stripStarsAndEmojis(text);
+  }
+
+  getPromoMenu() {
+    const config = this.getConfig();
+    const p = config.promo_info || {};
+    const promos = p.active_promos || [];
+
+    let text = `PROMO & PENAWARAN SPESIAL TERKINI
+${config.business.name.toUpperCase()}
+
+`;
+
+    if (promos.length === 0) {
+      text += `Saat ini belum ada promo aktif. Hubungi tim sales kami untuk penawaran khusus.\n`;
+    } else {
+      promos.forEach((pr, idx) => {
+        text += `${idx + 1}. [${pr.badge || 'PROMO'}] ${pr.title}\n`;
+        text += `   Penawaran: ${pr.discount}\n`;
+        text += `   Keterangan: ${pr.desc}\n`;
+        text += `   Periode: ${pr.valid_until}\n\n`;
+      });
+    }
+
+    text += `Segera manfaatkan promo ini sebelum kuota habis. Sampaikan promo yang ingin Anda klaim kepada tim kami.`;
+    return stripStarsAndEmojis(text);
+  }
+
+  getComplaintMenu() {
+    const config = this.getConfig();
+    const c = config.complaint_info || {};
+    const wf = c.workflow || [];
+
+    let text = `PUSAT PENGADUAN & KOMPLAIN PELANGGAN
+${config.business.name.toUpperCase()}
+
+Kepuasan Anda adalah prioritas utama kami. Bila terjadi ketidaksesuaian barang, kendala jahitan obras, keterlambatan pengiriman, atau keluhan teknisi, silakan sampaikan langsung kepada kami.
+
+Jaminan Waktu Tanggap:
+${c.sla || 'Maksimal 1x24 Jam Kerja'}
+
+Hotline Pengaduan Langsung:
+${c.contact_manager || config.business.phone_cs || config.business.phone}
+
+Alur Penanganan Komplain:
+`;
+
+    wf.forEach((step, idx) => {
+      text += `${step}\n`;
+    });
+
+    text += `\nSilakan ketikkan detail keluhan Anda di chat ini, tim Customer Care kami akan segera membuatkan tiket komplain dan menindaklanjutinya.`;
+    return stripStarsAndEmojis(text);
   }
 
   getBranchesMenu() {
     const branches = this.getBranches();
 
-    let text = `DAFTAR CABANG DAN SHOWROOM HARBOR\n`;
-    text += `Temukan produk stoneware kami di toko fisik terdekat:\n\n`;
+    let text = `DAFTAR CABANG DAN SHOWROOM SULTAN CARPET\n`;
+    text += `Kunjungi toko fisik dan galeri karpet kami di kota Anda:\n\n`;
 
     branches.forEach((b, idx) => {
-      text += `${idx + 1}. Harbor ${b.city} (${b.area || 'Store'})\n`;
+      text += `${idx + 1}. Sultan Carpet ${b.city} (${b.area || 'Store'})\n`;
       text += `   Alamat: ${b.address}\n`;
-      text += `   Jam Buka: ${b.hours}\n\n`;
+      text += `   Jam Buka: ${b.hours}\n`;
+      text += `   Telepon: ${b.phone}\n\n`;
     });
 
     text += `Silakan beri tahu kami nama kota atau nomor cabang yang ingin Anda ketahui lebih detail.`;
@@ -119,7 +282,7 @@ ${branch.phone}
 Petunjuk Arah Google Maps:
 ${branch.maps_url || 'https://maps.google.com'}
 
-Silakan sampaikan jika Anda ingin melihat cabang lain atau membutuhkan informasi lebih lanjut.`);
+Silakan sampaikan jika Anda ingin melihat cabang lain atau membutuhkan jadwal survey gratis.`);
   }
 
   getCatalogSelectionMenu() {
@@ -127,35 +290,35 @@ Silakan sampaikan jika Anda ingin melihat cabang lain atau membutuhkan informasi
     const catalog = this.getCatalog();
 
     let text = `KOLEKSI PRODUK ${config.business.name.toUpperCase()}\n`;
-    text += `${config.business.tagline || 'Stoneware & Mindful Living'}\n\n`;
-    text += `Berikut daftar koleksi stoneware artisanal kami:\n\n`;
+    text += `${config.business.tagline}\n\n`;
+    text += `Berikut daftar koleksi karpet unggulan kami:\n\n`;
 
     catalog.forEach((item, idx) => {
       text += `${idx + 1}. ${item.title}\n`;
       text += `   Harga: ${item.price}\n`;
-      text += `   Keterangan: ${item.subtitle}\n`;
+      text += `   Spesifikasi: ${item.subtitle}\n`;
       text += `   Varian: ${item.footer}\n\n`;
     });
 
-    text += `Silakan sebutkan nama produk atau nomor yang menarik perhatian Anda untuk informasi lebih lengkap.`;
+    text += `Silakan sebutkan nama produk atau nomor yang ingin Anda tanyakan lebih lengkap atau Anda pesan.`;
     return stripStarsAndEmojis(text);
   }
 
   getProductConfirmationMessage(product) {
     if (!product) return this.getCatalogSelectionMenu();
 
-    return stripStarsAndEmojis(`RINCIAN PRODUK
+    return stripStarsAndEmojis(`RINCIAN PRODUK KARPET
 
-Produk yang Anda pilih:
+Produk Pilihan:
 ${product.title}
 Harga: ${product.price}
-Keterangan: ${product.subtitle}
-Varian: ${product.footer}
+Spesifikasi: ${product.subtitle}
+Varian / Ukuran: ${product.footer}
 
 Pilihan langkah selanjutnya:
-1. Pesan produk ini
+1. Pesan karpet ini (atau minta survey gratis)
 2. Lihat foto dan spesifikasi lengkap
-3. Lihat koleksi produk lainnya
+3. Lihat koleksi karpet lainnya
 
 Silakan informasikan pilihan Anda.`);
   }
@@ -168,7 +331,7 @@ Silakan informasikan pilihan Anda.`);
     const config = this.getConfig();
     const services = config.services || [];
 
-    let text = `DAFTAR LAYANAN DAN SPESIALISASI\n`;
+    let text = `LAYANAN DAN JASA SPESIALIS KARPET\n`;
     text += `${config.business.name}\n\n`;
 
     if (services.length === 0) {
@@ -181,37 +344,19 @@ Silakan informasikan pilihan Anda.`);
       });
     }
 
-    text += `Bila Anda membutuhkan konsultasi lebih lanjut, silakan beri tahu kami.`;
+    text += `Bila Anda membutuhkan konsultasi lebih lanjut atau booking jadwal, silakan beri tahu kami.`;
     return stripStarsAndEmojis(text);
   }
 
   getBusinessInfoMenu() {
-    const config = this.getConfig();
-    const b = config.business;
-
-    return stripStarsAndEmojis(`INFORMASI SHOWROOM DAN JAM OPERASIONAL
-${b.name}
-
-Jam Operasional:
-${b.hours}
-
-Alamat Showroom:
-${b.address}
-
-Google Maps:
-${b.maps_url || 'https://maps.google.com'}
-
-Kontak Resmi:
-- Telepon/WhatsApp: ${b.phone}
-- Email: ${b.email}
-- Website: ${b.website}`);
+    return this.getLocationMenu();
   }
 
   getFaqMenu() {
     const config = this.getConfig();
     const faqs = config.faqs || [];
 
-    let text = `PERTANYAAN UMUM (FAQ)\n`;
+    let text = `PERTANYAAN UMUM (FAQ) SEPUTAR KARPET\n`;
     text += `${config.business.name}\n\n`;
 
     if (faqs.length === 0) {
@@ -248,7 +393,7 @@ Prioritas: ${ticket.priority || 'Normal'}
 Waktu Dibuat: ${createdDate} WIB
 Pembaruan Terakhir: ${updatedDate} WIB
 
-Deskripsi:
+Rincian:
 "${ticket.description}"
 
 Catatan Petugas:
@@ -264,7 +409,7 @@ ${ticket.notes || 'Tiket sedang dalam penanganan oleh tim support.'}`);
 Permintaan Anda telah diteruskan ke petugas Customer Service ${b.name}.
 Petugas kami akan segera membaca pesan Anda dan membalas secara langsung.
 
-Silakan sampaikan pertanyaan, permohonan pembelian, atau kendala Anda di sini.`);
+Silakan sampaikan pertanyaan, pesanan karpet, atau keluhan Anda di sini.`);
   }
 }
 
