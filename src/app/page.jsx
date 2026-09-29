@@ -24,6 +24,8 @@ import {
   Eye,
   EyeOff,
   Trash2,
+  RotateCcw,
+  Lock,
   Check,
   Search,
   Sliders,
@@ -1033,11 +1035,29 @@ export default function Dashboard() {
     }
   };
 
-  const handleSimulateAi = async (e) => {
-    e.preventDefault();
-    if (!simPrompt.trim() || simulating) return;
+  const applyPersonaPreset = (type) => {
+    if (type === 'default') {
+      setSystemPrompt(
+        "Anda adalah Sultan Carpet Assistant, asisten customer service resmi dari Sultan Carpet Gallery (Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan). Pemilik toko adalah H. Ahmad Fauzi & Hj. Maryam, berdiri sejak 2012 dengan reputasi terpercaya melayani lebih dari 1.500 masjid di seluruh Indonesia. Jawab pertanyaan pelanggan dengan sangat ramah, santun, profesional, solutif, dan ringkas dalam Bahasa Indonesia. DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol bintang (*). DILARANG KERAS menggunakan icon emoji apapun dalam balasan Anda. DILARANG KERAS menyuruh pelanggan mengetik perintah kaku seperti Ketik ORDER, Ketik MENU, atau Ketik CS. Berinteraksilah secara alami, hangat, dan luwes layaknya konsultan karpet profesional berpengalaman. Anda menguasai seluruh katalog karpet, jam operasional showroom, jadwal survey gratis dan pasang karpet 24 jam by appointment, alamat showroom utama di Jl. Fatmawati Raya No. 45 Jakarta Selatan beserta cabang Bandung dan Surabaya, kebijakan garansi 1 tahun pemasangan & 100% benang asli, promo diskon hingga 25% + free obras, serta alur penanganan komplain 1x24 jam."
+      );
+      showToastMsg('Preset Standar diterapkan!', 'success');
+    } else if (type === 'survey') {
+      setSystemPrompt(
+        "Anda adalah Konsultan Teknis Sultan Carpet Gallery spesialis karpet masjid & hunian mewah. Fokus utama Anda adalah mengarahkan pelanggan untuk menjadwalkan SURVEY LOKASI GRATIS, pengukuran kiblat & luas masjid, pembawaan sampel bahan fisik karpet Turki ke lokasi pemesan, dan estimasi waktu potong sambung obras di tempat. Berikan penjelasan yang meyakinkan, santun, dan tanpa simbol bintang (*) maupun emoji."
+      );
+      showToastMsg('Preset Fokus Survey diterapkan!', 'success');
+    } else if (type === 'concise') {
+      setSystemPrompt(
+        "Anda adalah CS Sultan Carpet Gallery yang efisien, to-the-point, dan ramah. Berikan jawaban cepat, padat, dan jelas mengenai harga karpet per roll/meter, stok katalog, dan kontak CS resmi. Tanpa basa-basi berlebih, tanpa simbol bintang (*), dan tanpa emoji."
+      );
+      showToastMsg('Preset Ringkas diterapkan!', 'success');
+    }
+  };
 
-    const userMessage = simPrompt.trim();
+  const handleSimulateAiWithText = async (textToSend) => {
+    const userMessage = (textToSend || '').trim();
+    if (!userMessage || simulating) return;
+
     setSimPrompt('');
     setSimHistory((prev) => [
       ...prev,
@@ -1079,6 +1099,12 @@ export default function Dashboard() {
     } finally {
       setSimulating(false);
     }
+  };
+
+  const handleSimulateAi = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!simPrompt.trim()) return;
+    handleSimulateAiWithText(simPrompt);
   };
 
   const handleSaveBusiness = async (e) => {
@@ -2122,7 +2148,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-bold text-white capitalize">
               {activeTab === 'chats' && 'Live Chat Log Real-Time'}
-              {activeTab === 'gemini' && 'AI Studio & Playground (Groq & Google Gemini)'}
+              {activeTab === 'gemini' && 'AI Studio & Simulator Percakapan (Groq & Gemini)'}
               {activeTab === 'qr' && 'Koneksi & QR Code WhatsApp'}
               {activeTab === 'tickets' && 'Daftar Tiket Layanan Pelanggan'}
               {activeTab === 'catalog' && 'Katalog Karpet Sultan & Koleksi Lengkap'}
@@ -2159,7 +2185,7 @@ export default function Dashboard() {
         </header>
 
         {/* TAB PANELS */}
-        <div className={`flex-1 min-h-0 ${activeTab === 'chats' ? 'p-2 sm:p-4 h-[calc(100vh-4rem)] flex flex-col' : 'overflow-y-auto p-6'}`}>
+        <div className={`flex-1 min-h-0 ${['chats', 'gemini'].includes(activeTab) ? 'p-3 sm:p-5 h-[calc(100vh-4rem)] flex flex-col overflow-hidden' : 'overflow-y-auto p-6'}`}>
           {/* TAB 1: 1 USER 1 CHAT WHATSAPP WEB LAYOUT */}
           {activeTab === 'chats' && (
             <div className="h-full flex-1 flex flex-col md:flex-row rounded-2xl border border-slate-800/80 bg-[#0b101b] overflow-hidden shadow-2xl">
@@ -2675,20 +2701,24 @@ export default function Dashboard() {
 
           {/* TAB 2: AI STUDIO (GROQ & GEMINI) */}
           {activeTab === 'gemini' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full min-h-0">
               {/* Left Column: AI Configuration */}
-              <div className="lg:col-span-5 space-y-6">
-                <div className="p-6 rounded-2xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-5">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
-                        <Sparkles className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-white text-base">Konfigurasi AI Layanan</h3>
-                        <p className="text-xs text-slate-400">Pilih penyedia AI (Groq LPU / Google Gemini)</p>
-                      </div>
+              <div className="lg:col-span-5 flex flex-col h-full min-h-0 rounded-2xl border border-slate-800 bg-[#0f172a]/80 backdrop-blur-xl shadow-2xl overflow-hidden">
+                {/* Panel Header */}
+                <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                      <Sparkles className="w-4 h-4" />
                     </div>
+                    <div>
+                      <h3 className="font-bold text-white text-sm">Konfigurasi AI Layanan</h3>
+                      <p className="text-[11px] text-slate-400">Pilih penyedia & model AI untuk balasan otomatis</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[11px] font-semibold ${geminiEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      {geminiEnabled ? 'Aktif' : 'Nonaktif'}
+                    </span>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
@@ -2696,154 +2726,114 @@ export default function Dashboard() {
                         onChange={(e) => setGeminiEnabled(e.target.checked)}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                      <div className="w-10 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
                     </label>
                   </div>
+                </div>
 
+                {/* Panel Scrollable Content */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-0">
                   {/* Provider Selector Tabs */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300">Penyedia AI Utama (Primary Provider)</label>
-                    <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800 gap-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-300">Penyedia AI Utama (Primary Engine)</label>
+                      <span className="text-[10px] text-slate-400">Pilih mesin kecerdasan</span>
+                    </div>
+                    <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800 gap-1.5">
                       <button
                         type="button"
                         onClick={() => setAiProvider('groq')}
                         className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
                           aiProvider === 'groq'
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/20'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                         }`}
                       >
                         <Zap className="w-3.5 h-3.5" />
                         <span>⚡ Groq LPU</span>
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-black/20 text-white/90 font-mono font-normal">~300ms</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setAiProvider('gemini')}
                         className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
                           aiProvider === 'gemini'
-                            ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/20'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                         }`}
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>🔮 Gemini AI</span>
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-black/20 text-white/90 font-mono font-normal">Flash</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Groq Settings Section */}
+                  {/* Groq Settings Section (NO API Key input!) */}
                   {aiProvider === 'groq' && (
-                    <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-4">
+                    <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-amber-300 font-semibold text-xs">
-                          <Zap className="w-4 h-4 text-amber-400" />
-                          <span>Pengaturan Groq AI (LPU Engine)</span>
+                          <Zap className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Pengaturan Mesin Groq AI (LPU Engine)</span>
                         </div>
-                        <a
-                          href="https://console.groq.com/keys"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 underline underline-offset-2"
-                        >
-                          <span>Dapatkan Key Gratis</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-
-                      {/* Groq API Key Input */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                          <Key className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Groq API Key (gsk_...)</span>
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showGroqApiKey ? 'text' : 'password'}
-                            value={groqApiKey}
-                            onChange={(e) => setGroqApiKey(e.target.value)}
-                            placeholder="gsk_..."
-                            className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 pr-10 font-mono"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowGroqApiKey(!showGroqApiKey)}
-                            className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
-                          >
-                            {showGroqApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Kredensial Server Aktif
+                        </span>
                       </div>
 
                       {/* Groq Model Selector */}
                       <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-300">Pilihan Model Groq</label>
+                        <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
+                          <span>Pilihan Model Groq</span>
+                          <span className="text-[10px] text-amber-400/80">Kecepatan Tinggi</span>
+                        </label>
                         <select
                           value={groqModel}
                           onChange={(e) => setGroqModel(e.target.value)}
-                          className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                          className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-medium"
                         >
                           <option value="openai/gpt-oss-120b">OpenAI GPT-OSS 120B (Sangat Cerdas ~750ms - Rekomendasi Utama)</option>
                           <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Ultra Cepat ~500ms)</option>
                           <option value="openai/gpt-oss-20b">OpenAI GPT-OSS 20B (Ringan & Cepat ~580ms)</option>
                           <option value="allam-2-7b">Allam 2 7B</option>
                         </select>
-                        <p className="text-[11px] text-amber-300/80 leading-relaxed">
-                          ⚡ Model OpenAI GPT-OSS 120B & Qwen 27B di Groq LPU merespon dalam waktu &lt; 1 detik dengan pemahaman bahasa Indonesia yang sangat luwes.
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-slate-900/70 border border-slate-800 text-[11px] text-amber-300/90 flex items-start gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                        <p className="leading-relaxed">
+                          ⚡ Model OpenAI GPT-OSS 120B & Qwen 27B di Groq LPU merespon dalam waktu &lt; 1 detik dengan pemahaman katalog karpet yang sangat luwes.
                         </p>
                       </div>
                     </div>
                   )}
 
-                  {/* Gemini Settings Section */}
+                  {/* Gemini Settings Section (NO API Key input!) */}
                   {aiProvider === 'gemini' && (
-                    <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-4">
+                    <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-purple-300 font-semibold text-xs">
-                          <Sparkles className="w-4 h-4 text-purple-400" />
-                          <span>Pengaturan Google Gemini</span>
+                          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Pengaturan Mesin Google Gemini</span>
                         </div>
-                        <a
-                          href="https://aistudio.google.com/app/apikey"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 underline underline-offset-2"
-                        >
-                          <span>Dapatkan Key Gratis</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-
-                      {/* Gemini API Key Input */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                          <Key className="w-3.5 h-3.5 text-purple-400" />
-                          <span>Google Gemini API Key (AIzaSy...)</span>
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showApiKey ? 'text' : 'password'}
-                            value={geminiApiKey}
-                            onChange={(e) => setGeminiApiKey(e.target.value)}
-                            placeholder="AIzaSy..."
-                            className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 pr-10 font-mono"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowApiKey(!showApiKey)}
-                            className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
-                          >
-                            {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Kredensial Server Aktif
+                        </span>
                       </div>
 
                       {/* Gemini Model Selector */}
                       <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-300">Pilihan Model Gemini</label>
+                        <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
+                          <span>Pilihan Model Gemini</span>
+                          <span className="text-[10px] text-purple-400/80">Google DeepMind</span>
+                        </label>
                         <select
                           value={geminiModel}
                           onChange={(e) => setGeminiModel(e.target.value)}
-                          className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                          className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
                         >
                           <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Super Cepat ~1.8s - Rekomendasi Utama)</option>
                           <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Sangat Ringan & Cepat)</option>
@@ -2851,22 +2841,56 @@ export default function Dashboard() {
                           <option value="gemini-flash-latest">Gemini Flash Latest</option>
                         </select>
                       </div>
+
+                      <div className="p-2.5 rounded-lg bg-slate-900/70 border border-slate-800 text-[11px] text-purple-300/90 flex items-start gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0 mt-0.5" />
+                        <p className="leading-relaxed">
+                          🔮 Gemini Flash Lite memberikan penalaran mendalam dengan pemahaman katalog, spek rajutan karpet, dan alur komplain yang sangat akurat.
+                        </p>
+                      </div>
                     </div>
                   )}
 
                   {/* Failover Info Banner */}
-                  <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-700/60 text-[11px] text-slate-400 flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <span>
-                      <strong>Sistem Auto-Failover:</strong> Jika penyedia utama ({aiProvider === 'groq' ? 'Groq' : 'Gemini'}) mengalami kendala atau habis kuota, bot otomatis mengalihkan balasan ke penyedia cadangan tanpa jeda.
-                    </span>
+                  <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 flex items-start gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="leading-relaxed">
+                      <strong className="text-white">Auto-Failover 24/7 Aktif:</strong> Jika penyedia utama ({aiProvider === 'groq' ? 'Groq' : 'Gemini'}) mengalami kendala atau habis kuota, bot otomatis mengalihkan balasan ke penyedia cadangan tanpa jeda.
+                    </div>
                   </div>
 
                   {/* System Instruction / Persona */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-slate-300">Instruksi Sistem & Persona Bot</label>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-300">Instruksi Sistem & Persona Bot</label>
+                      <span className="text-[10px] text-slate-500">{systemPrompt.length} karakter</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 pb-1 flex-wrap">
+                      <span className="text-[10px] text-slate-400">Preset:</span>
+                      <button
+                        type="button"
+                        onClick={() => applyPersonaPreset('default')}
+                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+                      >
+                        Sultan Carpet Resmi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyPersonaPreset('survey')}
+                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+                      >
+                        Fokus Survey & Obras
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyPersonaPreset('concise')}
+                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+                      >
+                        Ringkas & Cepat
+                      </button>
+                    </div>
                     <textarea
-                      rows={4}
+                      rows={3}
                       value={systemPrompt}
                       onChange={(e) => setSystemPrompt(e.target.value)}
                       placeholder="Instruksi untuk gaya bahasa dan persona bot..."
@@ -2875,10 +2899,10 @@ export default function Dashboard() {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex items-center gap-3 pt-2">
+                  <div className="flex items-center gap-2.5 pt-1">
                     <button
                       onClick={handleSaveAiSettings}
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs transition shadow-lg shadow-purple-600/20 flex items-center justify-center gap-2"
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs transition shadow-lg shadow-purple-600/25 flex items-center justify-center gap-2"
                     >
                       <Check className="w-4 h-4" />
                       <span>Simpan Pengaturan AI</span>
@@ -2886,10 +2910,10 @@ export default function Dashboard() {
                     <button
                       onClick={handleTestAi}
                       disabled={testingAi}
-                      className={`py-2.5 px-4 rounded-xl border text-xs font-medium transition flex items-center gap-1.5 ${
+                      className={`py-2.5 px-4 rounded-xl border text-xs font-semibold transition flex items-center gap-1.5 shrink-0 ${
                         aiProvider === 'groq'
-                          ? 'bg-amber-950/30 hover:bg-amber-950/50 text-amber-300 border-amber-500/40'
-                          : 'bg-purple-950/30 hover:bg-purple-950/50 text-purple-300 border-purple-500/40'
+                          ? 'bg-amber-950/40 hover:bg-amber-950/60 text-amber-300 border-amber-500/40'
+                          : 'bg-purple-950/40 hover:bg-purple-950/60 text-purple-300 border-purple-500/40'
                       }`}
                     >
                       {testingAi ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
@@ -2900,25 +2924,33 @@ export default function Dashboard() {
                   {/* Test Result Display */}
                   {aiTestResult && (
                     <div
-                      className={`p-3.5 rounded-xl border text-xs leading-relaxed ${
+                      className={`p-3 rounded-xl border text-xs leading-relaxed transition-all ${
                         aiTestResult.success
                           ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
                           : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
                       }`}
                     >
-                      <div className="font-bold mb-1 flex items-center gap-1.5">
-                        {aiTestResult.success ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                        <span>{aiTestResult.success ? `Koneksi Berhasil (${aiTestResult.elapsed}ms)` : 'Gagal'}</span>
+                      <div className="font-bold mb-1 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          {aiTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertCircle className="w-4 h-4 text-rose-400" />}
+                          <span>{aiTestResult.success ? `Koneksi Berhasil (${aiTestResult.elapsed}ms)` : 'Koneksi Gagal'}</span>
+                        </div>
+                        {aiTestResult.model && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/30">
+                            {aiTestResult.model}
+                          </span>
+                        )}
                       </div>
-                      <p>{aiTestResult.reply || aiTestResult.message || aiTestResult.error}</p>
+                      <p className="line-clamp-3 text-[11px] opacity-90">{aiTestResult.reply || aiTestResult.message || aiTestResult.error}</p>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* Right Column: Live AI Simulator / Playground */}
-              <div className="lg:col-span-7 flex flex-col h-full rounded-2xl border border-slate-800/80 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl overflow-hidden">
-                <div className="p-4 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between">
+              <div className="lg:col-span-7 flex flex-col h-full min-h-0 rounded-2xl border border-slate-800/80 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl overflow-hidden">
+                {/* Simulator Header */}
+                <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-2.5">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                       aiProvider === 'groq' ? 'bg-amber-500/20 text-amber-400' : 'bg-purple-500/20 text-purple-400'
@@ -2926,8 +2958,15 @@ export default function Dashboard() {
                       <Sparkles className="w-4 h-4" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-white">
-                        Simulator Percakapan AI ({aiProvider === 'groq' ? 'Groq LPU' : 'Gemini'})
+                      <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                        <span>Simulator Percakapan AI</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                          aiProvider === 'groq'
+                            ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                            : 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                        }`}>
+                          {aiProvider === 'groq' ? '⚡ Groq LPU' : '🔮 Google Gemini'}
+                        </span>
                       </h3>
                       <p className="text-xs text-slate-400">
                         Uji respons langsung dengan pengetahuan katalog karpet & showroom Sultan Carpet Gallery
@@ -2936,66 +2975,144 @@ export default function Dashboard() {
                   </div>
                   <button
                     onClick={() => setSimHistory([])}
-                    className="text-xs text-slate-400 hover:text-slate-200"
+                    className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 transition"
+                    title="Bersihkan riwayat obrolan simulasi"
                   >
-                    Reset Chat
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Reset Chat</span>
                   </button>
                 </div>
 
                 {/* Simulator Message Stream */}
-                <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                  {simHistory.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'}`}
-                    >
-                      <div className="text-[10px] text-slate-500 mb-1 px-1">
-                        {item.role === 'user' 
-                          ? 'Simulasi Pelanggan' 
-                          : `Sultan Carpet AI (${item.provider === 'groq' ? '⚡ Groq' : '🔮 Gemini'})`} • {item.time}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-0">
+                  {simHistory.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center p-6 text-center">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 shadow-lg ${
+                        aiProvider === 'groq'
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-amber-500/10'
+                          : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-purple-500/10'
+                      }`}>
+                        <Sparkles className="w-6 h-6" />
                       </div>
-                      <div
-                        className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-md ${
-                          item.role === 'user'
-                            ? 'bg-slate-800 text-slate-100 rounded-tr-none'
-                            : item.provider === 'groq'
-                            ? 'bg-gradient-to-br from-amber-950/80 via-slate-900 to-slate-900 text-amber-100 border border-amber-500/30 rounded-tl-none'
-                            : 'bg-gradient-to-br from-purple-950/80 via-slate-900 to-slate-900 text-purple-100 border border-purple-500/30 rounded-tl-none'
-                        }`}
-                        dangerouslySetInnerHTML={{ __html: formatWaText(item.text) }}
-                      />
-                    </div>
-                  ))}
+                      <h4 className="text-sm font-bold text-white mb-1">
+                        Simulator Percakapan AI Sultan Carpet
+                      </h4>
+                      <p className="text-xs text-slate-400 max-w-md mb-5 leading-relaxed">
+                        Uji kecerdasan bot dalam memahami pertanyaan pelanggan seputar karpet masjid Turki, jadwal survey, obras di lokasi, alamat showroom, dan garansi resmi.
+                      </p>
 
-                  {simulating && (
-                    <div className="flex items-center gap-2 text-xs text-purple-400 italic py-2">
-                      <Sparkles className="w-4 h-4 animate-spin text-purple-400" />
-                      <span>{aiProvider === 'groq' ? 'Groq LPU sedang memproses (~300ms)...' : 'Gemini sedang menyusun balasan...'}</span>
+                      <div className="w-full max-w-md space-y-2">
+                        <p className="text-[11px] font-semibold text-slate-400 text-left px-1 flex items-center gap-1.5">
+                          <span>💡 Pertanyaan Cepat untuk Pengujian:</span>
+                        </p>
+                        <div className="flex flex-col gap-1.5">
+                          {[
+                            'Halo, apakah karpet masjid Turki bisa dipasang dan diobras di tempat?',
+                            'Berapa harga karpet masjid grade A+ per roll dan minimal pemesanan?',
+                            'Dimana lokasi showroom utama dan apakah buka di hari libur/Minggu?',
+                            'Apakah ada layanan survey gratis dan dibawakan contoh bahan fisik?',
+                            'Bagaimana ketentuan garansi karpet dan penanganan komplain?'
+                          ].map((promptText, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => handleSimulateAiWithText(promptText)}
+                              className="text-left text-xs px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition flex items-center justify-between group shadow-sm"
+                            >
+                              <span className="truncate pr-2">{promptText}</span>
+                              <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 shrink-0 transition" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      {simHistory.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'}`}
+                        >
+                          <div className="text-[10px] text-slate-500 mb-1 px-1 flex items-center gap-1.5">
+                            {item.role === 'user' ? (
+                              <span>Simulasi Pelanggan • {item.time}</span>
+                            ) : (
+                              <>
+                                <span className={`font-semibold ${item.provider === 'groq' ? 'text-amber-400' : 'text-purple-400'}`}>
+                                  Sultan Carpet AI ({item.provider === 'groq' ? '⚡ Groq' : '🔮 Gemini'})
+                                </span>
+                                <span>• {item.time}</span>
+                              </>
+                            )}
+                          </div>
+                          <div className="relative group max-w-[85%]">
+                            <div
+                              className={`rounded-2xl px-4 py-3 text-xs leading-relaxed whitespace-pre-wrap shadow-md ${
+                                item.role === 'user'
+                                  ? 'bg-slate-800 text-slate-100 rounded-tr-none'
+                                  : item.provider === 'groq'
+                                  ? 'bg-gradient-to-br from-amber-950/60 via-slate-900 to-slate-900 text-amber-50 border border-amber-500/30 rounded-tl-none'
+                                  : 'bg-gradient-to-br from-purple-950/60 via-slate-900 to-slate-900 text-purple-50 border border-purple-500/30 rounded-tl-none'
+                              }`}
+                              dangerouslySetInnerHTML={{ __html: formatWaText(item.text) }}
+                            />
+                            {item.role === 'ai' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(item.text);
+                                  showToastMsg('Balasan disalin!', 'success');
+                                }}
+                                title="Salin balasan"
+                                className="absolute right-2 -top-2 opacity-0 group-hover:opacity-100 transition p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 shadow-sm"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+
+                      {simulating && (
+                        <div className="flex items-center gap-2 text-xs text-purple-400 italic py-2">
+                          <Sparkles className="w-4 h-4 animate-spin text-purple-400" />
+                          <span>{aiProvider === 'groq' ? 'Groq LPU sedang memproses (~300ms)...' : 'Gemini sedang menyusun balasan...'}</span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
                 {/* Input Form */}
                 <form
                   onSubmit={handleSimulateAi}
-                  className="p-3 border-t border-slate-800 bg-slate-900/60 flex items-center gap-2"
+                  className="p-3 border-t border-slate-800 bg-slate-900/60 shrink-0 space-y-1.5"
                 >
-                  <input
-                    type="text"
-                    value={simPrompt}
-                    onChange={(e) => setSimPrompt(e.target.value)}
-                    placeholder="Ketik pertanyaan untuk menguji AI (misal: 'Apakah keramik aman microwave?')"
-                    className="flex-1 rounded-xl bg-slate-800/80 border border-slate-700/80 px-4 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-purple-500"
-                  />
-                  <button
-                    type="submit"
-                    disabled={simulating || !simPrompt.trim()}
-                    className={`p-2.5 rounded-xl text-white transition disabled:opacity-50 ${
-                      aiProvider === 'groq' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-purple-600 hover:bg-purple-500'
-                    }`}
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={simPrompt}
+                      onChange={(e) => setSimPrompt(e.target.value)}
+                      placeholder="Ketik pertanyaan uji AI (contoh: 'Apakah ada survey gratis dan pasang karpet malam hari?')..."
+                      className="flex-1 rounded-xl bg-slate-800/80 border border-slate-700/80 px-4 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={simulating || !simPrompt.trim()}
+                      className={`p-2.5 rounded-xl text-white transition disabled:opacity-50 shrink-0 shadow-md ${
+                        aiProvider === 'groq'
+                          ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/20'
+                          : 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/20'
+                      }`}
+                      title="Kirim Pertanyaan Simulasi"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between px-1 text-[10px] text-slate-500">
+                    <span>Tekan Enter ↵ untuk mengirim</span>
+                    <span>Simulasi langsung menggunakan data katalog resmi</span>
+                  </div>
                 </form>
               </div>
             </div>

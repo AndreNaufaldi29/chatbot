@@ -12,6 +12,8 @@ class MessageHandler {
   constructor() {
     this.eventEmitter = null;
     this.userQueues = new Map(); // Per-JID concurrency queue
+    this.pendingDebounce = new Map(); // Per-JID debounce aggregator for rapid messages
+    this.processedMessageIds = new Set(); // Prevent duplicate processing
   }
 
   setEventEmitter(emitter) {
@@ -170,15 +172,77 @@ class MessageHandler {
   }
 
   async handleMessage(sock, msg) {
-    const jid = msg.key?.remoteJid;
+    if (!msg || !msg.key || msg.key.fromMe) return;
+
+    const jid = msg.key.remoteJid;
     if (!jid) return;
 
+    // Abaikan broadcast status & newsletter
+    if (jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) {
+      return;
+    }
+
+    const isGroup = jid.endsWith('@g.us');
+    const config = menuHandler.getConfig();
+    if (isGroup && config.bot?.ignore_groups) {
+      return;
+    }
+
+    // Deduplikasi ID pesan agar tidak memproses event ganda
+    if (msg.key.id) {
+      if (this.processedMessageIds.has(msg.key.id)) {
+        return;
+      }
+      this.processedMessageIds.add(msg.key.id);
+      if (this.processedMessageIds.size > 2000) {
+        const first = this.processedMessageIds.values().next().value;
+        this.processedMessageIds.delete(first);
+      }
+    }
+
+    const messageInfo = this.extractMessageInfo(msg.message);
+    const rawText = (messageInfo.text || '').trim();
+    if (!rawText) return;
+
+    // Inbound Debouncer: Gabungkan pesan beruntun dari pengguna yang sama (jeda 1.2 detik)
+    // Mencegah spam bot membalas setiap kata/bubble secara terpisah
+    if (this.pendingDebounce.has(jid)) {
+      const record = this.pendingDebounce.get(jid);
+      clearTimeout(record.timer);
+      record.texts.push(rawText);
+      record.lastMsg = msg;
+      if (messageInfo.mediaType && messageInfo.mediaType !== 'text') {
+        record.mediaType = messageInfo.mediaType;
+      }
+      record.timer = setTimeout(() => {
+        this.pendingDebounce.delete(jid);
+        this._enqueueUserProcessing(sock, jid, record);
+      }, 1200);
+      return;
+    }
+
+    const record = {
+      texts: [rawText],
+      lastMsg: msg,
+      mediaType: messageInfo.mediaType || 'text',
+      timer: null
+    };
+
+    record.timer = setTimeout(() => {
+      this.pendingDebounce.delete(jid);
+      this._enqueueUserProcessing(sock, jid, record);
+    }, 1200);
+
+    this.pendingDebounce.set(jid, record);
+  }
+
+  _enqueueUserProcessing(sock, jid, record) {
     // Non-blocking per-JID concurrency queue:
     // Different users process simultaneously in parallel.
-    // Rapid messages from the SAME user are processed in sequence.
+    // Rapid turns from the SAME user are processed in strict sequence.
     const currentPromise = this.userQueues.get(jid) || Promise.resolve();
     const nextPromise = currentPromise
-      .then(() => this._processMessage(sock, msg))
+      .then(() => this._processAggregatedMessage(sock, jid, record))
       .catch(err => {
         console.error(`[MessageHandler] Error handling message for ${jid}:`, err.message);
       })
@@ -192,20 +256,13 @@ class MessageHandler {
     return nextPromise;
   }
 
-  async _processMessage(sock, msg) {
+  async _processAggregatedMessage(sock, jid, record) {
     try {
+      const msg = record.lastMsg;
       if (!msg.message || msg.key.fromMe) return;
 
-      const jid = msg.key.remoteJid;
-      const isGroup = jid.endsWith('@g.us');
       const config = menuHandler.getConfig();
-
-      if (isGroup && config.bot.ignore_groups) {
-        return;
-      }
-
-      const messageInfo = this.extractMessageInfo(msg.message);
-      const rawText = messageInfo.text.trim();
+      const rawText = record.texts.join(' \n ').trim();
       if (!rawText) return;
 
       const senderName = msg.pushName || 'Pelanggan';
@@ -232,25 +289,41 @@ class MessageHandler {
         phone: cleanPhone,
         senderName,
         text: rawText,
-        mediaType: messageInfo.mediaType,
+        mediaType: record.mediaType,
         timestamp: new Date().toISOString()
       });
 
       // Mark message as read
-      if (config.bot.auto_read_messages) {
+      if (config.bot?.auto_read_messages) {
         await sock.readMessages([msg.key]).catch(() => {});
       }
 
       const session = sessionManager.getSession(jid);
       const textLower = rawText.toLowerCase();
 
+      // Enforce anti-spam cooldown between outgoing messages to this JID
+      const cooldownSec = config.bot?.cooldown_seconds || 3;
+      if (session.lastReplyTime) {
+        const elapsed = Date.now() - session.lastReplyTime;
+        const remaining = (cooldownSec * 1000) - elapsed;
+        if (remaining > 0) {
+          await new Promise(r => setTimeout(r, Math.min(remaining, 3000)));
+        }
+      }
+
+      // Simulate human typing presence ('composing') with natural pause
+      try {
+        await sock.sendPresenceUpdate('composing', jid);
+      } catch (e) {}
+      await new Promise(r => setTimeout(r, 800));
+
       // Check if user is in HUMAN_CS mode
       if (sessionManager.isHumanMode(jid)) {
         if (['bot', 'menu', 'reset', 'aktifkan bot', 'kembali'].includes(textLower)) {
           sessionManager.setHumanMode(jid, false);
-          const reply = 'Mode asisten otomatis telah aktif kembali.';
+          const menuText = stripStarsAndEmojis(menuHandler.getMainMenu(senderName));
+          const reply = `Mode asisten otomatis telah aktif kembali.\n\n${menuText}`;
           await this.sendReply(sock, jid, reply, msg);
-          await this.sendListMenu(sock, jid, senderName, msg);
           return;
         }
 
@@ -471,7 +544,7 @@ class MessageHandler {
       return;
     }
 
-    // 2. Foto & detail
+    // 2. Foto & detail (Strictly 1 single message with image + caption specs)
     if (
       textLower === '2' ||
       textLower === 'foto' ||
@@ -481,9 +554,8 @@ class MessageHandler {
       textLower.includes('gambar') ||
       textLower.includes('detail')
     ) {
+      sessionManager.setState(jid, 'IDLE');
       await this.sendCatalogCard(sock, jid, product, originalMsg);
-      const reminder = `Bila Anda ingin memesan ${product.title}, silakan beri tahu kami atau pilih produk lainnya.`;
-      await this.sendReply(sock, jid, reminder, originalMsg);
       return;
     }
 
@@ -538,6 +610,51 @@ class MessageHandler {
   async handleIdleMenu(sock, jid, text, senderName, originalMsg, phone, detectedIntent = null) {
     const textTrim = text.trim();
     const textLower = textTrim.toLowerCase();
+    const session = sessionManager.getSession(jid);
+    const catalog = menuHandler.getCatalog();
+
+    // ─── ANTI-SPAM CONFIRMATION & DETAIL INTERACTION CHECK ───
+    const pendingProduct = session.data?.pendingDetailProduct;
+
+    const isDetailConfirmation = 
+      /^(foto|detail|fotonya|gambar|spill|lihat|pic|pict|mau|ya|boleh|kirim|ok|oke|ya mau|mau foto|minta foto|kirim foto|lihat foto)$/i.test(textTrim) ||
+      /\b(foto|detail|fotonya|gambar|spill|lihat foto|minta foto|kirim foto)\b/i.test(textLower);
+
+    // CASE 1: User confirms photo/detail for a previously offered/discussed product
+    if (pendingProduct && isDetailConfirmation) {
+      delete session.data.pendingDetailProduct;
+      // Send STRICTLY 1 message: single catalog card with photo + full specs caption
+      await this.sendCatalogCard(sock, jid, pendingProduct, originalMsg);
+      return;
+    }
+
+    // CASE 2: User explicitly mentions a specific product name AND requests photo/detail
+    const isAskingPhoto = /\b(foto|gambar|pic|pict|lihat|spill|detail|fotonya)\b/i.test(textLower);
+    if (isAskingPhoto) {
+      let matchedItem = null;
+      for (const item of catalog) {
+        const code = (item.code || '').toLowerCase();
+        const titleWords = item.title.toLowerCase().split(' ').filter(w => w.length > 3);
+        if ((code && textLower.includes(code)) || titleWords.some(w => textLower.includes(w))) {
+          matchedItem = item;
+          break;
+        }
+      }
+
+      if (matchedItem) {
+        delete session.data.pendingDetailProduct;
+        await this.sendCatalogCard(sock, jid, matchedItem, originalMsg);
+        return;
+      }
+
+      // If user asks for photos in general without specifying a product:
+      // DO NOT blast photos! Ask user to select or confirm which product first (1 message).
+      sessionManager.setState(jid, 'SELECT_PRODUCT');
+      const askMsg = `Kami menyediakan beragam koleksi karpet berkualitas tinggi. Silakan sebutkan jenis karpet yang ingin Kakak lihat foto dan spesifikasi detailnya:\n\n` +
+        menuHandler.getCatalogSelectionMenu();
+      await this.sendReply(sock, jid, askMsg, originalMsg);
+      return;
+    }
 
     // 1. Explicit numbered menu commands
     if (textLower === '1' || textLower === 'katalog' || textLower === 'menu_katalog' || textLower === 'karpet') {
@@ -613,38 +730,52 @@ class MessageHandler {
 
         const aiReply = await aiService.generateReply(jid, aiPrompt, senderName);
         if (aiReply) {
-          // Detect [KIRIM_FOTO: ...] tags from AI
-          const photoTags = [];
-          const tagRegex = /\[KIRIM_FOTO:\s*([A-Za-z0-9_-]+)\]/gi;
-          let match;
-          while ((match = tagRegex.exec(aiReply)) !== null) {
-            photoTags.push(match[1].toUpperCase());
-          }
-
-          // Heuristic detection: if user asked for photos and mentioned products
-          const isAskingPhoto = textLower.includes('foto') || textLower.includes('gambar') || textLower.includes('pic') || textLower.includes('pict') || textLower.includes('lihat') || textLower.includes('spill') || textLower.includes('tampil');
-          const catalog = menuHandler.getCatalog();
-
-          if (isAskingPhoto && photoTags.length === 0) {
-            for (const item of catalog) {
-              const code = (item.code || '').toLowerCase();
-              const titleWords = item.title.toLowerCase().split(' ').filter(w => w.length > 3);
-              if ((code && textLower.includes(code)) || titleWords.some(w => textLower.includes(w))) {
-                photoTags.push(item.code || item.id);
-                break;
-              }
-            }
-            if (photoTags.length === 0 && (textLower.includes('katalog') || textLower.includes('produk') || textLower.includes('koleksi') || textLower.includes('semua') || textLower.includes('karpet'))) {
-              photoTags.push('ALL');
+          // Detect if any specific product is mentioned or recommended
+          let matchedProduct = null;
+          for (const item of catalog) {
+            const code = (item.code || '').toLowerCase();
+            const titleWords = item.title.toLowerCase().split(' ').filter(w => w.length > 3);
+            if (
+              (code && (textLower.includes(code) || aiReply.toLowerCase().includes(code))) ||
+              titleWords.some(w => textLower.includes(w) || aiReply.toLowerCase().includes(w))
+            ) {
+              matchedProduct = item;
+              break;
             }
           }
 
-          // Strip [KIRIM_FOTO: ...] tags before sending clean text to user
+          // If no specific product matched but question is about carpets/masjid/kantor, select appropriate candidate
+          if (!matchedProduct) {
+            if (textLower.includes('masjid')) {
+              matchedProduct = catalog.find(c => (c.category || '').toLowerCase().includes('masjid') || c.title.toLowerCase().includes('masjid')) || catalog[0];
+            } else if (textLower.includes('kantor')) {
+              matchedProduct = catalog.find(c => (c.category || '').toLowerCase().includes('kantor') || c.title.toLowerCase().includes('kantor')) || catalog[0];
+            } else if (textLower.includes('rekomendasi') || textLower.includes('koleksi') || textLower.includes('karpet') || textLower.includes('harga')) {
+              matchedProduct = catalog[0];
+            }
+          }
+
+          // Save pendingDetailProduct in session so user can confirm with "FOTO" or "DETAIL"
+          if (matchedProduct) {
+            session.data.pendingDetailProduct = matchedProduct;
+          }
+
+          // Clean up reply: strip [KIRIM_FOTO: ...] tags
           let cleanReply = aiReply.replace(/\[KIRIM_FOTO:[^\]]+\]/gi, '').trim();
           cleanReply = stripStarsAndEmojis(cleanReply);
 
+          // Append confirmation prompt if product is discussed and confirmation hint is missing
+          if (matchedProduct && !cleanReply.toLowerCase().includes('foto') && !cleanReply.toLowerCase().includes('detail')) {
+            cleanReply += `\n\nBila Kakak ingin melihat foto fisik dan rincian spesifikasi lengkap ${matchedProduct.title}, silakan balas dengan 'FOTO' atau 'DETAIL'.`;
+          }
+
+          // Send STRICTLY 1 text message (NEVER send extra photo cards automatically!)
           sessionManager.updateReplyTime(jid);
           await sock.sendMessage(jid, { text: cleanReply }, { quoted: originalMsg });
+
+          try {
+            await sock.sendPresenceUpdate('paused', jid);
+          } catch (e) {}
 
           const provider = aiService.getActiveProvider();
           const providerDisplayName = provider === 'groq' ? 'Sultan Carpet AI (Groq)' : 'Sultan Carpet AI (Gemini)';
@@ -659,29 +790,6 @@ class MessageHandler {
             isAi: true,
             timestamp: new Date().toISOString()
           });
-
-          // Send actual product image(s) if requested or recommended!
-          if (photoTags.length > 0) {
-            let productsToSend = [];
-            if (photoTags.includes('ALL')) {
-              productsToSend = catalog.slice(0, 3);
-            } else {
-              for (const tag of photoTags) {
-                const item = catalog.find(c =>
-                  String(c.id) === String(tag) ||
-                  (c.code && c.code.toUpperCase() === tag) ||
-                  c.title.toUpperCase().includes(tag)
-                );
-                if (item && !productsToSend.some(p => p.id === item.id)) {
-                  productsToSend.push(item);
-                }
-              }
-            }
-
-            for (const prod of productsToSend) {
-              await this.sendCatalogCard(sock, jid, prod, originalMsg);
-            }
-          }
 
           return;
         }
@@ -799,6 +907,10 @@ class MessageHandler {
 
       await sock.sendMessage(jid, { text: menuText }, { quoted: originalMsg });
 
+      try {
+        await sock.sendPresenceUpdate('paused', jid);
+      } catch (e) {}
+
       this.emitLog({
         id: `out_menu_${Date.now()}`,
         direction: 'out',
@@ -821,6 +933,10 @@ class MessageHandler {
       const resolvedPhone = phoneService.getPhone(jid) || jid.split('@')[0];
 
       await sock.sendMessage(jid, { text: reply }, { quoted: originalMsg });
+
+      try {
+        await sock.sendPresenceUpdate('paused', jid);
+      } catch (e) {}
 
       this.emitLog({
         id: `out_branches_${Date.now()}`,
@@ -889,12 +1005,16 @@ class MessageHandler {
         await sock.sendMessage(jid, { text: caption }, { quoted: originalMsg });
       }
 
+      try {
+        await sock.sendPresenceUpdate('paused', jid);
+      } catch (e) {}
+
       this.emitLog({
         id: `out_cat_${Date.now()}`,
         direction: 'out',
         jid,
         phone: resolvedPhone,
-        senderName: 'Harbor Bot',
+        senderName: 'Sultan Carpet Bot',
         text: caption,
         image: product.image,
         mediaType: 'image',
@@ -913,12 +1033,16 @@ class MessageHandler {
       const resolvedPhone = phoneService.getPhone(jid) || jid.split('@')[0];
       await sock.sendMessage(jid, { text: cleanText }, { quoted: originalMsg });
 
+      try {
+        await sock.sendPresenceUpdate('paused', jid);
+      } catch (e) {}
+
       this.emitLog({
         id: `out_${Date.now()}`,
         direction: 'out',
         jid,
         phone: resolvedPhone,
-        senderName: 'Harbor Bot',
+        senderName: 'Sultan Carpet Bot',
         text: cleanText,
         timestamp: new Date().toISOString()
       });
