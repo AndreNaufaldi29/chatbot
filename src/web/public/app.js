@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSettingsForm();
   initModal();
   initWaMenuModal();
+  loadRecentChatLogs();
 });
 
 // Navigation / Tab Switching
@@ -96,6 +97,16 @@ function initSSE() {
   eventSource.addEventListener('status_change', (e) => {
     const data = JSON.parse(e.data);
     updateStatusUI(data.status, data.user, data.qrDataUrl);
+    if (data.status === 'connected') {
+      loadRecentChatLogs();
+      if (currentTab === 'tab-qr') {
+        switchTab('tab-chats');
+      }
+    }
+  });
+
+  eventSource.addEventListener('chats_updated', () => {
+    loadRecentChatLogs();
   });
 
   eventSource.addEventListener('qr', (e) => {
@@ -277,6 +288,23 @@ function appendChatMessage(msg) {
 
   chatLogBox.appendChild(row);
   chatLogBox.scrollTop = chatLogBox.scrollHeight;
+}
+
+// Load All Synced Chat Messages on Login / Initialization
+async function loadRecentChatLogs() {
+  try {
+    const res = await fetch('/api/chats/messages');
+    if (!res.ok) return;
+    const messages = await res.json();
+    if (Array.isArray(messages) && messages.length > 0) {
+      if (emptyChatState) emptyChatState.style.display = 'none';
+      chatLogBox.innerHTML = '';
+      chatCount = 0;
+      messages.forEach(msg => appendChatMessage(msg));
+    }
+  } catch (err) {
+    console.error('Gagal memuat riwayat obrolan:', err);
+  }
 }
 
 // Tickets Management

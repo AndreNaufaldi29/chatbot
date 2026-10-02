@@ -13,6 +13,9 @@ const EventEmitter = require('events');
 let messageHandler = require('./handlers/messageHandler');
 const sessionManager = require('./services/sessionManager');
 const phoneService = require('./services/phoneService');
+const protectionService = require('./services/protectionService');
+const chatService = require('./services/chatService');
+const dbService = require('./services/dbService');
 
 const AUTH_FOLDER = path.join(__dirname, '../auth_info_baileys');
 
@@ -25,6 +28,7 @@ class WhatsAppBot extends EventEmitter {
     this.qrCodeDataUrl = null;
     this.userInfo = null;
     this.connectedAt = null;
+    this.connectedTimestamp = 0;
     this.isReconnecting = false;
 
     // Link messageHandler with bot's event emitter for real-time web logs
@@ -62,7 +66,7 @@ class WhatsAppBot extends EventEmitter {
         browser: ['WhatsApp CS Bot', 'Chrome', '1.0.0'],
         defaultQueryTimeoutMs: 60000,
         connectTimeoutMs: 60000,
-        syncFullHistory: false,
+        syncFullHistory: true, // Enable full WhatsApp chat and message history sync
         shouldIgnoreJid: (jid) => {
           // Abaikan status cerita & siaran newsletter agar tidak memicu error dekripsi sesi
           return (
@@ -123,6 +127,7 @@ class WhatsAppBot extends EventEmitter {
           this.qrCodeRaw = null;
           this.qrCodeDataUrl = null;
           this.connectedAt = new Date().toISOString();
+          this.connectedTimestamp = Date.now();
           this.userInfo = {
             id: this.sock.user?.id?.split(':')[0] || 'Unknown',
             name: this.sock.user?.name || 'WhatsApp CS'
@@ -133,6 +138,7 @@ class WhatsAppBot extends EventEmitter {
             user: this.userInfo,
             connectedAt: this.connectedAt
           });
+          this.emit('chats_updated', { source: 'connection_open' });
         }
 
         if (connection === 'close') {
@@ -172,8 +178,127 @@ class WhatsAppBot extends EventEmitter {
         }
       });
 
-      // Handle incoming messages concurrently (no bottleneck/queue delay between different users)
+      // 1. Handle Full Messaging History Sync from WhatsApp
+      this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest, progress }) => {
+        console.log(`[WhatsAppBot] 📥 Menerima sinkronisasi riwayat WhatsApp: ${chats?.length || 0} obrolan, ${contacts?.length || 0} kontak, ${messages?.length || 0} pesan (progress: ${progress || 100}%).`);
+
+        // a. Sinkronisasi Kontak & Nama ke phoneService
+        if (Array.isArray(contacts)) {
+          for (const c of contacts) {
+            if (c.id && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter')) {
+              const name = c.name || c.notify || c.verifiedName;
+              const phone = c.id.split('@')[0];
+              phoneService.setMapping(c.id, phone, name);
+            }
+          }
+        }
+
+        // b. Sinkronisasi Obrolan (Chats metadata) ke chatService
+        if (Array.isArray(chats)) {
+          for (const ch of chats) {
+            if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
+              chatService.setSyncedChat(ch.id, {
+                name: ch.name,
+                unreadCount: ch.unreadCount,
+                updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
+              });
+            }
+          }
+        }
+
+        // c. Sinkronisasi Pesan Riwayat (Messages batch)
+        if (Array.isArray(messages) && messages.length > 0) {
+          const parsedList = [];
+          for (const m of messages) {
+            if (m.key?.id && m.message) {
+              sessionManager.storeMessage(m.key.id, m.message);
+            }
+            const parsed = this.parseWAMessage(m);
+            if (parsed) {
+              parsedList.push(parsed);
+              dbService.saveChatMessage(parsed).catch(() => {});
+            }
+          }
+
+          if (parsedList.length > 0) {
+            const added = chatService.addMessagesBatch(parsedList);
+            console.log(`[WhatsAppBot] ✅ ${added.length} pesan riwayat WhatsApp berhasil disimpan dan siap dirender di Dashboard.`);
+          }
+        }
+
+        // d. Trigger real-time re-render di semua dashboard
+        this.emit('chats_updated', { source: 'history_sync', count: messages?.length || 0 });
+      });
+
+      // 2. Handle Chats Upsert & Update
+      this.sock.ev.on('chats.upsert', (newChats) => {
+        if (Array.isArray(newChats)) {
+          for (const ch of newChats) {
+            if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
+              chatService.setSyncedChat(ch.id, {
+                name: ch.name,
+                unreadCount: ch.unreadCount,
+                updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
+              });
+            }
+          }
+          this.emit('chats_updated', { source: 'chats_upsert', count: newChats.length });
+        }
+      });
+
+      this.sock.ev.on('chats.update', (updates) => {
+        if (Array.isArray(updates)) {
+          for (const ch of updates) {
+            if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
+              chatService.setSyncedChat(ch.id, {
+                name: ch.name,
+                unreadCount: ch.unreadCount,
+                updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
+              });
+            }
+          }
+          this.emit('chats_updated', { source: 'chats_update', count: updates.length });
+        }
+      });
+
+      // 3. Handle Contacts Upsert
+      this.sock.ev.on('contacts.upsert', (newContacts) => {
+        if (Array.isArray(newContacts)) {
+          for (const c of newContacts) {
+            if (c.id && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter')) {
+              const name = c.name || c.notify || c.verifiedName;
+              const phone = c.id.split('@')[0];
+              phoneService.setMapping(c.id, phone, name);
+            }
+          }
+          this.emit('chats_updated', { source: 'contacts_upsert', count: newContacts.length });
+        }
+      });
+
+      // 4. Handle incoming messages (Both history append and real-time notify)
       this.sock.ev.on('messages.upsert', async (m) => {
+        // Handle history append messages
+        if (m.type === 'append') {
+          const parsedList = [];
+          for (const msg of m.messages) {
+            if (msg.key?.remoteJid?.endsWith('@broadcast') || msg.key?.remoteJid?.endsWith('@newsletter')) continue;
+            if (msg.key?.id && msg.message) {
+              sessionManager.storeMessage(msg.key.id, msg.message);
+            }
+            const parsed = this.parseWAMessage(msg);
+            if (parsed) {
+              parsedList.push(parsed);
+              dbService.saveChatMessage(parsed).catch(() => {});
+            }
+          }
+          if (parsedList.length > 0) {
+            chatService.addMessagesBatch(parsedList);
+            this.emit('chats_updated', { source: 'messages_append', count: parsedList.length });
+          }
+          return;
+        }
+
+        // Handle live notify messages
         if (m.type === 'notify') {
           for (const msg of m.messages) {
             // Abaikan pesan broadcast status & newsletter
@@ -183,7 +308,27 @@ class WhatsAppBot extends EventEmitter {
             if (msg.key?.id && msg.message) {
               sessionManager.storeMessage(msg.key.id, msg.message);
             }
-            // Process message asynchronously so User B does not wait for User A
+
+            // Cek apakah pesan ini dikirim sebelum bot terhubung (antrean offline)
+            const botConnTime = this.connectedTimestamp || 0;
+            const rawTs = msg.messageTimestamp
+              ? (typeof msg.messageTimestamp === 'object' && msg.messageTimestamp.low !== undefined ? msg.messageTimestamp.low : Number(msg.messageTimestamp))
+              : 0;
+            const msgTimeMs = rawTs > 0 ? rawTs * 1000 : Date.now();
+            const isOldMessage = botConnTime > 0 && msgTimeMs < (botConnTime - 90000);
+
+            if (isOldMessage) {
+              // Simpan dan tampilkan pesan offline di dashboard tanpa memicu auto-reply bot
+              const parsed = this.parseWAMessage(msg);
+              if (parsed) {
+                chatService.addMessage(parsed);
+                dbService.saveChatMessage(parsed).catch(() => {});
+                this.emit('chat_log', parsed);
+              }
+              continue;
+            }
+
+            // Pesan baru saat online: proses respons otomatis asisten
             messageHandler.handleMessage(this.sock, msg).catch((err) => {
               console.error('[WhatsAppBot] Error handling message:', err.message);
             });
@@ -196,6 +341,46 @@ class WhatsAppBot extends EventEmitter {
       this.status = 'disconnected';
       this.emit('status_change', { status: this.status, error: err.message });
     }
+  }
+
+  parseWAMessage(msg) {
+    if (!msg || !msg.key) return null;
+    const jid = msg.key.remoteJid;
+    if (!jid || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return null;
+
+    const isFromMe = Boolean(msg.key.fromMe);
+    const info = messageHandler.extractMessageInfo(msg.message);
+    const text = (info.text || '').trim();
+    if (!text && info.mediaType === 'unknown') return null;
+
+    let timestampIso = new Date().toISOString();
+    if (msg.messageTimestamp) {
+      const rawTs = typeof msg.messageTimestamp === 'object' && msg.messageTimestamp.low !== undefined
+        ? msg.messageTimestamp.low
+        : Number(msg.messageTimestamp);
+      if (!isNaN(rawTs) && rawTs > 0) {
+        timestampIso = new Date(rawTs * 1000).toISOString();
+      }
+    }
+
+    const senderName = isFromMe
+      ? 'Saya'
+      : (msg.pushName || phoneService.getPhone(jid) || jid.split('@')[0]);
+
+    const realPhone = phoneService.getPhone(jid, senderName) || (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : null);
+
+    return {
+      id: msg.key.id || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      direction: isFromMe ? 'out' : 'in',
+      jid,
+      phone: realPhone || jid.split('@')[0],
+      senderName,
+      text: text || `[${info.mediaType || 'Pesan'}]`,
+      mediaType: info.mediaType || 'text',
+      image: null,
+      isAi: false,
+      timestamp: timestampIso
+    };
   }
 
   getStatus() {
@@ -234,7 +419,19 @@ class WhatsAppBot extends EventEmitter {
     const resolvedPhone = explicitPhone || phoneService.getPhone(jid, senderName) || phoneService.getPhone(targetStr) || jid.split('@')[0];
 
     console.log(`[WhatsAppBot] Mengirim pesan web ke ${jid} (Phone: ${resolvedPhone}): "${text}"`);
-    await this.sock.sendMessage(jid, { text });
+
+    // 🛡️ Global rate limit wait & send with retry limit
+    await protectionService.waitForGlobalRateLimit();
+    await protectionService.withRetry(async () => {
+      return await this.sock.sendMessage(jid, { text });
+    }, {
+      maxRetries: 2,
+      baseDelayMs: 1000,
+      context: `Web dashboard send to ${jid}`
+    });
+
+    // 🛡️ Otomatis aktifkan mode Human CS (Handoff) agar bot tidak menimpa percakapan admin
+    sessionManager.setHumanMode(jid, true, 'Balasan manual via Dashboard Admin');
 
     const logData = {
       id: customMessageId || `manual_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,

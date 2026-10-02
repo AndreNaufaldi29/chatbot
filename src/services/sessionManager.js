@@ -1,3 +1,5 @@
+const protectionService = require('./protectionService');
+
 class SessionManager {
   constructor() {
     this.sessions = new Map();
@@ -20,9 +22,20 @@ class SessionManager {
     return this.messageStore.get(id);
   }
 
+  getSessionTimeoutMs() {
+    try {
+      const config = protectionService.getConfig();
+      const minutes = config.session_timeout?.inactivity_minutes || 20;
+      return minutes * 60 * 1000;
+    } catch (e) {
+      return this.SESSION_TIMEOUT_MS;
+    }
+  }
+
   getSession(jid) {
     const now = Date.now();
     let session = this.sessions.get(jid);
+    const timeoutMs = this.getSessionTimeoutMs();
 
     if (!session) {
       session = {
@@ -34,14 +47,16 @@ class SessionManager {
       };
       this.sessions.set(jid, session);
     } else {
-      // If inactive for too long and not in HUMAN_CS mode, reset to IDLE
-      if (session.state !== 'HUMAN_CS' && now - session.lastActivity > this.SESSION_TIMEOUT_MS) {
+      // Check if session timed out from inactivity (excluding active HUMAN_CS mode)
+      if (session.state !== 'HUMAN_CS' && now - session.lastActivity > timeoutMs) {
+        console.log(`[SessionManager] Sesi ${jid} kedaluwarsa setelah ${Math.round((now - session.lastActivity) / 60000)} menit tidak aktif. Mengembalikan ke IDLE.`);
         session.state = 'IDLE';
         session.data = {};
       }
       session.lastActivity = now;
     }
 
+    protectionService.touchActivity(jid);
     return session;
   }
 
@@ -50,6 +65,7 @@ class SessionManager {
     session.state = state;
     session.data = { ...session.data, ...data };
     session.lastActivity = Date.now();
+    protectionService.touchActivity(jid);
     return session;
   }
 
@@ -58,6 +74,7 @@ class SessionManager {
     session.state = 'IDLE';
     session.data = {};
     session.lastActivity = Date.now();
+    protectionService.touchActivity(jid);
     return session;
   }
 
@@ -74,27 +91,38 @@ class SessionManager {
   updateReplyTime(jid) {
     const session = this.getSession(jid);
     session.lastReplyTime = Date.now();
+    protectionService.recordUserReply(jid);
   }
 
-  setHumanMode(jid, enabled = true) {
+  setHumanMode(jid, enabled = true, reason = 'CS requested') {
     const session = this.getSession(jid);
     if (enabled) {
       session.state = 'HUMAN_CS';
       session.humanModeStartedAt = Date.now();
+      protectionService.setHumanHandoff(jid, true, reason);
     } else {
       session.state = 'IDLE';
       session.data = {};
+      protectionService.setHumanHandoff(jid, false);
     }
     return session;
   }
 
   isHumanMode(jid) {
     const session = this.getSession(jid);
+    // Double check with protectionService handoff status
+    if (protectionService.isHumanHandoff(jid)) {
+      session.state = 'HUMAN_CS';
+      return true;
+    }
+
     if (session.state === 'HUMAN_CS') {
-      // Check if human mode expired (e.g. 2 hours)
       const now = Date.now();
-      if (session.humanModeStartedAt && (now - session.humanModeStartedAt) > 2 * 60 * 60 * 1000) {
+      const config = protectionService.getConfig();
+      const maxAgeMs = (config.human_handoff?.auto_expire_hours || 2) * 60 * 60 * 1000;
+      if (session.humanModeStartedAt && (now - session.humanModeStartedAt) > maxAgeMs) {
         session.state = 'IDLE';
+        protectionService.setHumanHandoff(jid, false);
         return false;
       }
       return true;

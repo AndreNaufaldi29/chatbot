@@ -418,11 +418,19 @@ export default function Dashboard() {
     eventSource.addEventListener('status_change', (e) => {
       try {
         const data = JSON.parse(e.data);
-        setBotStatus((prev) => ({ ...prev, ...data }));
-        if (data.status === 'connected') {
-          showToastMsg('WhatsApp berhasil terhubung!', 'success');
-        }
+        setBotStatus((prev) => {
+          if (data.status === 'connected' && prev.status !== 'connected') {
+            showToastMsg('WhatsApp berhasil terhubung! Memuat seluruh chat...', 'success');
+            fetchChats();
+            setActiveTab((curr) => (curr === 'qr' ? 'chats' : curr));
+          }
+          return { ...prev, ...data };
+        });
       } catch (err) {}
+    });
+
+    eventSource.addEventListener('chats_updated', () => {
+      fetchChats();
     });
 
     eventSource.addEventListener('qr', (e) => {
@@ -615,6 +623,12 @@ export default function Dashboard() {
       };
     }
   }, [activeTab, selectedChatJid, conversations]);
+
+  useEffect(() => {
+    if (activeTab === 'chats') {
+      fetchChats();
+    }
+  }, [activeTab]);
 
   const fetchChats = async () => {
     try {

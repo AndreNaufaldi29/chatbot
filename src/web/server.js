@@ -11,6 +11,8 @@ const groqService = require('../services/groqService');
 const aiService = require('../services/aiService');
 const prisma = require('../db/prisma');
 const dbService = require('../services/dbService');
+const protectionService = require('../services/protectionService');
+const sessionManager = require('../services/sessionManager');
 
 const app = express();
 app.use(cors());
@@ -44,6 +46,9 @@ bot.on('chat_log', (data) => {
 });
 bot.on('ticket_created', (data) => broadcastSSE('ticket_created', data));
 bot.on('human_cs_requested', (data) => broadcastSSE('human_cs_requested', data));
+bot.on('chats_updated', (data) => broadcastSSE('chats_updated', data));
+protectionService.on('human_handoff_started', (data) => broadcastSSE('human_handoff_started', data));
+protectionService.on('human_handoff_ended', (data) => broadcastSSE('human_handoff_ended', data));
 
 // Server-Sent Events Endpoint
 app.get('/api/events', (req, res) => {
@@ -167,6 +172,51 @@ app.patch('/api/tickets/:id', (req, res) => {
   }
   broadcastSSE('ticket_updated', updated);
   res.json(updated);
+});
+
+// =========================================================================
+// Protections & Anti-Ban Management Endpoints
+// =========================================================================
+app.get('/api/protections', (req, res) => {
+  const config = protectionService.getConfig();
+  const stats = protectionService.getStats();
+  res.json({
+    success: true,
+    config,
+    stats
+  });
+});
+
+app.post('/api/protections/config', (req, res) => {
+  try {
+    const newConfig = req.body;
+    const config = menuHandler.getConfig();
+    config.protections = { ...config.protections, ...newConfig };
+    menuHandler.saveConfig(config);
+    broadcastSSE('protections_updated', config.protections);
+    res.json({ success: true, protections: config.protections });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Human Handoff Control (Takeover or release conversation)
+app.post('/api/chats/:jid/handoff', (req, res) => {
+  const { jid } = req.params;
+  const { active, reason } = req.body;
+  const isHandoff = active !== false;
+  sessionManager.setHumanMode(jid, isHandoff, reason || (isHandoff ? 'Admin takeover via Web Dashboard' : 'Returned to bot by Admin'));
+  broadcastSSE('handoff_status_changed', { jid, active: isHandoff });
+  res.json({ success: true, jid, active: isHandoff });
+});
+
+// Opt-In / Consent Control
+app.post('/api/chats/:jid/opt-in', (req, res) => {
+  const { jid } = req.params;
+  const { optedIn, reason } = req.body;
+  protectionService.setOptIn(jid, optedIn !== false, reason || 'Admin update via Web Dashboard');
+  broadcastSSE('opt_in_changed', { jid, optedIn: optedIn !== false });
+  res.json({ success: true, jid, optedIn: optedIn !== false });
 });
 
 // Prisma Database Management Endpoints

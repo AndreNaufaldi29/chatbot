@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const phoneService = require('./phoneService');
+const protectionService = require('./protectionService');
 
 const CHATS_FILE = path.join(__dirname, '../../data/chats.json');
+const SYNCED_CHATS_FILE = path.join(__dirname, '../../data/synced_chats.json');
 
 const INITIAL_SEED_CHATS = [
   {
@@ -49,7 +51,9 @@ const INITIAL_SEED_CHATS = [
 
 class ChatService {
   constructor() {
+    this.syncedChats = new Map(); // jid -> { name, unreadCount, updatedAt }
     this.ensureFileExists();
+    this.loadSyncedChats();
   }
 
   ensureFileExists() {
@@ -60,6 +64,44 @@ class ChatService {
     if (!fs.existsSync(CHATS_FILE)) {
       fs.writeFileSync(CHATS_FILE, JSON.stringify(INITIAL_SEED_CHATS, null, 2), 'utf8');
     }
+  }
+
+  loadSyncedChats() {
+    try {
+      if (fs.existsSync(SYNCED_CHATS_FILE)) {
+        const raw = fs.readFileSync(SYNCED_CHATS_FILE, 'utf8');
+        const data = JSON.parse(raw || '{}');
+        for (const [k, v] of Object.entries(data)) {
+          this.syncedChats.set(k, v);
+        }
+      }
+    } catch (e) {
+      console.warn('[ChatService] Gagal memuat synced_chats.json:', e.message);
+    }
+  }
+
+  saveSyncedChats() {
+    try {
+      const obj = {};
+      for (const [k, v] of this.syncedChats.entries()) {
+        obj[k] = v;
+      }
+      fs.writeFileSync(SYNCED_CHATS_FILE, JSON.stringify(obj, null, 2), 'utf8');
+    } catch (e) {
+      console.warn('[ChatService] Gagal menyimpan synced_chats.json:', e.message);
+    }
+  }
+
+  setSyncedChat(jid, chatData = {}) {
+    if (!jid || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return;
+    const existing = this.syncedChats.get(jid) || {};
+    this.syncedChats.set(jid, {
+      ...existing,
+      ...chatData,
+      jid,
+      updatedAt: chatData.updatedAt || existing.updatedAt || new Date().toISOString()
+    });
+    this.saveSyncedChats();
   }
 
   getAllMessages() {
@@ -142,10 +184,99 @@ class ChatService {
     return normalized;
   }
 
+  addMessagesBatch(msgList) {
+    if (!Array.isArray(msgList) || msgList.length === 0) return [];
+    const messages = this.getAllMessages();
+    const existingIds = new Set(messages.map((m) => m.id));
+    const added = [];
+
+    for (const msg of msgList) {
+      if (!msg || !msg.text) continue;
+      const jid = msg.jid || (msg.phone ? `${msg.phone.replace(/\D/g, '')}@s.whatsapp.net` : 'unknown@s.whatsapp.net');
+      if (jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
+
+      const realPhone = phoneService.getPhone(jid, msg.senderName) || (msg.phone ? String(msg.phone).replace(/\D/g, '') : (jid ? jid.split('@')[0] : 'Unknown'));
+
+      if (jid && realPhone && realPhone.length >= 8) {
+        phoneService.setMapping(jid, realPhone, msg.senderName);
+      }
+
+      const id = msg.id || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      if (existingIds.has(id)) continue;
+
+      const messageText = String(msg.text).trim();
+      const messageDirection = msg.direction === 'out' ? 'out' : 'in';
+      const messageTimestamp = msg.timestamp || new Date().toISOString();
+      const messageTimeMs = new Date(messageTimestamp).getTime();
+
+      // Deduplication check: check if identical message already exists
+      const isDuplicate = messages.some((m) =>
+        m.jid === jid &&
+        m.direction === messageDirection &&
+        m.text &&
+        m.text.trim() === messageText &&
+        Math.abs(new Date(m.timestamp).getTime() - messageTimeMs) < 6000
+      );
+
+      if (isDuplicate) continue;
+
+      const normalized = {
+        id,
+        direction: messageDirection,
+        jid,
+        phone: realPhone,
+        formattedPhone: phoneService.formatPhone(realPhone),
+        senderName: msg.senderName || (messageDirection === 'out' ? 'Saya' : 'Pelanggan'),
+        text: messageText,
+        mediaType: msg.mediaType || 'text',
+        image: msg.image || null,
+        isAi: !!msg.isAi,
+        timestamp: messageTimestamp
+      };
+
+      existingIds.add(id);
+      messages.push(normalized);
+      added.push(normalized);
+    }
+
+    if (added.length > 0) {
+      messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      const trimmed = messages.slice(-3000);
+      this.saveMessages(trimmed);
+    }
+
+    return added;
+  }
+
   getConversations() {
     const messages = this.getAllMessages();
     const convMap = new Map();
 
+    // 1. Seed convMap with all synced WhatsApp chats
+    for (const [jid, c] of this.syncedChats.entries()) {
+      if (jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
+      const realPhone = phoneService.getPhone(jid, c.name) || (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : 'Unknown');
+      convMap.set(jid, {
+        jid,
+        phone: realPhone,
+        formattedPhone: phoneService.formatPhone(realPhone),
+        senderName: c.name || phoneService.getPhone(jid) || jid.split('@')[0],
+        lastMessage: {
+          id: `last_${jid}`,
+          direction: 'in',
+          jid,
+          phone: realPhone,
+          senderName: c.name || 'Pelanggan',
+          text: '[Obrolan WhatsApp]',
+          timestamp: c.updatedAt || new Date().toISOString()
+        },
+        unreadCount: c.unreadCount || 0,
+        messages: [],
+        updatedAt: c.updatedAt || new Date().toISOString()
+      });
+    }
+
+    // 2. Populate and merge actual message history
     for (const msg of messages) {
       // Find real phone using phoneService
       const realPhone = phoneService.getPhone(msg.jid, msg.senderName) || (msg.phone ? String(msg.phone).replace(/\D/g, '') : null);
@@ -240,6 +371,12 @@ class ChatService {
     const conversations = Array.from(uniqueMap.values()).sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
+
+    // Enrich with real-time protection flags
+    for (const conv of conversations) {
+      conv.isHumanHandoff = protectionService.isHumanHandoff(conv.jid);
+      conv.isOptedIn = protectionService.isOptedIn(conv.jid);
+    }
 
     return conversations;
   }

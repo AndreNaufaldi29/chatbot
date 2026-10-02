@@ -1,6 +1,7 @@
 const geminiService = require('./geminiService');
 const groqService = require('./groqService');
 const menuHandler = require('../handlers/menuHandler');
+const protectionService = require('./protectionService');
 
 class AiService {
   getActiveProvider() {
@@ -21,35 +22,71 @@ class AiService {
   }
 
   async generateReply(jid, userText, senderName = 'Kak') {
-    const provider = this.getActiveProvider();
+    // 1. Circuit Breaker Check: if AI service is tripping/rate-limited, avoid API hammering
+    if (protectionService.isCircuitOpen('ai')) {
+      console.warn('[AiService] Circuit breaker AI sedang OPEN (terpicu error beruntun). Menggunakan fallback respons rule-based.');
+      return null;
+    }
 
-    if (provider === 'groq') {
-      if (groqService.isAiEnabled()) {
-        try {
-          const reply = await groqService.generateReply(jid, userText, senderName);
-          if (reply) return reply;
-        } catch (err) {
-          console.warn('[AiService] Groq gagal, mencoba failover ke Gemini:', err.message);
+    const provider = this.getActiveProvider();
+    let reply = null;
+
+    try {
+      if (provider === 'groq') {
+        if (groqService.isAiEnabled()) {
+          try {
+            reply = await protectionService.withRetry(
+              () => groqService.generateReply(jid, userText, senderName),
+              { maxRetries: 1, baseDelayMs: 800, context: 'Groq AI' }
+            );
+          } catch (err) {
+            console.warn('[AiService] Groq gagal setelah retry, mencoba failover ke Gemini:', err.message);
+          }
+        }
+        // Failover to Gemini
+        if (!reply && geminiService.isAiEnabled()) {
+          try {
+            reply = await protectionService.withRetry(
+              () => geminiService.generateReply(jid, userText, senderName),
+              { maxRetries: 1, baseDelayMs: 800, context: 'Gemini Failover' }
+            );
+          } catch (err) {
+            console.warn('[AiService] Gemini failover gagal:', err.message);
+          }
+        }
+      } else {
+        // Gemini preferred
+        if (geminiService.isAiEnabled()) {
+          try {
+            reply = await protectionService.withRetry(
+              () => geminiService.generateReply(jid, userText, senderName),
+              { maxRetries: 1, baseDelayMs: 800, context: 'Gemini AI' }
+            );
+          } catch (err) {
+            console.warn('[AiService] Gemini gagal setelah retry, mencoba failover ke Groq:', err.message);
+          }
+        }
+        // Failover to Groq
+        if (!reply && groqService.isAiEnabled()) {
+          try {
+            reply = await protectionService.withRetry(
+              () => groqService.generateReply(jid, userText, senderName),
+              { maxRetries: 1, baseDelayMs: 800, context: 'Groq Failover' }
+            );
+          } catch (err) {
+            console.warn('[AiService] Groq failover gagal:', err.message);
+          }
         }
       }
-      // Failover to Gemini
-      if (geminiService.isAiEnabled()) {
-        return await geminiService.generateReply(jid, userText, senderName);
+
+      if (reply) {
+        protectionService.recordCircuitSuccess('ai');
+        return reply;
+      } else {
+        protectionService.recordCircuitFailure('ai', new Error('Semua provider AI tidak menghasilkan balasan'));
       }
-    } else {
-      // Gemini preferred
-      if (geminiService.isAiEnabled()) {
-        try {
-          const reply = await geminiService.generateReply(jid, userText, senderName);
-          if (reply) return reply;
-        } catch (err) {
-          console.warn('[AiService] Gemini gagal, mencoba failover ke Groq:', err.message);
-        }
-      }
-      // Failover to Groq
-      if (groqService.isAiEnabled()) {
-        return await groqService.generateReply(jid, userText, senderName);
-      }
+    } catch (err) {
+      protectionService.recordCircuitFailure('ai', err);
     }
 
     return null;

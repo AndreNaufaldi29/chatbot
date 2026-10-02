@@ -7,13 +7,12 @@ const sessionManager = require('../services/sessionManager');
 const aiService = require('../services/aiService');
 const phoneService = require('../services/phoneService');
 const { stripStarsAndEmojis } = require('../utils/textCleaner');
+const protectionService = require('../services/protectionService');
 
 class MessageHandler {
   constructor() {
     this.eventEmitter = null;
     this.userQueues = new Map(); // Per-JID concurrency queue
-    this.pendingDebounce = new Map(); // Per-JID debounce aggregator for rapid messages
-    this.processedMessageIds = new Set(); // Prevent duplicate processing
   }
 
   setEventEmitter(emitter) {
@@ -188,52 +187,44 @@ class MessageHandler {
       return;
     }
 
-    // Deduplikasi ID pesan agar tidak memproses event ganda
-    if (msg.key.id) {
-      if (this.processedMessageIds.has(msg.key.id)) {
-        return;
-      }
-      this.processedMessageIds.add(msg.key.id);
-      if (this.processedMessageIds.size > 2000) {
-        const first = this.processedMessageIds.values().next().value;
-        this.processedMessageIds.delete(first);
-      }
-    }
-
     const messageInfo = this.extractMessageInfo(msg.message);
     const rawText = (messageInfo.text || '').trim();
     if (!rawText) return;
 
-    // Inbound Debouncer: Gabungkan pesan beruntun dari pengguna yang sama (jeda 1.2 detik)
-    // Mencegah spam bot membalas setiap kata/bubble secara terpisah
-    if (this.pendingDebounce.has(jid)) {
-      const record = this.pendingDebounce.get(jid);
-      clearTimeout(record.timer);
-      record.texts.push(rawText);
-      record.lastMsg = msg;
-      if (messageInfo.mediaType && messageInfo.mediaType !== 'text') {
-        record.mediaType = messageInfo.mediaType;
-      }
-      record.timer = setTimeout(() => {
-        this.pendingDebounce.delete(jid);
-        this._enqueueUserProcessing(sock, jid, record);
-      }, 1200);
+    // 🛡️ 1. Proteksi Message Deduplication (Inbound ID & Content Fingerprint)
+    // Mencegah looping / replay pesan yang sama saat reconnect atau retry jaringan
+    if (protectionService.isDuplicateInbound(msg.key?.id, jid, rawText)) {
+      console.log(`[Protection:Deduplication] Mengabaikan pesan duplikat dari ${jid} (ID: ${msg.key?.id})`);
       return;
     }
+    protectionService.recordInbound(msg.key?.id, jid, rawText);
 
-    const record = {
-      texts: [rawText],
-      lastMsg: msg,
-      mediaType: messageInfo.mediaType || 'text',
-      timer: null
-    };
+    // 🛡️ 2. Proteksi Opt-In / Consent Policy (0pt-in & Opt-Out)
+    // Kepatuhan regulasi WA: Jika user kirim STOP/BERHENTI, bot diam selamanya agar nomor tidak dilaporkan SPAM
+    const optCheck = protectionService.checkOptInOut(jid, rawText);
+    if (optCheck.handled) {
+      if (optCheck.shouldIgnore) {
+        // User telah opt-out: diam secara silent tanpa membalas apapun
+        return;
+      }
+      if (optCheck.reply) {
+        await this.sendReply(sock, jid, optCheck.reply, msg);
+        return;
+      }
+    }
 
-    record.timer = setTimeout(() => {
-      this.pendingDebounce.delete(jid);
-      this._enqueueUserProcessing(sock, jid, record);
-    }, 1200);
-
-    this.pendingDebounce.set(jid, record);
+    // 🛡️ 3. Proteksi Conversation Buffer (Inbound Multi-Burst Aggregator)
+    // Mengumpulkan pesan beruntun dari pengguna (misal 2 detik) menjadi 1 kesatuan utuh
+    // Mencegah bot membalas setiap bubble chat secara terpisah
+    protectionService.bufferInboundMessage(
+      jid,
+      msg,
+      rawText,
+      messageInfo.mediaType,
+      (record) => {
+        this._enqueueUserProcessing(sock, jid, record);
+      }
+    );
   }
 
   _enqueueUserProcessing(sock, jid, record) {
@@ -298,36 +289,41 @@ class MessageHandler {
         await sock.readMessages([msg.key]).catch(() => {});
       }
 
+      // 🛡️ 4. Sesi & Session Timeout Check
       const session = sessionManager.getSession(jid);
       const textLower = rawText.toLowerCase();
 
-      // Enforce anti-spam cooldown between outgoing messages to this JID
-      const cooldownSec = config.bot?.cooldown_seconds || 3;
-      if (session.lastReplyTime) {
-        const elapsed = Date.now() - session.lastReplyTime;
-        const remaining = (cooldownSec * 1000) - elapsed;
-        if (remaining > 0) {
-          await new Promise(r => setTimeout(r, Math.min(remaining, 3000)));
-        }
+      // 🛡️ 5. Proteksi Human Handoff (Transisi & Pelepasan Mode CS Manusia)
+      const handoffKeyword = protectionService.checkHandoffKeywords(textLower);
+
+      // Jika user sedang dalam mode CS dan mengirim kata kunci kembali ke bot:
+      if (handoffKeyword === 'RELEASE' && sessionManager.isHumanMode(jid)) {
+        sessionManager.setHumanMode(jid, false);
+        const menuText = stripStarsAndEmojis(menuHandler.getMainMenu(senderName));
+        const reply = `Mode asisten otomatis telah aktif kembali.\n\n${menuText}`;
+        await this.sendReply(sock, jid, reply, msg);
+        return;
       }
 
-      // Simulate human typing presence ('composing') with natural pause
-      try {
-        await sock.sendPresenceUpdate('composing', jid);
-      } catch (e) {}
-      await new Promise(r => setTimeout(r, 800));
-
-      // Check if user is in HUMAN_CS mode
-      if (sessionManager.isHumanMode(jid)) {
-        if (['bot', 'menu', 'reset', 'aktifkan bot', 'kembali'].includes(textLower)) {
-          sessionManager.setHumanMode(jid, false);
-          const menuText = stripStarsAndEmojis(menuHandler.getMainMenu(senderName));
-          const reply = `Mode asisten otomatis telah aktif kembali.\n\n${menuText}`;
-          await this.sendReply(sock, jid, reply, msg);
-          return;
+      // Jika user meminta bantuan CS manusia secara eksplisit:
+      if (handoffKeyword === 'TRIGGER') {
+        sessionManager.setHumanMode(jid, true, 'User triggered CS: ' + textLower);
+        const reply = menuHandler.getHumanCsPrompt();
+        if (this.eventEmitter) {
+          this.eventEmitter.emit('human_cs_requested', {
+            phone: cleanPhone,
+            senderName,
+            jid,
+            timestamp: new Date().toISOString()
+          });
         }
+        await this.sendReply(sock, jid, reply, msg);
+        return;
+      }
 
-        console.log(`[CS Mode] Pesan dari ${cleanPhone}: "${rawText}" (Sedang dalam penanganan CS manusia)`);
+      // Jika user sedang dalam penanganan CS manusia, bot DIAM dan tidak menimpa chat admin
+      if (sessionManager.isHumanMode(jid)) {
+        console.log(`[CS Mode] Pesan dari ${cleanPhone}: "${rawText}" (Sedang dalam penanganan CS manusia - Bot diam)`);
         return;
       }
 
@@ -769,26 +765,14 @@ class MessageHandler {
             cleanReply += `\n\nBila Kakak ingin melihat foto fisik dan rincian spesifikasi lengkap ${matchedProduct.title}, silakan balas dengan 'FOTO' atau 'DETAIL'.`;
           }
 
-          // Send STRICTLY 1 text message (NEVER send extra photo cards automatically!)
-          sessionManager.updateReplyTime(jid);
-          await sock.sendMessage(jid, { text: cleanReply }, { quoted: originalMsg });
-
-          try {
-            await sock.sendPresenceUpdate('paused', jid);
-          } catch (e) {}
-
+          // Send STRICTLY 1 text message with all protections enabled
           const provider = aiService.getActiveProvider();
           const providerDisplayName = provider === 'groq' ? 'Sultan Carpet AI (Groq)' : 'Sultan Carpet AI (Gemini)';
 
-          this.emitLog({
+          await this.sendReply(sock, jid, cleanReply, originalMsg, {
             id: `out_ai_${Date.now()}`,
-            direction: 'out',
-            jid,
-            phone,
             senderName: providerDisplayName,
-            text: cleanReply,
-            isAi: true,
-            timestamp: new Date().toISOString()
+            isAi: true
           });
 
           return;
@@ -899,156 +883,156 @@ class MessageHandler {
     await this.sendListMenu(sock, jid, senderName, originalMsg);
   }
 
-  async sendListMenu(sock, jid, senderName, originalMsg) {
+  /**
+   * 🛡️ Safe Central Outbound Dispatcher
+   * Menerapkan 5 lapis proteksi anti-ban pada SETIAP pesan keluar:
+   * 1. Message Deduplication: Hindari pengiriman pesan duplikat ke nomor yang sama
+   * 2. Global Rate Limiter: Batasi total pesan keluar per menit bot secara keseluruhan
+   * 3. Cooldown & Jitter Manusiawi: Jeda acak seperti manusia mengetik
+   * 4. Human-like Typing Simulation: Tampilkan status 'composing' proporsional
+   * 5. Retry Limit & Error Handling: Maksimal 2x retry dengan exponential backoff
+   */
+  async safeSendMessage(sock, jid, messagePayload, originalMsg, logOptions = {}) {
     try {
+      const textContent = messagePayload.text || messagePayload.caption || '';
+
+      // 1. Deduplikasi Pesan Keluar (Mencegah double reply jika ada glitch atau reconnect)
+      if (textContent && protectionService.isDuplicateOutbound(jid, textContent)) {
+        console.log(`[Protection:Deduplication] Mengabaikan balasan duplikat ke ${jid}`);
+        return null;
+      }
+
+      // 2. Global Rate Limiter (Token Bucket / Sliding Window)
+      await protectionService.waitForGlobalRateLimit();
+
+      // 3. Per-User Cooldown + Natural Randomized Jitter
+      await protectionService.waitForUserCooldown(jid);
+
+      // 4. Simulasi Mengetik Alami ('composing')
+      await protectionService.simulateTypingPresence(sock, jid, textContent.length);
+
+      // 5. Kirim via Baileys dengan Retry Limit & Exponential Backoff
+      const result = await protectionService.withRetry(async () => {
+        return await sock.sendMessage(jid, messagePayload, { quoted: originalMsg });
+      }, {
+        maxRetries: 2,
+        baseDelayMs: 1000,
+        context: `WhatsApp sendMessage to ${jid}`
+      });
+
+      // Catat fingerprint pesan keluar & perbarui waktu respon
+      if (textContent) {
+        protectionService.recordOutbound(jid, textContent);
+      }
       sessionManager.updateReplyTime(jid);
-      const menuText = stripStarsAndEmojis(menuHandler.getMainMenu(senderName));
-      const resolvedPhone = phoneService.getPhone(jid, senderName) || jid.split('@')[0];
 
-      await sock.sendMessage(jid, { text: menuText }, { quoted: originalMsg });
-
-      try {
-        await sock.sendPresenceUpdate('paused', jid);
-      } catch (e) {}
-
+      // Emit log ke Web Dashboard
+      const resolvedPhone = phoneService.getPhone(jid) || jid.split('@')[0];
       this.emitLog({
-        id: `out_menu_${Date.now()}`,
+        id: logOptions.id || `out_${Date.now()}`,
         direction: 'out',
         jid,
         phone: resolvedPhone,
-        senderName: 'Sultan Carpet Bot',
-        text: menuText,
+        senderName: logOptions.senderName || 'Sultan Carpet Bot',
+        text: textContent,
+        isAi: !!logOptions.isAi,
+        image: logOptions.image || null,
+        mediaType: logOptions.mediaType || (logOptions.image ? 'image' : 'text'),
         timestamp: new Date().toISOString()
       });
 
+      return result;
     } catch (err) {
-      console.error('[MessageHandler] Gagal mengirim menu utama:', err.message);
+      console.error(`[Protection:Error] Gagal mengirim pesan ke ${jid} setelah retry:`, err.message);
+      return null;
     }
+  }
+
+  async sendListMenu(sock, jid, senderName, originalMsg) {
+    const menuText = stripStarsAndEmojis(menuHandler.getMainMenu(senderName));
+    await this.safeSendMessage(
+      sock,
+      jid,
+      { text: menuText },
+      originalMsg,
+      { id: `out_menu_${Date.now()}`, senderName: 'Sultan Carpet Bot' }
+    );
   }
 
   async sendBranchesListMenu(sock, jid, originalMsg) {
-    try {
-      sessionManager.updateReplyTime(jid);
-      const reply = stripStarsAndEmojis(menuHandler.getBranchesMenu());
-      const resolvedPhone = phoneService.getPhone(jid) || jid.split('@')[0];
-
-      await sock.sendMessage(jid, { text: reply }, { quoted: originalMsg });
-
-      try {
-        await sock.sendPresenceUpdate('paused', jid);
-      } catch (e) {}
-
-      this.emitLog({
-        id: `out_branches_${Date.now()}`,
-        direction: 'out',
-        jid,
-        phone: resolvedPhone,
-        senderName: 'Sultan Carpet Bot',
-        text: reply,
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (err) {
-      console.error('[MessageHandler] Gagal mengirim menu cabang:', err.message);
-    }
+    const reply = stripStarsAndEmojis(menuHandler.getBranchesMenu());
+    await this.safeSendMessage(
+      sock,
+      jid,
+      { text: reply },
+      originalMsg,
+      { id: `out_branches_${Date.now()}`, senderName: 'Sultan Carpet Bot' }
+    );
   }
 
   async sendCatalogSelection(sock, jid, originalMsg) {
-    try {
-      sessionManager.updateReplyTime(jid);
-      sessionManager.setState(jid, 'SELECT_PRODUCT');
-      const selectionMenu = stripStarsAndEmojis(menuHandler.getCatalogSelectionMenu());
-      await this.sendReply(sock, jid, selectionMenu, originalMsg);
-    } catch (err) {
-      console.error('[MessageHandler] Gagal mengirim menu pemilihan katalog:', err.message);
-    }
+    sessionManager.setState(jid, 'SELECT_PRODUCT');
+    const selectionMenu = stripStarsAndEmojis(menuHandler.getCatalogSelectionMenu());
+    await this.sendReply(sock, jid, selectionMenu, originalMsg);
   }
 
   async sendCatalogCard(sock, jid, product, originalMsg) {
-    try {
-      sessionManager.updateReplyTime(jid);
+    let imageFullPath = null;
+    const candidates = [
+      product.image,
+      product.image ? path.join(__dirname, '../../', product.image) : null,
+      product.image ? path.join(__dirname, '../../assets/', product.image.replace(/^assets[\\/]/, '')) : null,
+      product.image ? path.join(__dirname, '../../public/', product.image.replace(/^public[\\/]/, '')) : null,
+      path.join(__dirname, '../../assets/catalog/karpet-masjid-turki.jpg')
+    ];
 
-      let imageFullPath = null;
-      const candidates = [
-        product.image,
-        product.image ? path.join(__dirname, '../../', product.image) : null,
-        product.image ? path.join(__dirname, '../../assets/', product.image.replace(/^assets[\\/]/, '')) : null,
-        product.image ? path.join(__dirname, '../../public/', product.image.replace(/^public[\\/]/, '')) : null,
-        path.join(__dirname, '../../assets/catalog/karpet-masjid-turki.jpg')
-      ];
-
-      for (const cand of candidates) {
-        if (cand && fs.existsSync(cand) && fs.statSync(cand).isFile()) {
-          imageFullPath = cand;
-          break;
-        }
+    for (const cand of candidates) {
+      if (cand && fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+        imageFullPath = cand;
+        break;
       }
-
-      const hasLocalImage = imageFullPath !== null;
-
-      const caption = stripStarsAndEmojis(`${product.title.toUpperCase()}\n` +
-        `${product.subtitle}\n\n` +
-        `Varian: ${product.footer}\n` +
-        `Harga: ${product.price}\n\n` +
-        `Detail Koleksi: ${product.url || 'https://sultancarpet.co.id'}\n` +
-        `───────────────────\n` +
-        `Bila Anda ingin memesan ${product.title} atau survey gratis, silakan beri tahu kami.`);
-
-      const resolvedPhone = phoneService.getPhone(jid) || jid.split('@')[0];
-
-      if (hasLocalImage) {
-        await sock.sendMessage(jid, {
-          image: fs.readFileSync(imageFullPath),
-          caption
-        }, { quoted: originalMsg });
-      } else {
-        await sock.sendMessage(jid, { text: caption }, { quoted: originalMsg });
-      }
-
-      try {
-        await sock.sendPresenceUpdate('paused', jid);
-      } catch (e) {}
-
-      this.emitLog({
-        id: `out_cat_${Date.now()}`,
-        direction: 'out',
-        jid,
-        phone: resolvedPhone,
-        senderName: 'Sultan Carpet Bot',
-        text: caption,
-        image: product.image,
-        mediaType: 'image',
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (err) {
-      console.error('[MessageHandler] Gagal mengirim kartu katalog:', err.message);
     }
+
+    const hasLocalImage = imageFullPath !== null;
+    const caption = stripStarsAndEmojis(`${product.title.toUpperCase()}\n` +
+      `${product.subtitle}\n\n` +
+      `Varian: ${product.footer}\n` +
+      `Harga: ${product.price}\n\n` +
+      `Detail Koleksi: ${product.url || 'https://sultancarpet.co.id'}\n` +
+      `───────────────────\n` +
+      `Bila Anda ingin memesan ${product.title} atau survey gratis, silakan beri tahu kami.`);
+
+    const messagePayload = hasLocalImage
+      ? { image: fs.readFileSync(imageFullPath), caption }
+      : { text: caption };
+
+    await this.safeSendMessage(
+      sock,
+      jid,
+      messagePayload,
+      originalMsg,
+      {
+        id: `out_cat_${Date.now()}`,
+        senderName: 'Sultan Carpet Bot',
+        image: product.image,
+        mediaType: hasLocalImage ? 'image' : 'text'
+      }
+    );
   }
 
-  async sendReply(sock, jid, text, originalMsg) {
-    try {
-      sessionManager.updateReplyTime(jid);
-      const cleanText = stripStarsAndEmojis(text);
-      const resolvedPhone = phoneService.getPhone(jid) || jid.split('@')[0];
-      await sock.sendMessage(jid, { text: cleanText }, { quoted: originalMsg });
-
-      try {
-        await sock.sendPresenceUpdate('paused', jid);
-      } catch (e) {}
-
-      this.emitLog({
-        id: `out_${Date.now()}`,
-        direction: 'out',
-        jid,
-        phone: resolvedPhone,
-        senderName: 'Sultan Carpet Bot',
-        text: cleanText,
-        timestamp: new Date().toISOString()
-      });
-    } catch (err) {
-      console.error('[MessageHandler] Gagal mengirim balasan:', err.message);
-    }
+  async sendReply(sock, jid, text, originalMsg, options = {}) {
+    const cleanText = stripStarsAndEmojis(text);
+    await this.safeSendMessage(
+      sock,
+      jid,
+      { text: cleanText },
+      originalMsg,
+      {
+        id: options.id || `out_${Date.now()}`,
+        senderName: options.senderName || 'Sultan Carpet Bot',
+        isAi: options.isAi || false
+      }
+    );
   }
 }
 
