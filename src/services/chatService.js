@@ -72,6 +72,15 @@ class ChatService {
         const raw = fs.readFileSync(SYNCED_CHATS_FILE, 'utf8');
         const data = JSON.parse(raw || '{}');
         for (const [k, v] of Object.entries(data)) {
+          if (!k || k === '0@s.whatsapp.net' || k.endsWith('@broadcast') || k.endsWith('@newsletter')) continue;
+          // Filter out ghost entries with no name, no phone, and no stored identity
+          const realPhone = phoneService.getPhone(k, v?.name);
+          const hasName = v?.name && !phoneService.isLid(v.name) && !/^\+?\d+$/.test(String(v.name).trim()) && v.name !== 'Pelanggan';
+          const hasPhone = realPhone && phoneService.isRealPhone(realPhone);
+          const storedName = phoneService.getName(k);
+          if (!hasName && !hasPhone && !storedName) {
+            continue; // Skip ghost chat
+          }
           this.syncedChats.set(k, v);
         }
       }
@@ -84,6 +93,7 @@ class ChatService {
     try {
       const obj = {};
       for (const [k, v] of this.syncedChats.entries()) {
+        if (!k || k === '0@s.whatsapp.net' || k.endsWith('@broadcast') || k.endsWith('@newsletter')) continue;
         obj[k] = v;
       }
       fs.writeFileSync(SYNCED_CHATS_FILE, JSON.stringify(obj, null, 2), 'utf8');
@@ -93,7 +103,7 @@ class ChatService {
   }
 
   setSyncedChat(jid, chatData = {}) {
-    if (!jid || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return;
+    if (!jid || jid === '0@s.whatsapp.net' || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return;
     const existing = this.syncedChats.get(jid) || {};
     this.syncedChats.set(jid, {
       ...existing,
@@ -287,49 +297,20 @@ class ChatService {
     const messages = this.getAllMessages();
     const convMap = new Map();
 
-    // 1. Seed convMap with all synced WhatsApp chats
-    for (const [jid, c] of this.syncedChats.entries()) {
-      if (jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
-      const realPhone = phoneService.getPhone(jid, c.name);
-
-      let contactName = c.name;
-      if (!contactName || phoneService.isLid(contactName) || /^\+?\d+$/.test(contactName.trim())) {
-        contactName = phoneService.getName(jid) || (realPhone ? phoneService.getName(realPhone) : null);
-      }
-
-      const displayName = (contactName && !phoneService.isLid(contactName) && !/^\+?\d+$/.test(contactName.trim()))
-        ? contactName
-        : (realPhone ? phoneService.formatPhone(realPhone) : 'Pelanggan');
-
-      convMap.set(jid, {
-        jid,
-        phone: realPhone || null,
-        formattedPhone: phoneService.formatPhone(realPhone, jid),
-        senderName: displayName,
-        lastMessage: {
-          id: `last_${jid}`,
-          direction: 'in',
-          jid,
-          phone: realPhone || null,
-          senderName: displayName,
-          text: '[Obrolan WhatsApp]',
-          timestamp: c.updatedAt || new Date().toISOString()
-        },
-        unreadCount: c.unreadCount || 0,
-        messages: [],
-        updatedAt: c.updatedAt || new Date().toISOString()
-      });
-    }
-
-    // 2. Populate and merge actual message history
+    // 1. Populate and merge actual message history FIRST
     for (const msg of messages) {
+      if (!msg) continue;
       let realPhone = phoneService.getPhone(msg.jid, msg.senderName);
       if (!realPhone && phoneService.isRealPhone(msg.phone)) {
         realPhone = String(msg.phone).replace(/\D/g, '');
       }
+      if (!realPhone && msg.jid && msg.jid.endsWith('@s.whatsapp.net')) {
+        const clean = msg.jid.split('@')[0].replace(/\D/g, '');
+        if (phoneService.isRealPhone(clean)) realPhone = clean;
+      }
 
-      // Canonical groupKey: prioritize canonical remote JID or real phone
-      const groupKey = msg.jid || (realPhone ? `${realPhone}@s.whatsapp.net` : 'unknown');
+      // Canonical groupKey: prioritize real phone JID or remote JID
+      const groupKey = realPhone ? `${realPhone}@s.whatsapp.net` : (msg.jid || 'unknown');
 
       if (!convMap.has(groupKey)) {
         let contactName = phoneService.getName(msg.jid) || (realPhone ? phoneService.getName(realPhone) : null);
@@ -337,7 +318,9 @@ class ChatService {
           contactName = msg.senderName;
         }
 
-        const displayName = contactName || (realPhone ? phoneService.formatPhone(realPhone) : 'Pelanggan');
+        const displayName = (contactName && !phoneService.isLid(contactName) && !/^\+?\d+$/.test(contactName.trim()))
+          ? contactName
+          : (realPhone ? phoneService.formatPhone(realPhone) : 'Pelanggan');
 
         convMap.set(groupKey, {
           jid: msg.jid || (realPhone ? `${realPhone}@s.whatsapp.net` : null),
@@ -367,7 +350,7 @@ class ChatService {
         if (realPhone) phoneService.setName(realPhone, conv.senderName);
       }
 
-      // Check if bot message greeted the customer by name (e.g. "Halo Pak Zaenal")
+      // Check if bot message greeted the customer by name (e.g. "Halo Pak Zaenal" or "Halo Kak Andre")
       if (msg.direction === 'out' && msg.text && (!conv.senderName || conv.senderName === 'Pelanggan' || phoneService.isLid(conv.senderName) || /^\+?\d+$/.test(conv.senderName.trim()))) {
         const greetMatch = msg.text.match(/(?:Halo|Hai|Pagi|Siang|Sore|Malam)\s+(?:Pak\s+|Bu\s+|Kak\s+)?([A-Z][a-zA-Z0-9_\s]{1,25})[,.!\n]/i);
         if (greetMatch && greetMatch[1]) {
@@ -409,6 +392,74 @@ class ChatService {
       }
     }
 
+    // 2. Enrich with syncedChats metadata or add valid named/phone contacts
+    for (const [jid, c] of this.syncedChats.entries()) {
+      if (!jid || jid === '0@s.whatsapp.net' || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
+      
+      let realPhone = phoneService.getPhone(jid, c.name);
+      if (!realPhone && jid.endsWith('@s.whatsapp.net')) {
+        const clean = jid.split('@')[0].replace(/\D/g, '');
+        if (phoneService.isRealPhone(clean)) realPhone = clean;
+      }
+
+      let contactName = c.name;
+      if (!contactName || phoneService.isLid(contactName) || /^\+?\d+$/.test(contactName.trim())) {
+        contactName = phoneService.getName(jid) || (realPhone ? phoneService.getName(realPhone) : null);
+      }
+
+      const canonicalKey = realPhone ? `${realPhone}@s.whatsapp.net` : jid;
+
+      // Check if this chat already exists in convMap (via messages)
+      let conv = convMap.get(canonicalKey) || convMap.get(jid);
+      if (!conv && realPhone) {
+        conv = Array.from(convMap.values()).find(cv => cv.phone === realPhone || cv.jid === jid);
+      }
+
+      if (conv) {
+        // Enrich existing conversation
+        if (c.unreadCount !== undefined && c.unreadCount > 0) {
+          conv.unreadCount = Math.max(conv.unreadCount || 0, c.unreadCount);
+        }
+        if (contactName && (!conv.senderName || conv.senderName === 'Pelanggan')) {
+          conv.senderName = contactName;
+        }
+        if (realPhone && !conv.phone) {
+          conv.phone = realPhone;
+          conv.formattedPhone = phoneService.formatPhone(realPhone, conv.jid);
+        }
+      } else {
+        // Chat has NO messages in chats.json!
+        // FILTER: Only add if it has a valid contact name or real phone number!
+        const hasValidName = Boolean(contactName && !phoneService.isLid(contactName) && !/^\+?\d+$/.test(contactName.trim()) && contactName !== 'Pelanggan');
+        const hasValidPhone = Boolean(realPhone && phoneService.isRealPhone(realPhone));
+
+        // Skip ghost chats without messages, name, or phone!
+        if (!hasValidName && !hasValidPhone) {
+          continue;
+        }
+
+        const displayName = hasValidName ? contactName : phoneService.formatPhone(realPhone);
+        convMap.set(canonicalKey, {
+          jid,
+          phone: realPhone || null,
+          formattedPhone: phoneService.formatPhone(realPhone, jid),
+          senderName: displayName,
+          lastMessage: {
+            id: `last_${jid}`,
+            direction: 'in',
+            jid,
+            phone: realPhone || null,
+            senderName: displayName,
+            text: 'Belum ada riwayat pesan',
+            timestamp: c.updatedAt || new Date().toISOString()
+          },
+          unreadCount: c.unreadCount || 0,
+          messages: [],
+          updatedAt: c.updatedAt || new Date().toISOString()
+        });
+      }
+    }
+
     // Secondary pass: ensure phoneService mappings apply to each conversation
     for (const conv of convMap.values()) {
       const mapped = phoneService.getPhone(conv.jid, conv.senderName);
@@ -429,7 +480,7 @@ class ChatService {
     // Deduplicate by canonical key (conv.jid or conv.phone) to guarantee 1 User = 1 Chat
     const uniqueMap = new Map();
     for (const conv of convMap.values()) {
-      const canonicalKey = conv.jid || conv.phone;
+      const canonicalKey = conv.phone ? `${conv.phone}@s.whatsapp.net` : (conv.jid || conv.phone);
       if (!canonicalKey) continue;
 
       if (!uniqueMap.has(canonicalKey)) {
@@ -463,7 +514,7 @@ class ChatService {
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
 
-    // Final hygiene pass: guarantee no raw LIDs in names or phones
+    // Final hygiene pass: guarantee no raw LIDs in names or phones, and format real phone as name if name missing
     for (const conv of conversations) {
       if (!conv.senderName || phoneService.isLid(conv.senderName) || /^\+?\d+$/.test(conv.senderName.trim())) {
         const stored = phoneService.getName(conv.jid) || (conv.phone ? phoneService.getName(conv.phone) : null);
@@ -472,6 +523,10 @@ class ChatService {
       if (phoneService.isLid(conv.phone)) {
         conv.phone = null;
         conv.formattedPhone = phoneService.formatPhone(null, conv.jid);
+      }
+      // If still Pelanggan but phone is known, use formatted phone as title
+      if (conv.senderName === 'Pelanggan' && conv.phone && phoneService.isRealPhone(conv.phone)) {
+        conv.senderName = phoneService.formatPhone(conv.phone);
       }
       conv.isHumanHandoff = protectionService.isHumanHandoff(conv.jid) || (conv.phone ? protectionService.isHumanHandoff(conv.phone) : false);
       conv.aiEnabled = !conv.isHumanHandoff;
@@ -532,26 +587,74 @@ class ChatService {
     );
   }
 
-  clearConversation(jid) {
-    if (!jid) return false;
-    const cleanKey = String(jid).toLowerCase();
-    const cleanPhone = cleanKey.replace(/\D/g, '');
-    const realPhone = phoneService.getPhone(cleanKey);
-    const messages = this.getAllMessages();
+  async clearConversation(targetJid) {
+    if (!targetJid) return false;
+    const rawKey = String(targetJid).trim().toLowerCase();
+    const shortKey = rawKey.split('@')[0];
+    const cleanDigits = rawKey.replace(/\D/g, '');
+    const mappedPhone = phoneService.getPhone(rawKey) || phoneService.getPhone(shortKey);
 
-    const filtered = messages.filter(m => {
+    const keysToPurge = new Set([
+      rawKey,
+      shortKey,
+      cleanDigits,
+      `${cleanDigits}@s.whatsapp.net`,
+      `${cleanDigits}@lid`
+    ]);
+    if (mappedPhone) {
+      const p = String(mappedPhone).toLowerCase().replace(/\D/g, '');
+      keysToPurge.add(p);
+      keysToPurge.add(`${p}@s.whatsapp.net`);
+      keysToPurge.add(`${p}@lid`);
+    }
+
+    // 1. Delete from this.syncedChats
+    for (const k of Array.from(this.syncedChats.keys())) {
+      const kLow = String(k).toLowerCase();
+      const kDigits = kLow.replace(/\D/g, '');
+      const kShort = kLow.split('@')[0];
+      if (keysToPurge.has(kLow) || keysToPurge.has(kDigits) || keysToPurge.has(kShort)) {
+        this.syncedChats.delete(k);
+      }
+    }
+    this.saveSyncedChats();
+
+    // 2. Filter out from chats.json
+    const messages = this.getAllMessages();
+    const filtered = messages.filter((m) => {
       const mJid = String(m.jid || '').toLowerCase();
+      const mJidShort = mJid.split('@')[0];
       const mPhone = String(m.phone || '').replace(/\D/g, '');
-      if (mJid === cleanKey || mPhone === cleanPhone) return false;
-      if (realPhone && mPhone === realPhone) return false;
+      if (keysToPurge.has(mJid) || keysToPurge.has(mJidShort) || keysToPurge.has(mPhone)) {
+        return false;
+      }
       return true;
     });
+    this.saveMessages(filtered);
 
-    return this.saveMessages(filtered);
+    // 3. Delete from Prisma / Postgres
+    const jidArray = Array.from(keysToPurge).filter(Boolean);
+    try {
+      const dbService = require('./dbService');
+      await dbService.deleteChatMessagesByJid(jidArray);
+    } catch (e) {
+      console.warn('[ChatService] dbService delete error:', e.message);
+    }
+
+    return true;
   }
 
-  clearAll() {
-    return this.saveMessages([]);
+  async clearAll() {
+    this.saveMessages([]);
+    this.syncedChats.clear();
+    this.saveSyncedChats();
+    try {
+      const dbService = require('./dbService');
+      await dbService.clearAllChatMessages();
+    } catch (e) {
+      console.warn('[ChatService] dbService clearAll error:', e.message);
+    }
+    return true;
   }
 }
 

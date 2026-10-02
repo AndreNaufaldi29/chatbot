@@ -527,7 +527,21 @@ export default function Dashboard() {
     eventSource.addEventListener('chat_deleted', (e) => {
       try {
         const data = JSON.parse(e.data);
-        setConversations((prev) => prev.filter((c) => c.jid !== data.jid && c.phone !== data.jid));
+        if (!data || !data.jid) return;
+        const targetKey = String(data.jid).toLowerCase();
+        setConversations((prev) =>
+          prev.filter((c) => {
+            const cJid = String(c.jid || '').toLowerCase();
+            const cPhone = String(c.phone || '').toLowerCase();
+            return cJid !== targetKey && cPhone !== targetKey && !targetKey.includes(cJid);
+          })
+        );
+        setSelectedChatJid((curr) => {
+          if (curr && (String(curr).toLowerCase() === targetKey || targetKey.includes(String(curr).toLowerCase()))) {
+            return null;
+          }
+          return curr;
+        });
       } catch (err) {}
     });
 
@@ -1421,32 +1435,40 @@ export default function Dashboard() {
 
   const handleDeleteConversation = async (e, conv) => {
     if (e) e.stopPropagation();
-    const targetName = (conv.senderName && !/^\+?\d{10,}$/.test(conv.senderName.trim()))
+    if (!conv) return;
+    const targetName = (conv.senderName && !/^\+?\d{10,}$/.test(conv.senderName.trim()) && conv.senderName !== 'Pelanggan')
       ? conv.senderName.trim()
       : (conv.formattedPhone && !conv.formattedPhone.includes('LID') ? conv.formattedPhone : 'pelanggan ini');
-    if (!confirm(`Hapus seluruh riwayat obrolan dengan "${targetName}"?`)) return;
+    if (!confirm(`Hapus seluruh riwayat obrolan dengan "${targetName}"? Obrolan akan dihapus secara permanen.`)) return;
+
+    const targetKey = conv.jid || conv.phone;
     try {
-      await fetch(`/api/chats/${encodeURIComponent(conv.jid || conv.phone)}`, { method: 'DELETE' });
-      setConversations((prev) => prev.filter((c) => c.jid !== conv.jid && c.phone !== conv.phone));
+      const res = await fetch(`/api/chats/${encodeURIComponent(targetKey)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Gagal menghapus obrolan dari server');
+
+      setConversations((prev) => {
+        const remaining = prev.filter((c) => c.jid !== conv.jid && c.phone !== conv.phone && (c.jid || c.phone) !== targetKey);
+        if (selectedChatJid === conv.jid || selectedChatJid === conv.phone || selectedChatJid === targetKey) {
+          setSelectedChatJid(remaining.length > 0 ? (remaining[0].jid || remaining[0].phone) : null);
+        }
+        return remaining;
+      });
       showToastMsg(`Obrolan dengan ${targetName} telah dihapus`, 'info');
-      if (selectedChatJid === conv.jid || selectedChatJid === conv.phone) {
-        const remaining = conversations.filter((c) => c.jid !== conv.jid && c.phone !== conv.phone);
-        setSelectedChatJid(remaining.length > 0 ? remaining[0].jid || remaining[0].phone : null);
-      }
     } catch (err) {
-      showToastMsg('Gagal menghapus obrolan', 'error');
+      showToastMsg('Gagal menghapus obrolan: ' + err.message, 'error');
     }
   };
 
   const handleClearAllChats = async () => {
-    if (!confirm('Hapus seluruh riwayat obrolan semua pelanggan?')) return;
+    if (!confirm('Hapus seluruh riwayat obrolan semua pelanggan? Seluruh daftar obrolan akan dikosongkan secara permanen.')) return;
     try {
-      await fetch('/api/chats', { method: 'DELETE' });
+      const res = await fetch('/api/chats', { method: 'DELETE' });
+      if (!res.ok) throw new Error('Gagal membersihkan riwayat obrolan dari server');
       setConversations([]);
       setSelectedChatJid(null);
       showToastMsg('Seluruh riwayat obrolan telah dibersihkan', 'info');
     } catch (err) {
-      showToastMsg('Gagal membersihkan riwayat obrolan', 'error');
+      showToastMsg('Gagal membersihkan riwayat obrolan: ' + err.message, 'error');
     }
   };
 
@@ -2578,22 +2600,22 @@ export default function Dashboard() {
                             </div>
                           </div>
 
-                          {/* Hover Actions: Profile & Delete Chat */}
-                          <div className="flex items-center gap-1 shrink-0">
+                          {/* Actions: Profile & Delete Chat */}
+                          <div className="flex items-center gap-0.5 shrink-0">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleOpenProfileModal(conv);
                               }}
-                              title="Lihat profil pelanggan"
-                              className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition"
+                              title="Lihat & ubah profil pelanggan"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800/80 transition"
                             >
                               <User className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={(e) => handleDeleteConversation(e, conv)}
-                              title="Hapus riwayat obrolan ini"
-                              className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
+                              title={`Hapus obrolan dengan ${displayName}`}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -2756,8 +2778,8 @@ export default function Dashboard() {
 
                         <button
                           onClick={(e) => handleDeleteConversation(e, activeConversation)}
-                          className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 transition"
-                          title="Bersihkan obrolan ini"
+                          className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                          title="Hapus riwayat obrolan pelanggan ini"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

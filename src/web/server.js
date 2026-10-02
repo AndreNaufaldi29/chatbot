@@ -96,17 +96,25 @@ app.get('/api/chats/messages', (req, res) => {
   res.json(messages);
 });
 
-app.delete('/api/chats', (req, res) => {
-  chatService.clearAll();
-  broadcastSSE('chats_cleared', {});
-  res.json({ success: true, message: 'Seluruh riwayat obrolan dibersihkan.' });
+app.delete('/api/chats', async (req, res) => {
+  try {
+    await chatService.clearAll();
+    broadcastSSE('chats_cleared', {});
+    res.json({ success: true, message: 'Seluruh riwayat obrolan dibersihkan.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal membersihkan riwayat obrolan: ' + err.message });
+  }
 });
 
-app.delete('/api/chats/:jid', (req, res) => {
-  const { jid } = req.params;
-  chatService.clearConversation(jid);
-  broadcastSSE('chat_deleted', { jid });
-  res.json({ success: true, message: `Riwayat obrolan berhasil dihapus.` });
+app.delete('/api/chats/:jid', async (req, res) => {
+  try {
+    const { jid } = req.params;
+    await chatService.clearConversation(jid);
+    broadcastSSE('chat_deleted', { jid });
+    res.json({ success: true, message: `Riwayat obrolan berhasil dihapus.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal menghapus obrolan: ' + err.message });
+  }
 });
 
 // Update Customer Profile (Name & Real Phone Number)

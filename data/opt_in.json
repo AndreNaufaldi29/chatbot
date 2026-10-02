@@ -3,5 +3,10 @@
     "optedIn": true,
     "timestamp": "2026-10-02T16:24:50.929Z",
     "reason": "User command: mulai"
+  },
+  "92011503861900@lid": {
+    "optedIn": true,
+    "timestamp": "2026-10-02T17:25:46.353Z",
+    "reason": "First interaction"
   }
 }

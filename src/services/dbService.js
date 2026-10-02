@@ -272,6 +272,39 @@ class DbService {
     }
   }
 
+  async clearAllChatMessages() {
+    const isReady = await this.checkPrisma();
+    if (isReady) {
+      try {
+        await this.prisma.chatMessage.deleteMany({});
+      } catch (err) {
+        this.isPrismaConnected = false;
+      }
+    }
+  }
+
+  async deleteChatMessagesByJid(jids = []) {
+    if (!Array.isArray(jids) || jids.length === 0) return;
+    const cleanJids = jids.map(j => String(j).trim()).filter(Boolean);
+    if (cleanJids.length === 0) return;
+
+    const isReady = await this.checkPrisma();
+    if (isReady) {
+      try {
+        await this.prisma.chatMessage.deleteMany({
+          where: {
+            OR: [
+              { jid: { in: cleanJids } },
+              { phone: { in: cleanJids } }
+            ]
+          }
+        });
+      } catch (err) {
+        this.isPrismaConnected = false;
+      }
+    }
+  }
+
   // ================= BUSINESS PROFILE =================
   async getBusinessProfile() {
     const isReady = await this.checkPrisma();
