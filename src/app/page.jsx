@@ -57,7 +57,8 @@ import {
   Map,
   Flame,
   Percent,
-  ShieldAlert
+  ShieldAlert,
+  UserCheck
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -387,6 +388,7 @@ export default function Dashboard() {
   const [editProfileName, setEditProfileName] = useState('');
   const [editProfilePhone, setEditProfilePhone] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
+  const [togglingAiJid, setTogglingAiJid] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
 
   const chatContainerRef = useRef(null);
@@ -482,13 +484,13 @@ export default function Dashboard() {
             }
             target.lastMessage = msg;
             target.updatedAt = msg.timestamp;
-            if (msg.direction === 'in' && msg.senderName && msg.senderName !== 'Pelanggan') {
-              target.senderName = msg.senderName;
+            if (msg.direction === 'in' && msg.senderName && msg.senderName !== 'Pelanggan' && !/^\+?\d{10,}$/.test(msg.senderName.trim())) {
+              target.senderName = msg.senderName.trim();
             }
             if (msg.jid && msg.jid.includes('@lid')) {
               target.jid = msg.jid;
             }
-            if (msg.phone && msg.phone.length <= 13) {
+            if (msg.phone && msg.phone.length <= 13 && !msg.phone.includes('@lid') && !/^\d{14,}$/.test(msg.phone)) {
               target.phone = msg.phone;
               if (msg.formattedPhone) target.formattedPhone = msg.formattedPhone;
             }
@@ -496,11 +498,13 @@ export default function Dashboard() {
             updated.splice(index, 1);
             return [target, ...updated];
           } else {
+            const cleanName = msg.senderName && !/^\+?\d{10,}$/.test(msg.senderName.trim()) ? msg.senderName.trim() : 'Pelanggan';
+            const cleanPhone = (msg.phone && msg.phone.length <= 13 && !msg.phone.includes('@lid') && !/^\d{14,}$/.test(msg.phone)) ? msg.phone : null;
             const newConv = {
               jid: msg.jid,
-              phone: msg.phone,
-              formattedPhone: msg.formattedPhone,
-              senderName: msg.senderName || msg.phone,
+              phone: cleanPhone,
+              formattedPhone: msg.formattedPhone || (cleanPhone ? `+${cleanPhone}` : 'WhatsApp ID'),
+              senderName: cleanName,
               lastMessage: msg,
               unreadCount: msg.direction === 'in' ? 1 : 0,
               messages: [msg],
@@ -586,6 +590,66 @@ export default function Dashboard() {
       try {
         const data = JSON.parse(e.data);
         setDbStatus(data);
+      } catch (err) {}
+    });
+
+    // 🛡️ Real-time Contact AI & Human CS Handoff Synchronization
+    const handleHandoffOrAiChange = (data) => {
+      if (!data || !data.jid) return;
+      const targetJid = data.jid;
+      const isHumanHandoff = data.isHumanHandoff !== undefined ? data.isHumanHandoff : (data.active !== undefined ? data.active : !data.aiEnabled);
+      const aiEnabled = data.aiEnabled !== undefined ? data.aiEnabled : !isHumanHandoff;
+
+      setConversations((prev) =>
+        prev.map((c) => {
+          const isMatch = c.jid === targetJid || c.phone === targetJid || (data.phone && c.phone === data.phone);
+          if (isMatch) {
+            return {
+              ...c,
+              isHumanHandoff,
+              aiEnabled,
+            };
+          }
+          return c;
+        })
+      );
+    };
+
+    eventSource.addEventListener('contact_ai_toggled', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        handleHandoffOrAiChange(data);
+      } catch (err) {}
+    });
+
+    eventSource.addEventListener('handoff_status_changed', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        handleHandoffOrAiChange(data);
+      } catch (err) {}
+    });
+
+    eventSource.addEventListener('human_handoff_started', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        handleHandoffOrAiChange({ jid: data.jid, isHumanHandoff: true, aiEnabled: false });
+      } catch (err) {}
+    });
+
+    eventSource.addEventListener('human_handoff_ended', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        handleHandoffOrAiChange({ jid: data.jid, isHumanHandoff: false, aiEnabled: true });
+      } catch (err) {}
+    });
+
+    eventSource.addEventListener('human_cs_requested', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (!data || !data.jid) return;
+        handleHandoffOrAiChange({ jid: data.jid, phone: data.phone, isHumanHandoff: true, aiEnabled: false });
+        const name = data.senderName || data.phone || 'Pelanggan';
+        showToastMsg(`🔔 ${name} meminta bantuan CS! Chat AI otomatis dinonaktifkan.`, 'warning');
       } catch (err) {}
     });
 
@@ -1357,11 +1421,14 @@ export default function Dashboard() {
 
   const handleDeleteConversation = async (e, conv) => {
     if (e) e.stopPropagation();
-    if (!confirm(`Hapus seluruh riwayat obrolan dengan "${conv.senderName}"?`)) return;
+    const targetName = (conv.senderName && !/^\+?\d{10,}$/.test(conv.senderName.trim()))
+      ? conv.senderName.trim()
+      : (conv.formattedPhone && !conv.formattedPhone.includes('LID') ? conv.formattedPhone : 'pelanggan ini');
+    if (!confirm(`Hapus seluruh riwayat obrolan dengan "${targetName}"?`)) return;
     try {
       await fetch(`/api/chats/${encodeURIComponent(conv.jid || conv.phone)}`, { method: 'DELETE' });
       setConversations((prev) => prev.filter((c) => c.jid !== conv.jid && c.phone !== conv.phone));
-      showToastMsg(`Obrolan dengan ${conv.senderName} telah dihapus`, 'info');
+      showToastMsg(`Obrolan dengan ${targetName} telah dihapus`, 'info');
       if (selectedChatJid === conv.jid || selectedChatJid === conv.phone) {
         const remaining = conversations.filter((c) => c.jid !== conv.jid && c.phone !== conv.phone);
         setSelectedChatJid(remaining.length > 0 ? remaining[0].jid || remaining[0].phone : null);
@@ -1383,11 +1450,73 @@ export default function Dashboard() {
     }
   };
 
+  const handleToggleContactAi = async (conv) => {
+    if (!conv) return;
+    const targetJid = conv.jid || conv.phone;
+    if (!targetJid) return;
+
+    const currentHandoff = Boolean(conv.isHumanHandoff);
+    const newAiEnabled = currentHandoff; // If currently in handoff (AI off), toggling turns AI ON
+    const newHandoff = !newAiEnabled;
+
+    setTogglingAiJid(targetJid);
+
+    // Optimistically update conversation state in UI
+    setConversations((prev) =>
+      prev.map((c) => {
+        const isMatch = c.jid === targetJid || c.phone === targetJid || c.jid === conv.jid || (conv.phone && c.phone === conv.phone);
+        if (isMatch) {
+          return { ...c, isHumanHandoff: newHandoff, aiEnabled: newAiEnabled };
+        }
+        return c;
+      })
+    );
+
+    const contactName = (conv.senderName && !/^\+?\d{10,}$/.test(conv.senderName.trim()))
+      ? conv.senderName.trim()
+      : (conv.formattedPhone || 'pelanggan ini');
+
+    try {
+      const res = await fetch(`/api/chats/${encodeURIComponent(targetJid)}/ai-toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newAiEnabled }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg(
+          newAiEnabled
+            ? `Chat AI diaktifkan untuk ${contactName}. Bot akan membalas otomatis.`
+            : `Chat AI dimatikan untuk ${contactName}. Mode CS Manusia aktif.`,
+          newAiEnabled ? 'success' : 'info'
+        );
+      } else {
+        throw new Error(data.error || 'Gagal mengubah status AI');
+      }
+    } catch (err) {
+      showToastMsg('Gagal memperbarui status Chat AI kontak', 'error');
+      // Revert on failure
+      setConversations((prev) =>
+        prev.map((c) => {
+          const isMatch = c.jid === targetJid || c.phone === targetJid || c.jid === conv.jid || (conv.phone && c.phone === conv.phone);
+          if (isMatch) {
+            return { ...c, isHumanHandoff: currentHandoff, aiEnabled: !currentHandoff };
+          }
+          return c;
+        })
+      );
+    } finally {
+      setTogglingAiJid(null);
+    }
+  };
+
   const handleOpenProfileModal = (conv) => {
     if (!conv) return;
     setProfileTarget(conv);
-    setEditProfileName(conv.senderName || '');
-    setEditProfilePhone(conv.phone || '');
+    const isDigitsOnly = conv.senderName && /^\+?\d{10,}$/.test(conv.senderName.trim());
+    setEditProfileName(isDigitsOnly ? '' : (conv.senderName || ''));
+    const isLidPhone = conv.phone && (/^\d{14,}$/.test(conv.phone.trim()) || conv.phone.includes('@lid'));
+    setEditProfilePhone(isLidPhone ? '' : (conv.phone || ''));
     setShowProfileModal(true);
   };
 
@@ -2293,6 +2422,16 @@ export default function Dashboard() {
                     >
                       AI Aktif
                     </button>
+                    <button
+                      onClick={() => setChatFilter('cs')}
+                      className={`px-2.5 py-0.5 rounded-full transition font-medium ${
+                        chatFilter === 'cs'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : 'bg-slate-800/60 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      CS Manusia
+                    </button>
                   </div>
                 </div>
 
@@ -2301,7 +2440,8 @@ export default function Dashboard() {
                   {(() => {
                     const filtered = conversations.filter((c) => {
                       if (chatFilter === 'unread' && c.lastMessage?.direction !== 'in') return false;
-                      if (chatFilter === 'ai' && !c.lastMessage?.isAi) return false;
+                      if (chatFilter === 'ai' && c.isHumanHandoff) return false;
+                      if (chatFilter === 'cs' && !c.isHumanHandoff) return false;
                       if (!chatSearch.trim()) return true;
                       const q = chatSearch.toLowerCase();
                       return (
@@ -2338,12 +2478,15 @@ export default function Dashboard() {
 
                     return uniqueFiltered.map((conv, idx) => {
                       const isSelected = selectedChatJid === conv.jid || selectedChatJid === conv.phone;
-                      const initials = (conv.senderName || conv.phone || 'WA')
+                      const rawName = conv.senderName && !/^\+?\d{10,}$/.test(conv.senderName.trim()) ? conv.senderName.trim() : null;
+                      const displayName = rawName || (conv.formattedPhone && !conv.formattedPhone.includes('LID') ? conv.formattedPhone : 'Pelanggan');
+                      const initials = (rawName || 'WA')
                         .split(' ')
+                        .filter(Boolean)
                         .map((w) => w[0])
                         .join('')
                         .slice(0, 2)
-                        .toUpperCase();
+                        .toUpperCase() || 'WA';
 
                       // Generate background color based on name/phone
                       const colors = [
@@ -2401,7 +2544,7 @@ export default function Dashboard() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-1 mb-0.5">
                               <h4 className="font-semibold text-xs text-slate-100 truncate">
-                                {conv.senderName}
+                                {displayName}
                               </h4>
                               <span className="text-[10px] text-slate-500 shrink-0 font-mono">
                                 {lastMsgTime}
@@ -2409,7 +2552,7 @@ export default function Dashboard() {
                             </div>
 
                             <p className="text-[11px] text-slate-400 font-mono mb-1 truncate">
-                              {conv.formattedPhone || (conv.phone && conv.phone.startsWith('+') ? conv.phone : `+${conv.phone || ''}`)}
+                              {conv.formattedPhone || (conv.phone ? `+${conv.phone}` : 'WhatsApp ID')}
                             </p>
 
                             <div className="flex items-center justify-between gap-1">
@@ -2422,11 +2565,16 @@ export default function Dashboard() {
                                 </span>
                               </div>
 
-                              {isAi && (
+                              {conv.isHumanHandoff ? (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold shrink-0 flex items-center gap-0.5 shadow-sm" title="Mode CS Manusia Aktif (Chat AI nonaktif)">
+                                  <UserCheck className="w-2.5 h-2.5" />
+                                  <span>CS</span>
+                                </span>
+                              ) : isAi ? (
                                 <span className="text-[9px] px-1 py-0.2 rounded bg-purple-950 border border-purple-500/40 text-purple-300 font-semibold shrink-0">
                                   AI
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                           </div>
 
@@ -2475,6 +2623,25 @@ export default function Dashboard() {
                   );
                 }
 
+                const rawActiveName = activeConversation.senderName && !/^\+?\d{10,}$/.test(activeConversation.senderName.trim())
+                  ? activeConversation.senderName.trim()
+                  : null;
+                const activeHasRealPhone = activeConversation.phone && !/^\d{14,}$/.test(activeConversation.phone) && !activeConversation.phone.includes('@lid');
+                const activeFormattedPhone = activeConversation.formattedPhone && !activeConversation.formattedPhone.includes('LID')
+                  ? activeConversation.formattedPhone
+                  : (activeHasRealPhone
+                      ? (activeConversation.phone.startsWith('+') ? activeConversation.phone : `+${activeConversation.phone}`)
+                      : null);
+                const activeDisplayName = rawActiveName || activeFormattedPhone || 'Pelanggan';
+                const activeInitials = (rawActiveName || 'Pelanggan')
+                  .split(' ')
+                  .filter(Boolean)
+                  .map((w) => w[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase() || 'PL';
+                const activeSubtitle = activeFormattedPhone || 'WhatsApp ID (LID)';
+
                 return (
                   <div className={`flex-1 flex flex-col bg-[#0b101b] min-w-0 h-full relative ${
                     mobileChatOpen ? 'flex' : 'hidden md:flex'
@@ -2497,26 +2664,65 @@ export default function Dashboard() {
                           title="Klik untuk melihat & ubah profil pelanggan"
                         >
                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-600 to-teal-800 flex items-center justify-center text-white font-bold text-xs shadow shrink-0 group-hover:ring-2 group-hover:ring-emerald-400/50 group-hover:scale-105 transition">
-                            {(activeConversation.senderName || 'WA').slice(0, 2).toUpperCase()}
+                            {activeInitials}
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <h3 className="font-bold text-sm text-white truncate group-hover:text-emerald-400 transition flex items-center gap-1">
-                                <span>{activeConversation.senderName}</span>
+                                <span>{activeDisplayName}</span>
                                 <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 transition" />
                               </h3>
-                              <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold hidden sm:inline-block">
-                                WhatsApp Aktif
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold hidden sm:inline-block ${
+                                activeConversation.isHumanHandoff
+                                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                              }`}>
+                                {activeConversation.isHumanHandoff ? 'Mode CS Manusia' : 'WhatsApp Aktif'}
                               </span>
                             </div>
                             <p className="text-xs text-slate-400 font-mono group-hover:text-slate-300 transition">
-                              {activeConversation.formattedPhone || (activeConversation.phone && activeConversation.phone.startsWith('+') ? activeConversation.phone : `+${activeConversation.phone || ''}`)}
+                              {activeSubtitle}
                             </p>
                           </div>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {/* ON/OFF AI per Contact Toggle */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleContactAi(activeConversation)}
+                          disabled={togglingAiJid === (activeConversation.jid || activeConversation.phone)}
+                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-all duration-200 flex items-center gap-2 shadow-sm ${
+                            activeConversation.isHumanHandoff
+                              ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/40 text-amber-300 hover:border-amber-500/60'
+                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:border-emerald-500/60'
+                          } ${togglingAiJid === (activeConversation.jid || activeConversation.phone) ? 'opacity-50 cursor-wait' : ''}`}
+                          title={
+                            activeConversation.isHumanHandoff
+                              ? 'Mode CS Manusia Aktif (Chat AI mati untuk kontak ini). Klik untuk mengaktifkan Chat AI otomatis.'
+                              : 'Chat AI Aktif (Bot membalas otomatis untuk kontak ini). Klik untuk mematikan Chat AI (beralih ke CS Manusia).'
+                          }
+                        >
+                          <div className="flex items-center gap-1.5">
+                            {activeConversation.isHumanHandoff ? (
+                              <UserCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            ) : (
+                              <Bot className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            )}
+                            <span className="font-semibold text-[11px] hidden sm:inline">
+                              {activeConversation.isHumanHandoff ? 'AI: Nonaktif (CS)' : 'Chat AI: Aktif'}
+                            </span>
+                          </div>
+
+                          {/* Interactive Pill Switch Indicator */}
+                          <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center ${
+                            activeConversation.isHumanHandoff ? 'bg-slate-700 justify-start' : 'bg-emerald-500 justify-end'
+                          }`}>
+                            <div className="w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-200" />
+                          </div>
+                        </button>
+
                         <button
                           onClick={() => handleOpenProfileModal(activeConversation)}
                           className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition flex items-center gap-1.5"
@@ -2530,8 +2736,8 @@ export default function Dashboard() {
                           onClick={() => {
                             setSelectedTicket({
                               id: `NEW`,
-                              name: activeConversation.senderName,
-                              contact: `+${activeConversation.phone}`,
+                              name: activeDisplayName,
+                              contact: activeSubtitle,
                               sender: activeConversation.jid || activeConversation.phone,
                               description: activeConversation.lastMessage?.text || 'Permohonan bantuan via WhatsApp',
                               category: 'Layanan Umum',
@@ -2557,6 +2763,25 @@ export default function Dashboard() {
                         </button>
                       </div>
                     </div>
+
+                    {/* CS Mode Active Notice Banner */}
+                    {activeConversation.isHumanHandoff && (
+                      <div className="px-4 py-2.5 bg-amber-950/40 border-b border-amber-500/30 flex items-center justify-between text-xs text-amber-300 shrink-0 animate-in fade-in duration-200">
+                        <div className="flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                          <span className="text-[11px] font-medium leading-tight">
+                            <strong className="font-semibold text-amber-200">Mode CS Manusia Aktif</strong> — Chat AI otomatis dinonaktifkan untuk pelanggan ini. Anda dapat membalas secara langsung tanpa interupsi bot.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleContactAi(activeConversation)}
+                          className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-semibold transition ml-2 shrink-0"
+                        >
+                          Nyalakan AI Kembali
+                        </button>
+                      </div>
+                    )}
 
                     {/* Messages Canvas */}
                     <div
@@ -2684,7 +2909,7 @@ export default function Dashboard() {
                             type="text"
                             value={chatInputText}
                             onChange={(e) => setChatInputText(e.target.value)}
-                            placeholder={`Ketik balasan WhatsApp untuk ${activeConversation.senderName}...`}
+                            placeholder={`Ketik balasan WhatsApp untuk ${activeDisplayName}...`}
                             className="w-full rounded-2xl bg-slate-900 border border-slate-700/80 px-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 pr-10"
                           />
                         </div>
@@ -5196,80 +5421,104 @@ export default function Dashboard() {
       )}
 
       {/* CUSTOMER PROFILE MODAL */}
-      {showProfileModal && profileTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-3xl bg-[#0f172a] border border-slate-700/80 p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400">
-                  <User className="w-5 h-5" />
+      {showProfileModal && profileTarget && (() => {
+        const rawModalName = profileTarget.senderName && !/^\+?\d{10,}$/.test(profileTarget.senderName.trim())
+          ? profileTarget.senderName.trim()
+          : null;
+        const modalHasRealPhone = profileTarget.phone && !/^\d{14,}$/.test(profileTarget.phone) && !profileTarget.phone.includes('@lid');
+        const modalFormattedPhone = profileTarget.formattedPhone && !profileTarget.formattedPhone.includes('LID')
+          ? profileTarget.formattedPhone
+          : (modalHasRealPhone
+              ? (profileTarget.phone.startsWith('+') ? profileTarget.phone : `+${profileTarget.phone}`)
+              : 'WhatsApp ID (LID)');
+        const modalDisplayName = rawModalName || (modalHasRealPhone ? modalFormattedPhone : 'Pelanggan');
+        const modalInitials = (rawModalName || 'Pelanggan')
+          .split(' ')
+          .filter(Boolean)
+          .map((w) => w[0])
+          .join('')
+          .slice(0, 2)
+          .toUpperCase() || 'PL';
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full max-w-md rounded-3xl bg-[#0f172a] border border-slate-700/80 p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-base">Profil Kontak Pelanggan</h3>
+                    <p className="text-xs text-slate-400">Kelola nomor telepon & informasi kontak WhatsApp</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-white text-base">Profil Kontak Pelanggan</h3>
-                  <p className="text-xs text-slate-400">Kelola nomor telepon & informasi kontak WhatsApp</p>
+                <button
+                  onClick={() => setShowProfileModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Profile Avatar Card */}
+              <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white font-extrabold text-xl shadow-lg ring-4 ring-emerald-500/20 shrink-0">
+                  {modalInitials}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <h4 className="font-bold text-base text-white truncate">
+                      {modalDisplayName}
+                    </h4>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold shrink-0">
+                      Aktif
+                    </span>
+                  </div>
+                  <p className="text-xs font-mono text-emerald-400 mb-1 font-semibold truncate">
+                    {modalFormattedPhone}
+                  </p>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    {profileTarget.messages?.length || 0} pesan tercatat dalam obrolan
+                  </p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowProfileModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Profile Avatar Card */}
-            <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center gap-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white font-extrabold text-xl shadow-lg ring-4 ring-emerald-500/20 shrink-0">
-                {(profileTarget.senderName || 'WA').slice(0, 2).toUpperCase()}
+              {/* Quick Action Shortcuts */}
+              <div className="grid grid-cols-2 gap-2">
+                <a
+                  href={modalHasRealPhone ? `https://wa.me/${profileTarget.phone.replace(/[^0-9]/g, '')}` : '#'}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-medium transition ${
+                    modalHasRealPhone
+                      ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-600/20'
+                      : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed pointer-events-none'
+                  }`}
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Buka WhatsApp</span>
+                </a>
+
+                <button
+                  type="button"
+                  disabled={!modalHasRealPhone}
+                  onClick={() => modalHasRealPhone && handleCopyText(profileTarget.phone, 'Nomor Telepon')}
+                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-medium transition ${
+                    modalHasRealPhone
+                      ? 'bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-300'
+                      : 'bg-slate-800/40 border-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  {copiedField === 'Nomor Telepon' ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5 text-sky-400" />
+                  )}
+                  <span>{copiedField === 'Nomor Telepon' ? 'Tersalin!' : 'Salin Nomor'}</span>
+                </button>
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <h4 className="font-bold text-base text-white truncate">
-                    {profileTarget.senderName}
-                  </h4>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold shrink-0">
-                    Aktif
-                  </span>
-                </div>
-                <p className="text-xs font-mono text-emerald-400 mb-1 font-semibold truncate">
-                  {profileTarget.formattedPhone || (profileTarget.phone ? `+${profileTarget.phone}` : 'Belum terhubung')}
-                </p>
-                <p className="text-[11px] text-slate-400 truncate">
-                  {profileTarget.messages?.length || 0} pesan tercatat dalam obrolan
-                </p>
-              </div>
-            </div>
-
-            {/* Quick Action Shortcuts */}
-            <div className="grid grid-cols-2 gap-2">
-              <a
-                href={profileTarget.phone ? `https://wa.me/${profileTarget.phone.replace(/[^0-9]/g, '')}` : '#'}
-                target="_blank"
-                rel="noreferrer"
-                className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-medium transition ${
-                  profileTarget.phone
-                    ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-600/20'
-                    : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed pointer-events-none'
-                }`}
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Buka WhatsApp</span>
-              </a>
-
-              <button
-                type="button"
-                onClick={() => handleCopyText(profileTarget.phone, 'Nomor Telepon')}
-                className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium transition"
-              >
-                {copiedField === 'Nomor Telepon' ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5 text-sky-400" />
-                )}
-                <span>{copiedField === 'Nomor Telepon' ? 'Tersalin!' : 'Salin Nomor'}</span>
-              </button>
-            </div>
 
             {/* Edit Profile Form */}
             <form onSubmit={handleSaveProfile} className="space-y-4">
@@ -5354,7 +5603,8 @@ export default function Dashboard() {
             </form>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* COMPLAINT SUBMISSION MODAL */}
       {showComplaintModal && (

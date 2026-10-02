@@ -1,0 +1,22 @@
+{
+  "6289999999999@s.whatsapp.net": {
+    "active": false,
+    "requestedAt": 0,
+    "reason": "CS requested"
+  },
+  "6289999999999": {
+    "active": false,
+    "requestedAt": 0,
+    "reason": "CS requested"
+  },
+  "6287777777777@s.whatsapp.net": {
+    "active": false,
+    "requestedAt": 0,
+    "reason": "CS requested"
+  },
+  "6287777777777": {
+    "active": false,
+    "requestedAt": 0,
+    "reason": "CS requested"
+  }
+}

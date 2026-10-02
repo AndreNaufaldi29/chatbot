@@ -4,6 +4,7 @@ const path = require('path');
 const EventEmitter = require('events');
 
 const OPT_IN_FILE = path.join(__dirname, '../../data/opt_in.json');
+const HANDOFF_FILE = path.join(__dirname, '../../data/handoff.json');
 
 class ProtectionService extends EventEmitter {
   constructor() {
@@ -30,6 +31,7 @@ class ProtectionService extends EventEmitter {
 
     // 6. Human Handoff State
     this.handoffRegistry = new Map(); // jid -> { active: boolean, requestedAt: number, reason: string }
+    this.loadHandoffData();
 
     // 7. Session Inactivity State
     this.userLastActivityTimes = new Map(); // jid -> timestamp ms
@@ -524,51 +526,115 @@ class ProtectionService extends EventEmitter {
     this.saveOptInData();
   }
 
+  loadHandoffData() {
+    try {
+      const dir = path.dirname(HANDOFF_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      if (fs.existsSync(HANDOFF_FILE)) {
+        const raw = fs.readFileSync(HANDOFF_FILE, 'utf8');
+        const data = JSON.parse(raw || '{}');
+        for (const [k, v] of Object.entries(data)) {
+          this.handoffRegistry.set(k, v);
+        }
+      }
+    } catch (e) {
+      console.warn('[Protection:HumanHandoff] Gagal memuat data handoff.json:', e.message);
+    }
+  }
+
+  saveHandoffData() {
+    try {
+      const dir = path.dirname(HANDOFF_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const obj = {};
+      for (const [k, v] of this.handoffRegistry.entries()) {
+        obj[k] = v;
+      }
+      fs.writeFileSync(HANDOFF_FILE, JSON.stringify(obj, null, 2), 'utf8');
+    } catch (e) {
+      console.warn('[Protection:HumanHandoff] Gagal menyimpan data handoff.json:', e.message);
+    }
+  }
+
   // =========================================================================
-  // 6. HUMAN HANDOFF MANAGEMENT
+  // 6. HUMAN HANDOFF MANAGEMENT (PER-CONTACT AI CONTROL)
   // =========================================================================
 
   isHumanHandoff(jid) {
     const config = this.getConfig().human_handoff || {};
     if (config.enabled === false || !jid) return false;
 
-    const record = this.handoffRegistry.get(jid);
-    if (!record || !record.active) return false;
+    const raw = String(jid).trim();
+    const shortKey = raw.split('@')[0];
+    const phoneService = require('./phoneService');
+    const mappedPhone = phoneService.getPhone ? phoneService.getPhone(raw) : null;
 
-    // Check Auto-Expiry
-    const maxAgeHours = config.auto_expire_hours || 2;
-    const now = Date.now();
-    if (record.requestedAt && (now - record.requestedAt) > maxAgeHours * 60 * 60 * 1000) {
-      record.active = false;
-      this.stats.humanHandoffsActive = Math.max(0, this.stats.humanHandoffsActive - 1);
-      console.log(`[Protection:HumanHandoff] Sesi CS manusia untuk ${jid} kedaluwarsa setelah ${maxAgeHours} jam. Bot aktif kembali.`);
-      return false;
+    const keysToCheck = [raw, shortKey];
+    if (mappedPhone) {
+      keysToCheck.push(mappedPhone, `${mappedPhone}@s.whatsapp.net`);
     }
 
-    return true;
+    for (const k of keysToCheck) {
+      const record = this.handoffRegistry.get(k);
+      if (record && record.active) {
+        // Check Auto-Expiry
+        const maxAgeHours = config.auto_expire_hours || 2;
+        const now = Date.now();
+        if (record.requestedAt && (now - record.requestedAt) > maxAgeHours * 60 * 60 * 1000) {
+          record.active = false;
+          this.saveHandoffData();
+          this.stats.humanHandoffsActive = Math.max(0, this.stats.humanHandoffsActive - 1);
+          console.log(`[Protection:HumanHandoff] Sesi CS manusia untuk ${k} kedaluwarsa setelah ${maxAgeHours} jam. Bot aktif kembali.`);
+          return false;
+        }
+        return true;
+      }
+    }
+
+    return false;
   }
 
   setHumanHandoff(jid, active = true, reason = 'CS requested') {
-    let record = this.handoffRegistry.get(jid);
-    if (!record) {
-      record = { active: false, requestedAt: 0, reason: '' };
-      this.handoffRegistry.set(jid, record);
+    if (!jid) return;
+    const raw = String(jid).trim();
+    const shortKey = raw.split('@')[0];
+    const phoneService = require('./phoneService');
+    const mappedPhone = phoneService.getPhone ? phoneService.getPhone(raw) : null;
+
+    const keysToSet = [raw, shortKey];
+    if (mappedPhone) {
+      keysToSet.push(mappedPhone, `${mappedPhone}@s.whatsapp.net`);
     }
 
-    const wasActive = record.active;
-    record.active = Boolean(active);
-    record.requestedAt = active ? Date.now() : 0;
-    record.reason = reason;
+    const wasActive = this.isHumanHandoff(raw);
+    const now = Date.now();
+
+    for (const k of keysToSet) {
+      this.handoffRegistry.set(k, {
+        active: Boolean(active),
+        requestedAt: active ? now : 0,
+        reason
+      });
+    }
+    this.saveHandoffData();
 
     if (active && !wasActive) {
       this.stats.humanHandoffsActive++;
-      this.emit('human_handoff_started', { jid, reason, timestamp: new Date().toISOString() });
+      this.emit('human_handoff_started', { jid: raw, reason, timestamp: new Date().toISOString() });
     } else if (!active && wasActive) {
       this.stats.humanHandoffsActive = Math.max(0, this.stats.humanHandoffsActive - 1);
-      this.emit('human_handoff_ended', { jid, timestamp: new Date().toISOString() });
+      this.emit('human_handoff_ended', { jid: raw, timestamp: new Date().toISOString() });
     }
 
-    return record;
+    return { active: Boolean(active), reason };
+  }
+
+  isAiEnabledForContact(jid) {
+    return !this.isHumanHandoff(jid);
+  }
+
+  setAiEnabledForContact(jid, enabled, reason = 'Admin toggled AI') {
+    return this.setHumanHandoff(jid, !enabled, reason);
   }
 
   checkHandoffKeywords(text) {
@@ -576,15 +642,26 @@ class ProtectionService extends EventEmitter {
     if (config.enabled === false || !text) return null;
 
     const textClean = String(text).trim().toLowerCase();
-    const triggerKeywords = config.keywords || ['cs', 'admin', 'operator', 'manusia', 'orang', 'live agent', 'bantuan manusia'];
-    const releaseKeywords = config.release_keywords || ['!bot', 'aktifkan bot', 'kembali ke bot', 'bot', 'menu', 'selesai'];
+    const releaseKeywords = config.release_keywords || ['!bot', 'aktifkan bot', 'kembali ke bot', 'bot', 'menu', 'selesai', 'nyalakan bot'];
 
     if (releaseKeywords.some(kw => textClean === kw || textClean.startsWith(`${kw} `))) {
       return 'RELEASE';
     }
 
-    if (triggerKeywords.some(kw => textClean === kw || textClean.includes(kw))) {
-      return 'TRIGGER';
+    // Comprehensive detection for customer asking for CS / Human assistance
+    const triggerPhrases = [
+      'cs', 'chat cs', 'mau cs', 'minta cs', 'bicara cs', 'hubungi cs', 'hubungkan cs', 'kontak cs',
+      'admin', 'operator', 'manusia', 'orang', 'live agent', 'bantuan manusia', 'customer service',
+      'bicara dengan cs', 'bicara dengan admin', 'bicara dengan manusia', 'chat dengan cs', 'chat dengan admin',
+      'mau bicara dengan cs', 'mau bicara sama orang', 'staff cs', 'butuh cs', 'panggil cs', 'tolong cs',
+      'chat dengan orang', 'bisa bicara dengan orang', 'bisa bicara dengan admin'
+    ];
+
+    for (const kw of triggerPhrases) {
+      if (textClean === kw) return 'TRIGGER';
+      if (kw.length > 2 && textClean.includes(kw)) return 'TRIGGER';
+      // Word boundary regex for 2-letter 'cs' to avoid false positives (e.g. 'access', 'process')
+      if (kw === 'cs' && /\bcs\b/i.test(textClean)) return 'TRIGGER';
     }
 
     return null;

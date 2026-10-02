@@ -15,9 +15,10 @@ class AiService {
     return 'gemini';
   }
 
-  isAiEnabled() {
+  isAiEnabled(jid = null) {
     const config = menuHandler.getConfig();
     if (config?.ai?.enabled === false) return false;
+    if (jid && protectionService.isHumanHandoff(jid)) return false;
     return groqService.isAiEnabled() || geminiService.isAiEnabled();
   }
 

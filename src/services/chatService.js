@@ -134,11 +134,30 @@ class ChatService {
     const messages = this.getAllMessages();
 
     // Determine target JID and real phone
-    const jid = msg.jid || (msg.phone ? `${msg.phone.replace(/\D/g, '')}@s.whatsapp.net` : 'unknown@s.whatsapp.net');
-    const realPhone = phoneService.getPhone(jid, msg.senderName) || (msg.phone ? String(msg.phone).replace(/\D/g, '') : (jid ? jid.split('@')[0] : 'Unknown'));
+    const jid = msg.jid || (msg.phone ? `${String(msg.phone).replace(/\D/g, '')}@s.whatsapp.net` : 'unknown@s.whatsapp.net');
+    
+    // Resolve clean senderName (never pure digits or LID)
+    let senderName = msg.senderName;
+    if (senderName && (phoneService.isLid(senderName) || /^\+?\d+$/.test(senderName.trim()))) {
+      senderName = null;
+    }
+    if (!senderName && msg.direction === 'in') {
+      senderName = phoneService.getName(jid);
+    }
+    if (!senderName) {
+      senderName = msg.direction === 'out' ? 'Saya' : 'Pelanggan';
+    } else if (msg.direction === 'in' && senderName !== 'Pelanggan') {
+      phoneService.setName(jid, senderName);
+    }
 
-    if (jid && realPhone && realPhone.length >= 8) {
-      phoneService.setMapping(jid, realPhone, msg.senderName);
+    // Resolve real phone
+    let realPhone = phoneService.getPhone(jid, senderName);
+    if (!realPhone && phoneService.isRealPhone(msg.phone)) {
+      realPhone = String(msg.phone).replace(/\D/g, '');
+    }
+
+    if (jid && realPhone && phoneService.isRealPhone(realPhone)) {
+      phoneService.setMapping(jid, realPhone, senderName);
     }
 
     const messageText = String(msg.text).trim();
@@ -171,9 +190,9 @@ class ChatService {
       id: msg.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       direction: messageDirection,
       jid,
-      phone: realPhone,
-      formattedPhone: phoneService.formatPhone(realPhone),
-      senderName: msg.senderName || 'Pelanggan',
+      phone: realPhone || null,
+      formattedPhone: phoneService.formatPhone(realPhone, jid),
+      senderName,
       text: String(msg.text),
       isAi: !!msg.isAi,
       timestamp: messageTimestamp
@@ -192,13 +211,29 @@ class ChatService {
 
     for (const msg of msgList) {
       if (!msg || !msg.text) continue;
-      const jid = msg.jid || (msg.phone ? `${msg.phone.replace(/\D/g, '')}@s.whatsapp.net` : 'unknown@s.whatsapp.net');
+      const jid = msg.jid || (msg.phone ? `${String(msg.phone).replace(/\D/g, '')}@s.whatsapp.net` : 'unknown@s.whatsapp.net');
       if (jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
 
-      const realPhone = phoneService.getPhone(jid, msg.senderName) || (msg.phone ? String(msg.phone).replace(/\D/g, '') : (jid ? jid.split('@')[0] : 'Unknown'));
+      let senderName = msg.senderName;
+      if (senderName && (phoneService.isLid(senderName) || /^\+?\d+$/.test(senderName.trim()))) {
+        senderName = null;
+      }
+      if (!senderName && msg.direction === 'in') {
+        senderName = phoneService.getName(jid);
+      }
+      if (!senderName) {
+        senderName = msg.direction === 'out' ? 'Saya' : 'Pelanggan';
+      } else if (msg.direction === 'in' && senderName !== 'Pelanggan') {
+        phoneService.setName(jid, senderName);
+      }
 
-      if (jid && realPhone && realPhone.length >= 8) {
-        phoneService.setMapping(jid, realPhone, msg.senderName);
+      let realPhone = phoneService.getPhone(jid, senderName);
+      if (!realPhone && phoneService.isRealPhone(msg.phone)) {
+        realPhone = String(msg.phone).replace(/\D/g, '');
+      }
+
+      if (jid && realPhone && phoneService.isRealPhone(realPhone)) {
+        phoneService.setMapping(jid, realPhone, senderName);
       }
 
       const id = msg.id || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -224,9 +259,9 @@ class ChatService {
         id,
         direction: messageDirection,
         jid,
-        phone: realPhone,
-        formattedPhone: phoneService.formatPhone(realPhone),
-        senderName: msg.senderName || (messageDirection === 'out' ? 'Saya' : 'Pelanggan'),
+        phone: realPhone || null,
+        formattedPhone: phoneService.formatPhone(realPhone, jid),
+        senderName,
         text: messageText,
         mediaType: msg.mediaType || 'text',
         image: msg.image || null,
@@ -255,18 +290,28 @@ class ChatService {
     // 1. Seed convMap with all synced WhatsApp chats
     for (const [jid, c] of this.syncedChats.entries()) {
       if (jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
-      const realPhone = phoneService.getPhone(jid, c.name) || (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : 'Unknown');
+      const realPhone = phoneService.getPhone(jid, c.name);
+
+      let contactName = c.name;
+      if (!contactName || phoneService.isLid(contactName) || /^\+?\d+$/.test(contactName.trim())) {
+        contactName = phoneService.getName(jid) || (realPhone ? phoneService.getName(realPhone) : null);
+      }
+
+      const displayName = (contactName && !phoneService.isLid(contactName) && !/^\+?\d+$/.test(contactName.trim()))
+        ? contactName
+        : (realPhone ? phoneService.formatPhone(realPhone) : 'Pelanggan');
+
       convMap.set(jid, {
         jid,
-        phone: realPhone,
-        formattedPhone: phoneService.formatPhone(realPhone),
-        senderName: c.name || phoneService.getPhone(jid) || jid.split('@')[0],
+        phone: realPhone || null,
+        formattedPhone: phoneService.formatPhone(realPhone, jid),
+        senderName: displayName,
         lastMessage: {
           id: `last_${jid}`,
           direction: 'in',
           jid,
-          phone: realPhone,
-          senderName: c.name || 'Pelanggan',
+          phone: realPhone || null,
+          senderName: displayName,
           text: '[Obrolan WhatsApp]',
           timestamp: c.updatedAt || new Date().toISOString()
         },
@@ -278,18 +323,27 @@ class ChatService {
 
     // 2. Populate and merge actual message history
     for (const msg of messages) {
-      // Find real phone using phoneService
-      const realPhone = phoneService.getPhone(msg.jid, msg.senderName) || (msg.phone ? String(msg.phone).replace(/\D/g, '') : null);
-      
+      let realPhone = phoneService.getPhone(msg.jid, msg.senderName);
+      if (!realPhone && phoneService.isRealPhone(msg.phone)) {
+        realPhone = String(msg.phone).replace(/\D/g, '');
+      }
+
       // Canonical groupKey: prioritize canonical remote JID or real phone
-      const groupKey = msg.jid || (realPhone ? `${realPhone}@s.whatsapp.net` : (msg.phone || 'unknown'));
+      const groupKey = msg.jid || (realPhone ? `${realPhone}@s.whatsapp.net` : 'unknown');
 
       if (!convMap.has(groupKey)) {
+        let contactName = phoneService.getName(msg.jid) || (realPhone ? phoneService.getName(realPhone) : null);
+        if (!contactName && msg.direction === 'in' && msg.senderName && !phoneService.isLid(msg.senderName) && !/^\+?\d+$/.test(msg.senderName) && msg.senderName !== 'Pelanggan') {
+          contactName = msg.senderName;
+        }
+
+        const displayName = contactName || (realPhone ? phoneService.formatPhone(realPhone) : 'Pelanggan');
+
         convMap.set(groupKey, {
           jid: msg.jid || (realPhone ? `${realPhone}@s.whatsapp.net` : null),
-          phone: realPhone || msg.phone || (msg.jid ? msg.jid.split('@')[0] : 'Unknown'),
-          formattedPhone: phoneService.formatPhone(realPhone || msg.phone),
-          senderName: msg.direction === 'in' ? msg.senderName : (msg.senderName?.includes('AI') || msg.senderName?.includes('Bot') ? (realPhone || msg.phone) : msg.senderName),
+          phone: realPhone || null,
+          formattedPhone: phoneService.formatPhone(realPhone, msg.jid),
+          senderName: displayName,
           lastMessage: msg,
           unreadCount: 0,
           messages: [],
@@ -307,14 +361,34 @@ class ChatService {
       }
 
       // If customer sent this message, prioritize customer's real display name
-      if (msg.direction === 'in' && msg.senderName && msg.senderName !== 'Pelanggan') {
-        conv.senderName = msg.senderName;
+      if (msg.direction === 'in' && msg.senderName && !phoneService.isLid(msg.senderName) && !/^\+?\d+$/.test(msg.senderName.trim()) && msg.senderName !== 'Pelanggan') {
+        conv.senderName = msg.senderName.trim();
+        phoneService.setName(conv.jid, conv.senderName);
+        if (realPhone) phoneService.setName(realPhone, conv.senderName);
       }
 
-      // Always update real phone if we discovered a real valid phone number
-      if (realPhone && realPhone.length >= 8 && !realPhone.startsWith('214535') && !realPhone.startsWith('920115')) {
+      // Check if bot message greeted the customer by name (e.g. "Halo Pak Zaenal")
+      if (msg.direction === 'out' && msg.text && (!conv.senderName || conv.senderName === 'Pelanggan' || phoneService.isLid(conv.senderName) || /^\+?\d+$/.test(conv.senderName.trim()))) {
+        const greetMatch = msg.text.match(/(?:Halo|Hai|Pagi|Siang|Sore|Malam)\s+(?:Pak\s+|Bu\s+|Kak\s+)?([A-Z][a-zA-Z0-9_\s]{1,25})[,.!\n]/i);
+        if (greetMatch && greetMatch[1]) {
+          const extracted = greetMatch[1].trim();
+          if (!['admin', 'bot', 'gemini', 'groq', 'pelanggan', 'saya', 'sultan carpet bot'].includes(extracted.toLowerCase()) && !/^\d+$/.test(extracted)) {
+            conv.senderName = extracted;
+            phoneService.setName(conv.jid, extracted);
+            if (realPhone) phoneService.setName(realPhone, extracted);
+          }
+        }
+      }
+
+      // Always update real phone if discovered
+      if (realPhone && phoneService.isRealPhone(realPhone)) {
         conv.phone = realPhone;
-        conv.formattedPhone = phoneService.formatPhone(realPhone);
+        conv.formattedPhone = phoneService.formatPhone(realPhone, conv.jid);
+      } else {
+        if (phoneService.isLid(conv.phone)) {
+          conv.phone = null;
+        }
+        conv.formattedPhone = phoneService.formatPhone(conv.phone, conv.jid);
       }
 
       // Deduplicate messages in conversation thread
@@ -338,9 +412,17 @@ class ChatService {
     // Secondary pass: ensure phoneService mappings apply to each conversation
     for (const conv of convMap.values()) {
       const mapped = phoneService.getPhone(conv.jid, conv.senderName);
-      if (mapped && mapped.length >= 8 && !mapped.startsWith('214535') && !mapped.startsWith('920115')) {
+      if (mapped && phoneService.isRealPhone(mapped)) {
         conv.phone = mapped;
-        conv.formattedPhone = phoneService.formatPhone(mapped);
+        conv.formattedPhone = phoneService.formatPhone(mapped, conv.jid);
+      } else if (phoneService.isLid(conv.phone)) {
+        conv.phone = null;
+        conv.formattedPhone = phoneService.formatPhone(null, conv.jid);
+      }
+
+      const storedName = phoneService.getName(conv.jid) || (conv.phone ? phoneService.getName(conv.phone) : null);
+      if (storedName && !phoneService.isLid(storedName) && !/^\+?\d+$/.test(storedName)) {
+        conv.senderName = storedName;
       }
     }
 
@@ -354,6 +436,15 @@ class ChatService {
         uniqueMap.set(canonicalKey, conv);
       } else {
         const existing = uniqueMap.get(canonicalKey);
+        // If conv has a real name and existing has fallback, take conv's real name!
+        if (conv.senderName && conv.senderName !== 'Pelanggan' && (!existing.senderName || existing.senderName === 'Pelanggan')) {
+          existing.senderName = conv.senderName;
+        }
+        // If conv has real phone and existing doesn't, take conv's phone!
+        if (conv.phone && !existing.phone) {
+          existing.phone = conv.phone;
+          existing.formattedPhone = conv.formattedPhone;
+        }
         // Merge messages and preserve order
         for (const m of conv.messages) {
           if (!existing.messages.some((em) => em.id === m.id)) {
@@ -372,9 +463,18 @@ class ChatService {
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
 
-    // Enrich with real-time protection flags
+    // Final hygiene pass: guarantee no raw LIDs in names or phones
     for (const conv of conversations) {
-      conv.isHumanHandoff = protectionService.isHumanHandoff(conv.jid);
+      if (!conv.senderName || phoneService.isLid(conv.senderName) || /^\+?\d+$/.test(conv.senderName.trim())) {
+        const stored = phoneService.getName(conv.jid) || (conv.phone ? phoneService.getName(conv.phone) : null);
+        conv.senderName = stored || (conv.phone ? phoneService.formatPhone(conv.phone) : 'Pelanggan');
+      }
+      if (phoneService.isLid(conv.phone)) {
+        conv.phone = null;
+        conv.formattedPhone = phoneService.formatPhone(null, conv.jid);
+      }
+      conv.isHumanHandoff = protectionService.isHumanHandoff(conv.jid) || (conv.phone ? protectionService.isHumanHandoff(conv.phone) : false);
+      conv.aiEnabled = !conv.isHumanHandoff;
       conv.isOptedIn = protectionService.isOptedIn(conv.jid);
     }
 
@@ -389,7 +489,11 @@ class ChatService {
     }
     const cleanJid = String(targetJid).trim();
 
-    if (cleanPhone) {
+    if (name) {
+      phoneService.setName(cleanJid, name);
+    }
+
+    if (cleanPhone && phoneService.isRealPhone(cleanPhone)) {
       phoneService.setMapping(cleanJid, cleanPhone, name);
     }
 
@@ -404,7 +508,7 @@ class ChatService {
           ...(name && m.direction === 'in' ? { senderName: name.trim() } : {}),
           ...(cleanPhone ? { 
             phone: cleanPhone, 
-            formattedPhone: phoneService.formatPhone(cleanPhone) 
+            formattedPhone: phoneService.formatPhone(cleanPhone, m.jid) 
           } : {})
         };
       }

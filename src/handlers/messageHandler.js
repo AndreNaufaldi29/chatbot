@@ -256,21 +256,40 @@ class MessageHandler {
       const rawText = record.texts.join(' \n ').trim();
       if (!rawText) return;
 
-      const senderName = msg.pushName || 'Pelanggan';
+      // 1. Resolve real sender name (never purely digits or LID)
+      let senderName = 'Pelanggan';
+      if (msg.pushName && !phoneService.isLid(msg.pushName) && !/^\+?\d+$/.test(msg.pushName.trim())) {
+        senderName = msg.pushName.trim();
+        phoneService.setName(jid, senderName);
+      } else {
+        const storedName = phoneService.getName(jid);
+        if (storedName) senderName = storedName;
+      }
 
-      // Extract real phone number
+      // 2. Extract real phone number
       const rawPn = msg.key.senderPn || msg.key.participantPn;
       let realPhone = null;
       if (rawPn) {
-        realPhone = rawPn.split('@')[0];
-        phoneService.setMapping(jid, realPhone, senderName);
+        const clean = rawPn.split('@')[0].replace(/\D/g, '');
+        if (phoneService.isRealPhone(clean)) {
+          realPhone = clean;
+          phoneService.setMapping(jid, realPhone, senderName);
+        }
       } else if (jid.endsWith('@s.whatsapp.net')) {
-        realPhone = jid.split('@')[0];
-        phoneService.setMapping(jid, realPhone, senderName);
+        const clean = jid.split('@')[0].replace(/\D/g, '');
+        if (phoneService.isRealPhone(clean)) {
+          realPhone = clean;
+          phoneService.setMapping(jid, realPhone, senderName);
+        }
       } else {
         realPhone = phoneService.getPhone(jid, senderName);
       }
-      const cleanPhone = realPhone || jid.split('@')[0];
+
+      if (realPhone && phoneService.isRealPhone(realPhone)) {
+        phoneService.setName(realPhone, senderName);
+      }
+
+      const cleanPhone = (realPhone && phoneService.isRealPhone(realPhone)) ? realPhone : null;
 
       // Emit incoming message to dashboard
       this.emitLog({
@@ -278,6 +297,7 @@ class MessageHandler {
         direction: 'in',
         jid,
         phone: cleanPhone,
+        formattedPhone: phoneService.formatPhone(cleanPhone, jid),
         senderName,
         text: rawText,
         mediaType: record.mediaType,
@@ -321,9 +341,9 @@ class MessageHandler {
         return;
       }
 
-      // Jika user sedang dalam penanganan CS manusia, bot DIAM dan tidak menimpa chat admin
-      if (sessionManager.isHumanMode(jid)) {
-        console.log(`[CS Mode] Pesan dari ${cleanPhone}: "${rawText}" (Sedang dalam penanganan CS manusia - Bot diam)`);
+      // Jika user sedang dalam penanganan CS manusia atau AI kontak dinonaktifkan, bot DIAM dan tidak menimpa chat admin
+      if (sessionManager.isHumanMode(jid) || protectionService.isHumanHandoff(jid)) {
+        console.log(`[CS Mode] Pesan dari ${cleanPhone || jid}: "${rawText}" (Sedang dalam penanganan CS manusia / AI nonaktif - Bot diam)`);
         return;
       }
 
@@ -717,7 +737,7 @@ class MessageHandler {
     }
 
     // 3. AI Smart Interaction (Groq LPU / Gemini)
-    if (aiService.isAiEnabled()) {
+    if (aiService.isAiEnabled(jid)) {
       try {
         let aiPrompt = text;
         if (detectedIntent) {
@@ -927,12 +947,17 @@ class MessageHandler {
       sessionManager.updateReplyTime(jid);
 
       // Emit log ke Web Dashboard
-      const resolvedPhone = phoneService.getPhone(jid) || jid.split('@')[0];
+      const candidatePhone = phoneService.getPhone(jid);
+      const resolvedPhone = (candidatePhone && phoneService.isRealPhone(candidatePhone))
+        ? candidatePhone
+        : (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : null);
+
       this.emitLog({
         id: logOptions.id || `out_${Date.now()}`,
         direction: 'out',
         jid,
         phone: resolvedPhone,
+        formattedPhone: phoneService.formatPhone(resolvedPhone, jid),
         senderName: logOptions.senderName || 'Sultan Carpet Bot',
         text: textContent,
         isAi: !!logOptions.isAi,

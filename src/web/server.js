@@ -205,9 +205,23 @@ app.post('/api/chats/:jid/handoff', (req, res) => {
   const { jid } = req.params;
   const { active, reason } = req.body;
   const isHandoff = active !== false;
+  const aiEnabled = !isHandoff;
   sessionManager.setHumanMode(jid, isHandoff, reason || (isHandoff ? 'Admin takeover via Web Dashboard' : 'Returned to bot by Admin'));
-  broadcastSSE('handoff_status_changed', { jid, active: isHandoff });
-  res.json({ success: true, jid, active: isHandoff });
+  broadcastSSE('handoff_status_changed', { jid, active: isHandoff, aiEnabled });
+  broadcastSSE('contact_ai_toggled', { jid, aiEnabled, isHumanHandoff: isHandoff });
+  res.json({ success: true, jid, active: isHandoff, aiEnabled });
+});
+
+// Per-Contact AI On/Off Toggle
+app.post('/api/chats/:jid/ai-toggle', (req, res) => {
+  const { jid } = req.params;
+  const { enabled, reason } = req.body;
+  const aiEnabled = enabled !== false;
+  const isHandoff = !aiEnabled;
+  sessionManager.setHumanMode(jid, isHandoff, reason || (isHandoff ? 'AI dinonaktifkan oleh Admin (Mode CS Manusia)' : 'AI diaktifkan kembali oleh Admin'));
+  broadcastSSE('contact_ai_toggled', { jid, aiEnabled, isHumanHandoff: isHandoff });
+  broadcastSSE('handoff_status_changed', { jid, active: isHandoff, aiEnabled });
+  res.json({ success: true, jid, aiEnabled, isHumanHandoff: isHandoff });
 });
 
 // Opt-In / Consent Control

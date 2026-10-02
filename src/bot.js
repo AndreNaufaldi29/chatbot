@@ -178,27 +178,43 @@ class WhatsAppBot extends EventEmitter {
         }
       });
 
+      // Helper for syncing contact identity (Name, Phone, LID)
+      const syncContact = (c) => {
+        if (!c || !c.id || c.id.endsWith('@broadcast') || c.id.endsWith('@newsletter')) return;
+        const name = c.name || c.notify || c.verifiedName;
+        const lid = c.lid || (c.id.endsWith('@lid') ? c.id : null);
+        const pn = (c.jid || c.phoneNumber || (c.id.endsWith('@s.whatsapp.net') ? c.id : null));
+        const realPhone = pn ? pn.split('@')[0].replace(/\D/g, '') : null;
+
+        if (lid && realPhone && phoneService.isRealPhone(realPhone)) {
+          phoneService.setMapping(lid, realPhone, name);
+        } else if (realPhone && phoneService.isRealPhone(realPhone)) {
+          phoneService.setMapping(c.id, realPhone, name);
+        }
+
+        if (name && !phoneService.isLid(name) && !/^\+?\d+$/.test(name)) {
+          phoneService.setName(c.id, name);
+          if (lid) phoneService.setName(lid, name);
+          if (realPhone) phoneService.setName(realPhone, name);
+        }
+      };
+
       // 1. Handle Full Messaging History Sync from WhatsApp
       this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest, progress }) => {
         console.log(`[WhatsAppBot] 📥 Menerima sinkronisasi riwayat WhatsApp: ${chats?.length || 0} obrolan, ${contacts?.length || 0} kontak, ${messages?.length || 0} pesan (progress: ${progress || 100}%).`);
 
         // a. Sinkronisasi Kontak & Nama ke phoneService
         if (Array.isArray(contacts)) {
-          for (const c of contacts) {
-            if (c.id && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter')) {
-              const name = c.name || c.notify || c.verifiedName;
-              const phone = c.id.split('@')[0];
-              phoneService.setMapping(c.id, phone, name);
-            }
-          }
+          contacts.forEach(syncContact);
         }
 
         // b. Sinkronisasi Obrolan (Chats metadata) ke chatService
         if (Array.isArray(chats)) {
           for (const ch of chats) {
             if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
+              const contactName = phoneService.getName(ch.id);
               chatService.setSyncedChat(ch.id, {
-                name: ch.name,
+                name: ch.name || contactName || null,
                 unreadCount: ch.unreadCount,
                 updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
               });
@@ -235,8 +251,9 @@ class WhatsAppBot extends EventEmitter {
         if (Array.isArray(newChats)) {
           for (const ch of newChats) {
             if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
+              const contactName = phoneService.getName(ch.id);
               chatService.setSyncedChat(ch.id, {
-                name: ch.name,
+                name: ch.name || contactName || null,
                 unreadCount: ch.unreadCount,
                 updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
               });
@@ -250,8 +267,9 @@ class WhatsAppBot extends EventEmitter {
         if (Array.isArray(updates)) {
           for (const ch of updates) {
             if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
+              const contactName = phoneService.getName(ch.id);
               chatService.setSyncedChat(ch.id, {
-                name: ch.name,
+                name: ch.name || contactName || null,
                 unreadCount: ch.unreadCount,
                 updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
               });
@@ -261,17 +279,18 @@ class WhatsAppBot extends EventEmitter {
         }
       });
 
-      // 3. Handle Contacts Upsert
+      // 3. Handle Contacts Upsert & Update
       this.sock.ev.on('contacts.upsert', (newContacts) => {
         if (Array.isArray(newContacts)) {
-          for (const c of newContacts) {
-            if (c.id && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter')) {
-              const name = c.name || c.notify || c.verifiedName;
-              const phone = c.id.split('@')[0];
-              phoneService.setMapping(c.id, phone, name);
-            }
-          }
+          newContacts.forEach(syncContact);
           this.emit('chats_updated', { source: 'contacts_upsert', count: newContacts.length });
+        }
+      });
+
+      this.sock.ev.on('contacts.update', (updates) => {
+        if (Array.isArray(updates)) {
+          updates.forEach(syncContact);
+          this.emit('chats_updated', { source: 'contacts_update', count: updates.length });
         }
       });
 
@@ -363,17 +382,46 @@ class WhatsAppBot extends EventEmitter {
       }
     }
 
-    const senderName = isFromMe
-      ? 'Saya'
-      : (msg.pushName || phoneService.getPhone(jid) || jid.split('@')[0]);
+    // 1. Resolve real phone number from stanza attributes or mapping
+    const rawPn = msg.key.senderPn || msg.key.participantPn;
+    let realPhone = null;
+    if (rawPn) {
+      const clean = rawPn.split('@')[0].replace(/\D/g, '');
+      if (phoneService.isRealPhone(clean)) {
+        realPhone = clean;
+        phoneService.setMapping(jid, realPhone, msg.pushName);
+      }
+    }
+    if (!realPhone) {
+      realPhone = phoneService.getPhone(jid, msg.pushName);
+    }
 
-    const realPhone = phoneService.getPhone(jid, senderName) || (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : null);
+    // 2. Resolve sender name (Reject raw LID or digit strings)
+    let senderName = 'Saya';
+    if (!isFromMe) {
+      const candidateName = msg.pushName;
+      if (candidateName && !phoneService.isLid(candidateName) && !/^\+?\d+$/.test(candidateName.trim())) {
+        senderName = candidateName.trim();
+        phoneService.setName(jid, senderName);
+        if (realPhone) phoneService.setName(realPhone, senderName);
+      } else {
+        const storedName = phoneService.getName(jid) || (realPhone ? phoneService.getName(realPhone) : null);
+        if (storedName) {
+          senderName = storedName;
+        } else if (realPhone) {
+          senderName = phoneService.formatPhone(realPhone);
+        } else {
+          senderName = 'Pelanggan';
+        }
+      }
+    }
 
     return {
       id: msg.key.id || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       direction: isFromMe ? 'out' : 'in',
       jid,
-      phone: realPhone || jid.split('@')[0],
+      phone: realPhone || null,
+      formattedPhone: phoneService.formatPhone(realPhone, jid),
       senderName,
       text: text || `[${info.mediaType || 'Pesan'}]`,
       mediaType: info.mediaType || 'text',
@@ -416,9 +464,12 @@ class WhatsAppBot extends EventEmitter {
     }
 
     // Determine real phone number to display
-    const resolvedPhone = explicitPhone || phoneService.getPhone(jid, senderName) || phoneService.getPhone(targetStr) || jid.split('@')[0];
+    const candidatePhone = explicitPhone || phoneService.getPhone(jid, senderName) || phoneService.getPhone(targetStr);
+    const resolvedPhone = (candidatePhone && phoneService.isRealPhone(candidatePhone))
+      ? candidatePhone
+      : (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : null);
 
-    console.log(`[WhatsAppBot] Mengirim pesan web ke ${jid} (Phone: ${resolvedPhone}): "${text}"`);
+    console.log(`[WhatsAppBot] Mengirim pesan web ke ${jid} (Phone: ${resolvedPhone || 'LID'}): "${text}"`);
 
     // 🛡️ Global rate limit wait & send with retry limit
     await protectionService.waitForGlobalRateLimit();
