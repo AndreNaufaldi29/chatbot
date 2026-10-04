@@ -162,11 +162,15 @@ app.get('/api/tickets', (req, res) => {
 });
 
 app.post('/api/tickets', (req, res) => {
-  const { sender, name, contact, description, priority, category } = req.body;
+  const { sender, name, contact, description, priority, category, status, notes } = req.body;
   if (!name || !description) {
     return res.status(400).json({ error: 'Nama dan deskripsi wajib diisi.' });
   }
-  const ticket = ticketService.createTicket({ sender, name, contact, description, priority, category });
+  let ticket = ticketService.createTicket({ sender, name, contact, description, priority, category });
+  if ((status && status !== 'Open') || (notes && notes.trim())) {
+    const updated = ticketService.updateTicketStatus(ticket.id, status, notes);
+    if (updated) ticket = updated;
+  }
   broadcastSSE('ticket_created', ticket);
   res.json(ticket);
 });
@@ -180,6 +184,16 @@ app.patch('/api/tickets/:id', (req, res) => {
   }
   broadcastSSE('ticket_updated', updated);
   res.json(updated);
+});
+
+app.delete('/api/tickets/:id', (req, res) => {
+  const { id } = req.params;
+  const success = ticketService.deleteTicket(id);
+  if (!success) {
+    return res.status(404).json({ error: 'Tiket tidak ditemukan atau sudah dihapus.' });
+  }
+  broadcastSSE('ticket_deleted', { id: String(id).toUpperCase() });
+  res.json({ success: true, id: String(id).toUpperCase() });
 });
 
 // =========================================================================

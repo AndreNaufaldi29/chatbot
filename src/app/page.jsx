@@ -58,7 +58,10 @@ import {
   Flame,
   Percent,
   ShieldAlert,
-  UserCheck
+  UserCheck,
+  Download,
+  ArrowUpDown,
+  CheckCircle
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -129,13 +132,29 @@ export default function Dashboard() {
     }
   ]);
 
-  // Ticket Modal State
+  // Ticket Management States
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [ticketStatusUpdate, setTicketStatusUpdate] = useState('Open');
   const [ticketNotesUpdate, setTicketNotesUpdate] = useState('');
   const [ticketCategoryUpdate, setTicketCategoryUpdate] = useState('Layanan Umum');
   const [ticketPriorityUpdate, setTicketPriorityUpdate] = useState('Normal');
   const [ticketCategoryFilter, setTicketCategoryFilter] = useState('Semua');
+  const [ticketStatusFilter, setTicketStatusFilter] = useState('Semua');
+  const [ticketPriorityFilter, setTicketPriorityFilter] = useState('Semua');
+  const [ticketSearchQuery, setTicketSearchQuery] = useState('');
+  const [ticketSortOrder, setTicketSortOrder] = useState('newest');
+  const [showCreateTicketModal, setShowCreateTicketModal] = useState(false);
+  const [newTicketForm, setNewTicketForm] = useState({
+    name: '',
+    contact: '',
+    category: 'Pembelian Produk',
+    priority: 'Normal',
+    status: 'Open',
+    description: '',
+    notes: '',
+  });
+  const [submittingNewTicket, setSubmittingNewTicket] = useState(false);
+  const [deletingTicketId, setDeletingTicketId] = useState(null);
 
   // Send Manual Message Form
   const [manualPhone, setManualPhone] = useState('');
@@ -590,6 +609,15 @@ export default function Dashboard() {
       try {
         const data = JSON.parse(e.data);
         setTickets((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      } catch (err) {}
+    });
+
+    eventSource.addEventListener('ticket_deleted', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (!data || !data.id) return;
+        setTickets((prev) => prev.filter((t) => t.id && t.id.toUpperCase() !== data.id.toUpperCase()));
+        showToastMsg(`Tiket #${data.id} telah dihapus.`, 'info');
       } catch (err) {}
     });
 
@@ -1650,6 +1678,156 @@ export default function Dashboard() {
     } catch (err) {
       showToastMsg('Gagal update tiket: ' + err.message, 'error');
     }
+  };
+
+  const handleQuickStatusChange = async (ticketId, newStatus) => {
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus, updatedAt: new Date().toISOString() } : t)));
+        if (selectedTicket && selectedTicket.id === ticketId) {
+          setSelectedTicket((prev) => ({ ...prev, status: newStatus }));
+          setTicketStatusUpdate(newStatus);
+        }
+        showToastMsg(`Status tiket #${ticketId} diubah ke ${newStatus}`, 'success');
+      } else {
+        showToastMsg('Gagal mengubah status tiket', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Gagal mengubah status: ' + err.message, 'error');
+    }
+  };
+
+  const handleDeleteTicket = async (ticketId) => {
+    if (!window.confirm(`Yakin ingin menghapus tiket #${ticketId}? Data tiket akan dihapus secara permanen.`)) {
+      return;
+    }
+    setDeletingTicketId(ticketId);
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setTickets((prev) => prev.filter((t) => t.id && t.id.toUpperCase() !== ticketId.toUpperCase()));
+        if (selectedTicket && selectedTicket.id && selectedTicket.id.toUpperCase() === ticketId.toUpperCase()) {
+          setSelectedTicket(null);
+        }
+        showToastMsg(`Tiket #${ticketId} berhasil dihapus!`, 'success');
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToastMsg(errData.error || 'Gagal menghapus tiket', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Gagal menghapus tiket: ' + err.message, 'error');
+    } finally {
+      setDeletingTicketId(null);
+    }
+  };
+
+  const handleCreateManualTicket = async (e) => {
+    if (e) e.preventDefault();
+    if (!newTicketForm.name.trim() || !newTicketForm.description.trim()) {
+      showToastMsg('Nama pelanggan dan rincian permohonan wajib diisi!', 'error');
+      return;
+    }
+    setSubmittingNewTicket(true);
+    try {
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender: newTicketForm.contact ? newTicketForm.contact.trim() : 'Manual',
+          name: newTicketForm.name.trim(),
+          contact: newTicketForm.contact ? newTicketForm.contact.trim() : '-',
+          description: newTicketForm.description.trim(),
+          category: newTicketForm.category || 'Pembelian Produk',
+          priority: newTicketForm.priority || 'Normal',
+          status: newTicketForm.status || 'Open',
+          notes: newTicketForm.notes && newTicketForm.notes.trim() ? newTicketForm.notes.trim() : 'Tiket manual diinput oleh operator CS.'
+        }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setTickets((prev) => [created, ...prev.filter((t) => t.id !== created.id)]);
+        setShowCreateTicketModal(false);
+        setNewTicketForm({
+          name: '',
+          contact: '',
+          category: 'Pembelian Produk',
+          priority: 'Normal',
+          status: 'Open',
+          description: '',
+          notes: '',
+        });
+        showToastMsg(`Tiket baru #${created.id} berhasil ditambahkan!`, 'success');
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToastMsg(errData.error || 'Gagal membuat tiket baru', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Gagal membuat tiket: ' + err.message, 'error');
+    } finally {
+      setSubmittingNewTicket(false);
+    }
+  };
+
+  const handleExportTicketsCsv = () => {
+    if (!tickets || tickets.length === 0) {
+      showToastMsg('Belum ada tiket layanan untuk diekspor!', 'error');
+      return;
+    }
+    try {
+      const headers = ['ID Tiket', 'Tanggal Dibuat', 'Nama Pelanggan', 'No Kontak / WhatsApp', 'Kategori', 'Status', 'Prioritas', 'Deskripsi Permohonan', 'Catatan'];
+      const rows = tickets.map((t) => {
+        const dateStr = t.createdAt ? new Date(t.createdAt).toLocaleString('id-ID') : '-';
+        return [
+          `"${(t.id || '').replace(/"/g, '""')}"`,
+          `"${dateStr.replace(/"/g, '""')}"`,
+          `"${(t.name || '').replace(/"/g, '""')}"`,
+          `"${(t.contact || t.sender || '').replace(/"/g, '""')}"`,
+          `"${(t.category || '').replace(/"/g, '""')}"`,
+          `"${(t.status || '').replace(/"/g, '""')}"`,
+          `"${(t.priority || '').replace(/"/g, '""')}"`,
+          `"${(t.description || '').replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`,
+          `"${(t.notes || '').replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`
+        ].join(',');
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `Daftar_Tiket_Layanan_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToastMsg('Daftar tiket berhasil diunduh dalam format CSV!', 'success');
+    } catch (err) {
+      showToastMsg('Gagal mengekspor data tiket: ' + err.message, 'error');
+    }
+  };
+
+  const openWhatsAppChat = (contact, ticketId, name) => {
+    if (!contact || contact === '-' || contact.trim() === '') {
+      showToastMsg('Nomor kontak pelanggan tidak tersedia', 'error');
+      return;
+    }
+    let clean = String(contact).replace(/\D/g, '');
+    if (clean.startsWith('0')) {
+      clean = '62' + clean.slice(1);
+    }
+    if (!clean || clean.length < 8) {
+      showToastMsg('Nomor telepon WhatsApp tidak valid', 'error');
+      return;
+    }
+    const message = encodeURIComponent(`Halo Kak ${name || ''}, kami dari Customer Support Sultan Carpet Gallery menindaklanjuti permohonan tiket #${ticketId || ''}...`);
+    window.open(`https://wa.me/${clean}?text=${message}`, '_blank');
   };
 
   // Helper to format WhatsApp markdown and media tags into HTML
@@ -3473,168 +3651,677 @@ export default function Dashboard() {
           )}
 
           {/* TAB 4: TICKETS */}
-          {activeTab === 'tickets' && (
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-bold text-white">Tiket Layanan & Pemesanan Pelanggan</h3>
-                  <p className="text-xs text-slate-400">
-                    Tiket otomatis aktif dan bertanda saat pelanggan ingin membeli produk, klaim garansi, atau pengaduan produk
-                  </p>
-                </div>
-                <button
-                  onClick={fetchTickets}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 flex items-center gap-1.5 self-start sm:self-auto"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Refresh</span>
-                </button>
-              </div>
+          {activeTab === 'tickets' && (() => {
+            // Summary counts
+            const totalCount = tickets.length;
+            const openCount = tickets.filter((t) => (t.status || 'Open').toLowerCase() === 'open').length;
+            const inProgressCount = tickets.filter((t) => (t.status || '').toLowerCase().includes('progress')).length;
+            const resolvedCount = tickets.filter((t) => {
+              const s = (t.status || '').toLowerCase();
+              return s === 'resolved' || s === 'closed';
+            }).length;
+            const urgentCount = tickets.filter((t) => {
+              const p = (t.priority || '').toLowerCase();
+              return p.includes('urgent') || p.includes('tinggi');
+            }).length;
 
-              {/* Category Filter Pills */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-                {[
-                  { id: 'Semua', label: 'Semua Tiket' },
-                  { id: 'Pembelian Produk', label: 'Pembelian Produk' },
-                  { id: 'Klaim Garansi', label: 'Klaim Garansi' },
-                  { id: 'Pengaduan Produk', label: 'Pengaduan Produk' },
-                  { id: 'Layanan Umum', label: 'Layanan Umum' },
-                ].map((item) => {
-                  const count = item.id === 'Semua'
-                    ? tickets.length
-                    : tickets.filter((t) => (t.category || 'Layanan Umum').toLowerCase().includes(item.id.toLowerCase().slice(0, 5))).length;
-                  const isSelected = ticketCategoryFilter === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => setTicketCategoryFilter(item.id)}
-                      className={`px-3 py-1.5 rounded-xl font-medium transition flex items-center gap-1.5 border whitespace-nowrap ${
-                        isSelected
-                          ? 'bg-emerald-500/20 text-white border-emerald-500/50 shadow-sm'
-                          : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200'
-                      }`}
-                    >
-                      <span>{item.label}</span>
-                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
-                        isSelected ? 'bg-emerald-500/40 text-emerald-100' : 'bg-slate-800 text-slate-400'
-                      }`}>
-                        {count}
+            const categoriesList = [
+              { id: 'Semua', label: 'Semua Tiket' },
+              { id: 'Pembelian Produk', label: 'Pembelian Produk' },
+              { id: 'Klaim Garansi', label: 'Klaim Garansi' },
+              { id: 'Pengaduan Produk', label: 'Pengaduan Produk' },
+              { id: 'Layanan Umum', label: 'Layanan Umum' },
+            ];
+
+            // Filtered & Sorted Tickets
+            const seen = new Set();
+            let displayTickets = tickets.filter((t) => {
+              if (!t || !t.id || seen.has(t.id)) return false;
+              seen.add(t.id);
+              return true;
+            });
+
+            // 1. Category Filter
+            if (ticketCategoryFilter !== 'Semua') {
+              displayTickets = displayTickets.filter((t) => {
+                const cat = (t.category || 'Layanan Umum').toLowerCase();
+                return cat.includes(ticketCategoryFilter.toLowerCase().slice(0, 5));
+              });
+            }
+
+            // 2. Status Filter
+            if (ticketStatusFilter !== 'Semua') {
+              displayTickets = displayTickets.filter((t) => {
+                const s = (t.status || 'Open').toLowerCase();
+                if (ticketStatusFilter.toLowerCase() === 'in progress') return s.includes('progress');
+                if (ticketStatusFilter.toLowerCase() === 'resolved') return s === 'resolved' || s === 'closed';
+                return s === ticketStatusFilter.toLowerCase();
+              });
+            }
+
+            // 3. Priority Filter
+            if (ticketPriorityFilter !== 'Semua') {
+              displayTickets = displayTickets.filter((t) => {
+                const p = (t.priority || 'Normal').toLowerCase();
+                if (ticketPriorityFilter.toLowerCase() === 'urgent') return p.includes('urgent');
+                if (ticketPriorityFilter.toLowerCase() === 'tinggi') return p.includes('tinggi') || p.includes('high');
+                if (ticketPriorityFilter.toLowerCase() === 'normal') return p.includes('normal') || p.includes('sedang');
+                return true;
+              });
+            }
+
+            // 4. Search Query (Ticket ID, Name, Contact, Description, Notes)
+            if (ticketSearchQuery.trim()) {
+              const q = ticketSearchQuery.toLowerCase().trim();
+              displayTickets = displayTickets.filter((t) => {
+                const idMatch = (t.id || '').toLowerCase().includes(q);
+                const nameMatch = (t.name || '').toLowerCase().includes(q);
+                const contactMatch = (t.contact || t.sender || '').toLowerCase().includes(q);
+                const descMatch = (t.description || '').toLowerCase().includes(q);
+                const notesMatch = (t.notes || '').toLowerCase().includes(q);
+                return idMatch || nameMatch || contactMatch || descMatch || notesMatch;
+              });
+            }
+
+            // 5. Sorting
+            displayTickets.sort((a, b) => {
+              if (ticketSortOrder === 'oldest') {
+                return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+              }
+              if (ticketSortOrder === 'priority') {
+                const weight = (p) => {
+                  const lp = String(p || '').toLowerCase();
+                  if (lp.includes('urgent')) return 3;
+                  if (lp.includes('tinggi') || lp.includes('high')) return 2;
+                  return 1;
+                };
+                return weight(b.priority) - weight(a.priority);
+              }
+              if (ticketSortOrder === 'status') {
+                const sWeight = (s) => {
+                  const ls = String(s || '').toLowerCase();
+                  if (ls === 'open') return 4;
+                  if (ls.includes('progress')) return 3;
+                  if (ls === 'resolved') return 2;
+                  return 1;
+                };
+                return sWeight(b.status) - sWeight(a.status);
+              }
+              // newest default
+              return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+            });
+
+            const hasActiveFilter = ticketSearchQuery.trim() !== '' || ticketStatusFilter !== 'Semua' || ticketPriorityFilter !== 'Semua' || ticketCategoryFilter !== 'Semua';
+
+            const resetAllFilters = () => {
+              setTicketSearchQuery('');
+              setTicketStatusFilter('Semua');
+              setTicketPriorityFilter('Semua');
+              setTicketCategoryFilter('Semua');
+            };
+
+            return (
+              <div className="space-y-4">
+                {/* 1. Header with Title & Action Buttons */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-1">
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <h3 className="text-lg font-bold text-white">Tiket Layanan & Pemesanan Pelanggan</h3>
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
+                        {totalCount} Total
                       </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Kelola pesanan karpet, klaim garansi presisi, dan komplain pelanggan secara fleksibel & terintegrasi WhatsApp
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setShowCreateTicketModal(true)}
+                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-lg shadow-emerald-900/30 transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>+ Buat Tiket Manual</span>
                     </button>
-                  );
-                })}
-              </div>
+                    <button
+                      onClick={handleExportTicketsCsv}
+                      title="Download Laporan Tiket (CSV/Excel)"
+                      className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="hidden sm:inline">Export CSV</span>
+                    </button>
+                    <button
+                      onClick={fetchTickets}
+                      title="Segarkan data tiket"
+                      className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="hidden sm:inline">Refresh</span>
+                    </button>
+                  </div>
+                </div>
 
-              {/* DESKTOP TABLE VIEW */}
-              <div className="hidden md:block rounded-2xl border border-slate-800/80 bg-[#0f172a]/60 backdrop-blur-xl overflow-hidden shadow-xl">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400">
-                      <th className="p-3.5 font-semibold">ID Tiket</th>
-                      <th className="p-3.5 font-semibold">Pelanggan</th>
-                      <th className="p-3.5 font-semibold">Kontak</th>
-                      <th className="p-3.5 font-semibold">Kategori & Tanda</th>
-                      <th className="p-3.5 font-semibold">Rincian Permohonan</th>
-                      <th className="p-3.5 font-semibold">Status</th>
-                      <th className="p-3.5 font-semibold">Prioritas</th>
-                      <th className="p-3.5 font-semibold">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {(() => {
-                      const seen = new Set();
-                      const filteredTickets = tickets
-                        .filter((t) => {
-                          if (ticketCategoryFilter === 'Semua') return true;
+                {/* 2. Interactive Metrics / Statistics Row */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {/* Total */}
+                  <button
+                    onClick={() => { resetAllFilters(); }}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      ticketStatusFilter === 'Semua' && ticketPriorityFilter === 'Semua' && ticketCategoryFilter === 'Semua'
+                        ? 'bg-slate-800/90 border-slate-600 shadow-md ring-1 ring-slate-500/50'
+                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-medium">Semua Tiket</span>
+                      <Ticket className="w-4 h-4 text-slate-400" />
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-white">{totalCount}</span>
+                      <span className="text-[11px] text-slate-500">tiket</span>
+                    </div>
+                  </button>
+
+                  {/* Open */}
+                  <button
+                    onClick={() => { setTicketStatusFilter('Open'); setTicketPriorityFilter('Semua'); }}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      ticketStatusFilter === 'Open'
+                        ? 'bg-sky-500/20 border-sky-500/60 shadow-md ring-1 ring-sky-500/50'
+                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-sky-500/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-sky-400 font-medium">Menunggu (Open)</span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse"></span>
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-sky-300">{openCount}</span>
+                      <span className="text-[11px] text-sky-400/70">perlu respon</span>
+                    </div>
+                  </button>
+
+                  {/* In Progress */}
+                  <button
+                    onClick={() => { setTicketStatusFilter('In Progress'); setTicketPriorityFilter('Semua'); }}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      ticketStatusFilter === 'In Progress'
+                        ? 'bg-amber-500/20 border-amber-500/60 shadow-md ring-1 ring-amber-500/50'
+                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-amber-500/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-amber-400 font-medium">Diproses</span>
+                      <Clock className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-amber-300">{inProgressCount}</span>
+                      <span className="text-[11px] text-amber-400/70">tindak lanjut</span>
+                    </div>
+                  </button>
+
+                  {/* Resolved */}
+                  <button
+                    onClick={() => { setTicketStatusFilter('Resolved'); setTicketPriorityFilter('Semua'); }}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                      ticketStatusFilter === 'Resolved'
+                        ? 'bg-emerald-500/20 border-emerald-500/60 shadow-md ring-1 ring-emerald-500/50'
+                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-emerald-400 font-medium">Selesai</span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-emerald-300">{resolvedCount}</span>
+                      <span className="text-[11px] text-emerald-400/70">tuntas</span>
+                    </div>
+                  </button>
+
+                  {/* Urgent / Prioritas Tinggi */}
+                  <button
+                    onClick={() => { setTicketPriorityFilter('Tinggi'); setTicketStatusFilter('Semua'); }}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between col-span-2 sm:col-span-1 cursor-pointer ${
+                      ticketPriorityFilter === 'Tinggi' || ticketPriorityFilter === 'Urgent'
+                        ? 'bg-rose-500/20 border-rose-500/60 shadow-md ring-1 ring-rose-500/50'
+                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-rose-500/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-rose-400 font-medium">Prioritas Tinggi</span>
+                      <ShieldAlert className="w-4 h-4 text-rose-400" />
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-rose-300">{urgentCount}</span>
+                      <span className="text-[11px] text-rose-400/70">butuh atensi</span>
+                    </div>
+                  </button>
+                </div>
+
+                {/* 3. Search Bar, Dropdown Filters, Sort & Category Pills */}
+                <div className="p-3.5 rounded-2xl border border-slate-800/80 bg-[#0f172a]/70 backdrop-blur-xl shadow-lg space-y-3">
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+                    {/* Search Input */}
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={ticketSearchQuery}
+                        onChange={(e) => setTicketSearchQuery(e.target.value)}
+                        placeholder="Cari ID tiket, nama pelanggan, kontak WhatsApp, atau kendala..."
+                        className="w-full pl-10 pr-9 py-2 rounded-xl bg-slate-900/90 border border-slate-700/80 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/80 transition"
+                      />
+                      {ticketSearchQuery && (
+                        <button
+                          onClick={() => setTicketSearchQuery('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Filter & Sort Controls */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Status Filter */}
+                      <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl px-2.5 py-1">
+                        <Filter className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-[11px] text-slate-400 font-medium">Status:</span>
+                        <select
+                          value={ticketStatusFilter}
+                          onChange={(e) => setTicketStatusFilter(e.target.value)}
+                          className="bg-transparent text-xs text-white outline-none cursor-pointer pr-1"
+                        >
+                          <option value="Semua" className="bg-[#0f172a]">Semua</option>
+                          <option value="Open" className="bg-[#0f172a]">Open</option>
+                          <option value="In Progress" className="bg-[#0f172a]">In Progress</option>
+                          <option value="Resolved" className="bg-[#0f172a]">Resolved</option>
+                          <option value="Closed" className="bg-[#0f172a]">Closed</option>
+                        </select>
+                      </div>
+
+                      {/* Priority Filter */}
+                      <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl px-2.5 py-1">
+                        <Sliders className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-[11px] text-slate-400 font-medium">Prioritas:</span>
+                        <select
+                          value={ticketPriorityFilter}
+                          onChange={(e) => setTicketPriorityFilter(e.target.value)}
+                          className="bg-transparent text-xs text-white outline-none cursor-pointer pr-1"
+                        >
+                          <option value="Semua" className="bg-[#0f172a]">Semua</option>
+                          <option value="Urgent" className="bg-[#0f172a]">Urgent</option>
+                          <option value="Tinggi" className="bg-[#0f172a]">Tinggi</option>
+                          <option value="Normal" className="bg-[#0f172a]">Normal</option>
+                        </select>
+                      </div>
+
+                      {/* Sort By */}
+                      <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl px-2.5 py-1">
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-[11px] text-slate-400 font-medium">Urutan:</span>
+                        <select
+                          value={ticketSortOrder}
+                          onChange={(e) => setTicketSortOrder(e.target.value)}
+                          className="bg-transparent text-xs text-white outline-none cursor-pointer pr-1"
+                        >
+                          <option value="newest" className="bg-[#0f172a]">Terbaru</option>
+                          <option value="oldest" className="bg-[#0f172a]">Terlama</option>
+                          <option value="priority" className="bg-[#0f172a]">Prioritas Tertinggi</option>
+                          <option value="status" className="bg-[#0f172a]">Status Terbuka</option>
+                        </select>
+                      </div>
+
+                      {hasActiveFilter && (
+                        <button
+                          onClick={resetAllFilters}
+                          className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 hover:text-rose-200 text-xs font-medium border border-rose-500/20 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Reset Filter</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Category Pills Row */}
+                  <div className="flex items-center gap-2 overflow-x-auto pb-0.5 pt-1 text-xs border-t border-slate-800/80">
+                    {categoriesList.map((item) => {
+                      const count = item.id === 'Semua'
+                        ? tickets.length
+                        : tickets.filter((t) => (t.category || 'Layanan Umum').toLowerCase().includes(item.id.toLowerCase().slice(0, 5))).length;
+                      const isSelected = ticketCategoryFilter === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => setTicketCategoryFilter(item.id)}
+                          className={`px-3 py-1.5 rounded-xl font-medium transition flex items-center gap-1.5 border whitespace-nowrap cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-500/20 text-white border-emerald-500/50 shadow-sm'
+                              : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200'
+                          }`}
+                        >
+                          <span>{item.label}</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
+                            isSelected ? 'bg-emerald-500/40 text-emerald-100' : 'bg-slate-800 text-slate-400'
+                          }`}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4. DESKTOP TABLE VIEW (Responsive with Horizontal Scrollbar) */}
+                <div className="hidden md:block rounded-2xl border border-slate-800/80 bg-[#0f172a]/60 backdrop-blur-xl overflow-x-auto shadow-xl">
+                  <table className="w-full min-w-[1050px] text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-semibold">
+                        <th className="p-3.5 w-28">ID Tiket</th>
+                        <th className="p-3.5 w-40">Pelanggan</th>
+                        <th className="p-3.5 w-36">Kontak / WA</th>
+                        <th className="p-3.5 w-44">Kategori & Tanda</th>
+                        <th className="p-3.5 min-w-[220px]">Rincian Permohonan</th>
+                        <th className="p-3.5 w-36">Status</th>
+                        <th className="p-3.5 w-28">Prioritas</th>
+                        <th className="p-3.5 w-48 text-right pr-4">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {displayTickets.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="p-12 text-center text-slate-500">
+                            <Ticket className="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-60" />
+                            <p className="font-medium text-slate-400">
+                              {hasActiveFilter 
+                                ? 'Tidak ada tiket yang sesuai dengan pencarian atau filter yang dipilih.'
+                                : 'Belum ada tiket layanan yang terdaftar.'}
+                            </p>
+                            {hasActiveFilter && (
+                              <button
+                                onClick={resetAllFilters}
+                                className="mt-3 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs inline-flex items-center gap-1.5 border border-slate-700 transition cursor-pointer"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Reset Semua Filter</span>
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ) : (
+                        displayTickets.map((t, idx) => {
                           const cat = (t.category || 'Layanan Umum').toLowerCase();
-                          return cat.includes(ticketCategoryFilter.toLowerCase().slice(0, 5));
-                        })
-                        .filter((t) => {
-                          if (!t || !t.id || seen.has(t.id)) return false;
-                          seen.add(t.id);
-                          return true;
-                        });
+                          const cleanPhone = String(t.contact || t.sender || '').replace(/\D/g, '');
+                          const dateStr = t.createdAt ? new Date(t.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-';
 
-                      if (filteredTickets.length === 0) {
-                        return (
-                          <tr>
-                            <td colSpan={8} className="p-8 text-center text-slate-500">
-                              {ticketCategoryFilter === 'Semua' 
-                                ? 'Belum ada tiket layanan yang terdaftar.' 
-                                : `Tidak ada tiket dalam kategori "${ticketCategoryFilter}".`}
-                            </td>
-                          </tr>
-                        );
-                      }
+                          return (
+                            <tr key={`${t.id || 'ticket'}_${idx}`} className="hover:bg-slate-800/30 transition group">
+                              {/* ID Tiket */}
+                              <td className="p-3.5">
+                                <span className="font-mono font-bold text-emerald-400 block">{t.id}</span>
+                                <span className="text-[10px] text-slate-500 block mt-0.5">{dateStr}</span>
+                              </td>
 
-                      return filteredTickets.map((t, idx) => (
-                        <tr key={`${t.id || 'ticket'}_${idx}`} className="hover:bg-slate-800/30 transition">
-                          <td className="p-3.5 font-mono font-semibold text-emerald-400">{t.id}</td>
-                          <td className="p-3.5 font-medium text-slate-200">{t.name}</td>
-                          <td className="p-3.5 text-slate-400 font-mono">{t.contact || t.sender}</td>
-                          <td className="p-3.5">
-                            {(() => {
-                              const cat = (t.category || 'Layanan Umum').toLowerCase();
-                              if (cat.includes('beli') || cat.includes('order') || cat.includes('pembelian')) {
-                                return (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm shadow-emerald-500/10">
+                              {/* Pelanggan */}
+                              <td className="p-3.5">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-bold flex items-center justify-center text-[10px] uppercase shrink-0">
+                                    {(t.name || 'P').charAt(0)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-slate-200 truncate">{t.name || 'Pelanggan'}</p>
+                                    {t.notes && (
+                                      <span className="text-[9px] text-emerald-400/80 block truncate">Ada Catatan</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Kontak / WA */}
+                              <td className="p-3.5 font-mono">
+                                {cleanPhone ? (
+                                  <button
+                                    onClick={() => openWhatsAppChat(t.contact || t.sender, t.id, t.name)}
+                                    className="text-slate-300 hover:text-emerald-400 flex items-center gap-1 group-hover:underline text-left cursor-pointer"
+                                    title="Klik untuk chat di WhatsApp"
+                                  >
+                                    <MessageSquare className="w-3 h-3 text-emerald-500 shrink-0" />
+                                    <span className="truncate">+{cleanPhone}</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-500">-</span>
+                                )}
+                              </td>
+
+                              {/* Kategori & Tanda */}
+                              <td className="p-3.5">
+                                {cat.includes('beli') || cat.includes('order') || cat.includes('pembelian') ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm shadow-emerald-500/10 whitespace-nowrap">
                                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                                     <span>Pembelian Produk</span>
                                   </span>
-                                );
-                              }
-                              if (cat.includes('garansi') || cat.includes('klaim')) {
-                                return (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm shadow-amber-500/10">
+                                ) : cat.includes('garansi') || cat.includes('klaim') ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm shadow-amber-500/10 whitespace-nowrap">
                                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
                                     <span>Klaim Garansi</span>
                                   </span>
-                                );
-                              }
-                              if (cat.includes('pengaduan') || cat.includes('komplain') || cat.includes('rusak') || cat.includes('keluhan')) {
-                                return (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm shadow-rose-500/10">
+                                ) : cat.includes('pengaduan') || cat.includes('komplain') || cat.includes('rusak') || cat.includes('keluhan') ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm shadow-rose-500/10 whitespace-nowrap">
                                     <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse"></span>
                                     <span>Pengaduan Produk</span>
                                   </span>
-                                );
-                              }
-                              return (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                                  <span className="w-2 h-2 rounded-full bg-sky-400"></span>
-                                  <span>{t.category || 'Layanan Umum'}</span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30 whitespace-nowrap">
+                                    <span className="w-2 h-2 rounded-full bg-sky-400"></span>
+                                    <span>{t.category || 'Layanan Umum'}</span>
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Rincian Permohonan */}
+                              <td className="p-3.5 text-slate-300 max-w-xs">
+                                <p className="line-clamp-2 leading-relaxed" title={t.description}>
+                                  {t.description}
+                                </p>
+                              </td>
+
+                              {/* Status (Interactive Inline Dropdown) */}
+                              <td className="p-3.5">
+                                <select
+                                  value={t.status || 'Open'}
+                                  onChange={(e) => handleQuickStatusChange(t.id, e.target.value)}
+                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase cursor-pointer border outline-none transition ${
+                                    t.status === 'Open'
+                                      ? 'bg-sky-500/15 text-sky-300 border-sky-500/30 hover:bg-sky-500/25'
+                                      : t.status === 'Resolved' || t.status === 'Closed'
+                                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+                                      : 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                                  }`}
+                                  title="Ubah status tiket secara instan"
+                                >
+                                  <option value="Open" className="bg-[#0f172a] text-sky-400">Open</option>
+                                  <option value="In Progress" className="bg-[#0f172a] text-amber-400">In Progress</option>
+                                  <option value="Resolved" className="bg-[#0f172a] text-emerald-400">Resolved</option>
+                                  <option value="Closed" className="bg-[#0f172a] text-slate-400">Closed</option>
+                                </select>
+                              </td>
+
+                              {/* Prioritas */}
+                              <td className="p-3.5">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                  (t.priority || '').toLowerCase() === 'urgent'
+                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                    : (t.priority || '').toLowerCase() === 'tinggi' || (t.priority || '').toLowerCase() === 'high'
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    : 'bg-slate-800 text-slate-300'
+                                }`}>
+                                  {t.priority || 'Normal'}
                                 </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="p-3.5 text-slate-300 max-w-xs truncate" title={t.description}>
+                              </td>
+
+                              {/* Aksi */}
+                              <td className="p-3.5 text-right pr-4">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {cleanPhone && (
+                                    <button
+                                      onClick={() => openWhatsAppChat(t.contact || t.sender, t.id, t.name)}
+                                      className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 transition cursor-pointer"
+                                      title="Hubungi di WhatsApp"
+                                    >
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      setSelectedTicket(t);
+                                      setTicketStatusUpdate(t.status || 'Open');
+                                      setTicketNotesUpdate(t.notes || '');
+                                      setTicketCategoryUpdate(t.category || 'Layanan Umum');
+                                      setTicketPriorityUpdate(t.priority || 'Normal');
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium border border-slate-700 transition cursor-pointer flex items-center gap-1"
+                                    title="Kelola & Detail Tiket"
+                                  >
+                                    <Edit3 className="w-3 h-3 text-slate-400" />
+                                    <span>Kelola</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTicket(t.id)}
+                                    disabled={deletingTicketId === t.id}
+                                    className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition cursor-pointer"
+                                    title="Hapus Tiket"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 5. MOBILE CARDS VIEW (md:hidden) */}
+                <div className="md:hidden space-y-3">
+                  {displayTickets.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500 rounded-2xl bg-[#0f172a]/60 border border-slate-800 space-y-2">
+                      <Ticket className="w-8 h-8 mx-auto text-slate-600 opacity-60" />
+                      <p className="font-medium text-slate-400">
+                        {hasActiveFilter 
+                          ? 'Tidak ada tiket yang sesuai dengan filter.'
+                          : 'Belum ada tiket layanan yang terdaftar.'}
+                      </p>
+                      {hasActiveFilter && (
+                        <button
+                          onClick={resetAllFilters}
+                          className="mt-2 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs inline-flex items-center gap-1.5 border border-slate-700 transition"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset Filter</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    displayTickets.map((t, idx) => {
+                      const cat = (t.category || 'Layanan Umum').toLowerCase();
+                      const cleanPhone = String(t.contact || t.sender || '').replace(/\D/g, '');
+                      const dateStr = t.createdAt ? new Date(t.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-';
+
+                      return (
+                        <div
+                          key={`${t.id || 'm_ticket'}_${idx}`}
+                          className="p-4 rounded-2xl border border-slate-800/80 bg-[#0f172a]/80 backdrop-blur-xl shadow-lg space-y-3"
+                        >
+                          {/* Header: ID + Date + Status + Priority */}
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="font-mono font-bold text-xs text-emerald-400">#{t.id}</span>
+                              <span className="text-[10px] text-slate-500 block">{dateStr}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value={t.status || 'Open'}
+                                onChange={(e) => handleQuickStatusChange(t.id, e.target.value)}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase cursor-pointer border outline-none ${
+                                  t.status === 'Open'
+                                    ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                                    : t.status === 'Resolved' || t.status === 'Closed'
+                                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                    : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                }`}
+                              >
+                                <option value="Open" className="bg-[#0f172a]">Open</option>
+                                <option value="In Progress" className="bg-[#0f172a]">In Progress</option>
+                                <option value="Resolved" className="bg-[#0f172a]">Resolved</option>
+                                <option value="Closed" className="bg-[#0f172a]">Closed</option>
+                              </select>
+
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                (t.priority || '').toLowerCase() === 'urgent'
+                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                  : (t.priority || '').toLowerCase() === 'tinggi' || (t.priority || '').toLowerCase() === 'high'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                  : 'bg-slate-800 text-slate-300'
+                              }`}>
+                                {t.priority || 'Normal'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Customer & Contact */}
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="font-bold text-sm text-slate-100">{t.name || 'Pelanggan'}</h4>
+                              <p className="text-xs text-slate-400 font-mono">+{cleanPhone || t.contact || t.sender}</p>
+                            </div>
+                            {cleanPhone && (
+                              <button
+                                onClick={() => openWhatsAppChat(t.contact || t.sender, t.id, t.name)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-semibold border border-emerald-500/30 flex items-center gap-1 cursor-pointer"
+                              >
+                                <MessageSquare className="w-3 h-3" />
+                                <span>Chat WA</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Category Badge */}
+                          <div>
+                            {cat.includes('beli') || cat.includes('order') || cat.includes('pembelian') ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm shadow-emerald-500/10">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                <span>Pembelian Produk</span>
+                              </span>
+                            ) : cat.includes('garansi') || cat.includes('klaim') ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm shadow-amber-500/10">
+                                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                                <span>Klaim Garansi</span>
+                              </span>
+                            ) : cat.includes('pengaduan') || cat.includes('komplain') || cat.includes('rusak') || cat.includes('keluhan') ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm shadow-rose-500/10">
+                                <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse"></span>
+                                <span>Pengaduan Produk</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                                <span className="w-2 h-2 rounded-full bg-sky-400"></span>
+                                <span>{t.category || 'Layanan Umum'}</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Description */}
+                          <p className="text-xs text-slate-300 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 line-clamp-3">
                             {t.description}
-                          </td>
-                          <td className="p-3.5">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                                t.status === 'Open'
-                                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
-                                  : t.status === 'Resolved' || t.status === 'Closed'
-                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              }`}
-                            >
-                              {t.status}
-                            </span>
-                          </td>
-                          <td className="p-3.5">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              (t.priority || '').toLowerCase() === 'urgent'
-                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                : (t.priority || '').toLowerCase() === 'tinggi' || (t.priority || '').toLowerCase() === 'high'
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                : 'bg-slate-800 text-slate-300'
-                            }`}>
-                              {t.priority || 'Normal'}
-                            </span>
-                          </td>
-                          <td className="p-3.5">
+                          </p>
+
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-2 pt-1">
                             <button
                               onClick={() => {
                                 setSelectedTicket(t);
@@ -3643,136 +4330,28 @@ export default function Dashboard() {
                                 setTicketCategoryUpdate(t.category || 'Layanan Umum');
                                 setTicketPriorityUpdate(t.priority || 'Normal');
                               }}
-                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium"
+                              className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition text-center flex items-center justify-center gap-1.5 cursor-pointer"
                             >
-                              Kelola
+                              <Edit3 className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Kelola Tiket</span>
                             </button>
-                          </td>
-                        </tr>
-                      ));
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* MOBILE CARDS VIEW (md:hidden) */}
-              <div className="md:hidden space-y-3">
-                {(() => {
-                  const seenMobile = new Set();
-                  const filteredTickets = tickets
-                    .filter((t) => {
-                      if (ticketCategoryFilter === 'Semua') return true;
-                      const cat = (t.category || 'Layanan Umum').toLowerCase();
-                      return cat.includes(ticketCategoryFilter.toLowerCase().slice(0, 5));
-                    })
-                    .filter((t) => {
-                      if (!t || !t.id || seenMobile.has(t.id)) return false;
-                      seenMobile.add(t.id);
-                      return true;
-                    });
-
-                  if (filteredTickets.length === 0) {
-                    return (
-                      <div className="p-8 text-center text-slate-500 rounded-2xl bg-[#0f172a]/60 border border-slate-800">
-                        {ticketCategoryFilter === 'Semua' 
-                          ? 'Belum ada tiket layanan yang terdaftar.' 
-                          : `Tidak ada tiket dalam kategori "${ticketCategoryFilter}".`}
-                      </div>
-                    );
-                  }
-
-                  return filteredTickets.map((t, idx) => {
-                    const cat = (t.category || 'Layanan Umum').toLowerCase();
-                    return (
-                      <div
-                        key={`${t.id || 'm_ticket'}_${idx}`}
-                        className="p-4 rounded-2xl border border-slate-800/80 bg-[#0f172a]/80 backdrop-blur-xl shadow-lg space-y-3"
-                      >
-                        {/* Header: ID + Status + Priority */}
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-xs text-emerald-400">
-                            #{t.id}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                                t.status === 'Open'
-                                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
-                                  : t.status === 'Resolved' || t.status === 'Closed'
-                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              }`}
+                            <button
+                              onClick={() => handleDeleteTicket(t.id)}
+                              disabled={deletingTicketId === t.id}
+                              className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition cursor-pointer"
+                              title="Hapus Tiket"
                             >
-                              {t.status}
-                            </span>
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                              (t.priority || '').toLowerCase() === 'urgent'
-                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                : (t.priority || '').toLowerCase() === 'tinggi' || (t.priority || '').toLowerCase() === 'high'
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                : 'bg-slate-800 text-slate-300'
-                            }`}>
-                              {t.priority || 'Normal'}
-                            </span>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
-
-                        {/* Customer & Contact */}
-                        <div>
-                          <h4 className="font-bold text-sm text-slate-100">{t.name}</h4>
-                          <p className="text-xs text-slate-400 font-mono">{t.contact || t.sender}</p>
-                        </div>
-
-                        {/* Category Badge with Pulse */}
-                        <div>
-                          {cat.includes('beli') || cat.includes('order') || cat.includes('pembelian') ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm shadow-emerald-500/10">
-                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                              <span>Pembelian Produk</span>
-                            </span>
-                          ) : cat.includes('garansi') || cat.includes('klaim') ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm shadow-amber-500/10">
-                              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                              <span>Klaim Garansi</span>
-                            </span>
-                          ) : cat.includes('pengaduan') || cat.includes('komplain') || cat.includes('rusak') || cat.includes('keluhan') ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm shadow-rose-500/10">
-                              <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse"></span>
-                              <span>Pengaduan Produk</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                              <span className="w-2 h-2 rounded-full bg-sky-400"></span>
-                              <span>{t.category || 'Layanan Umum'}</span>
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Description */}
-                        <p className="text-xs text-slate-300 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 line-clamp-3">
-                          {t.description}
-                        </p>
-
-                        {/* Action Button */}
-                        <button
-                          onClick={() => {
-                            setSelectedTicket(t);
-                            setTicketStatusUpdate(t.status || 'Open');
-                            setTicketNotesUpdate(t.notes || '');
-                            setTicketCategoryUpdate(t.category || 'Layanan Umum');
-                            setTicketPriorityUpdate(t.priority || 'Normal');
-                          }}
-                          className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
-                        >
-                          Kelola Tiket #{t.id}
-                        </button>
-                      </div>
-                    );
-                  })
-                })()}
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 5: CATALOG */}
           {activeTab === 'catalog' && (
@@ -5148,43 +5727,68 @@ export default function Dashboard() {
 
       {/* TICKET EDIT MODAL */}
       {selectedTicket && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0f172a] border border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="font-bold text-white text-base">Kelola Tiket #{selectedTicket.id}</h3>
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                  <Ticket className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Kelola Tiket #{selectedTicket.id}</h3>
+                  <p className="text-[11px] text-slate-400">
+                    {selectedTicket.createdAt ? new Date(selectedTicket.createdAt).toLocaleString('id-ID') : 'Tiket Aktif'}
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => setSelectedTicket(null)}
-                className="text-slate-400 hover:text-white"
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <p className="text-slate-400">Pelapor:</p>
-                <p className="font-semibold text-slate-200">
-                  {selectedTicket.name} ({selectedTicket.contact})
-                </p>
+            <div className="space-y-3.5 text-xs">
+              {/* Customer & Quick WA Action */}
+              <div className="p-3 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Pelanggan</span>
+                  <p className="font-bold text-slate-100 text-sm mt-0.5">{selectedTicket.name || 'Pelanggan'}</p>
+                  <p className="text-slate-400 font-mono text-[11px]">{selectedTicket.contact || selectedTicket.sender || '-'}</p>
+                </div>
+                {(selectedTicket.contact || selectedTicket.sender) && (
+                  <button
+                    type="button"
+                    onClick={() => openWhatsAppChat(selectedTicket.contact || selectedTicket.sender, selectedTicket.id, selectedTicket.name)}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 font-semibold text-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Chat WA</span>
+                  </button>
+                )}
               </div>
-              <div>
-                <p className="text-slate-400">Rincian:</p>
-                <p className="text-slate-300 bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+
+              {/* Rincian Permohonan */}
+              <div className="space-y-1">
+                <span className="font-semibold text-slate-300">Rincian Permohonan / Keluhan</span>
+                <p className="text-slate-200 bg-slate-900/90 p-3 rounded-xl border border-slate-800 leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap">
                   {selectedTicket.description}
                 </p>
               </div>
 
+              {/* Status & Priority Selection */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-300">Status Tiket</label>
                   <select
                     value={ticketStatusUpdate}
                     onChange={(e) => setTicketStatusUpdate(e.target.value)}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
                   >
                     <option value="Open">Open (Menunggu Penanganan)</option>
                     <option value="In Progress">In Progress (Sedang Diproses)</option>
-                    <option value="Resolved">Resolved (Selesai)</option>
+                    <option value="Resolved">Resolved (Selesai Tuntas)</option>
                     <option value="Closed">Closed (Ditutup)</option>
                   </select>
                 </div>
@@ -5194,7 +5798,7 @@ export default function Dashboard() {
                   <select
                     value={ticketPriorityUpdate}
                     onChange={(e) => setTicketPriorityUpdate(e.target.value)}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
                   >
                     <option value="Normal">Normal</option>
                     <option value="Tinggi">Tinggi</option>
@@ -5203,12 +5807,13 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* Kategori Layanan */}
               <div className="space-y-1">
                 <label className="font-semibold text-slate-300">Kategori Layanan</label>
                 <select
                   value={ticketCategoryUpdate}
                   onChange={(e) => setTicketCategoryUpdate(e.target.value)}
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
                 >
                   <option value="Pembelian Produk">Pembelian Produk (Order / Beli)</option>
                   <option value="Klaim Garansi">Klaim Garansi (Ganti Baru / Pecah)</option>
@@ -5217,32 +5822,178 @@ export default function Dashboard() {
                 </select>
               </div>
 
+              {/* Catatan Petugas */}
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Catatan Petugas</label>
+                <label className="font-semibold text-slate-300">Catatan Petugas / Tindak Lanjut</label>
                 <textarea
                   rows={3}
                   value={ticketNotesUpdate}
                   onChange={(e) => setTicketNotesUpdate(e.target.value)}
-                  placeholder="Tuliskan catatan tindak lanjut..."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white"
+                  placeholder="Tuliskan catatan tindak lanjut, solusi, atau kontak CS..."
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white outline-none focus:border-emerald-500 resize-none"
                 />
               </div>
             </div>
 
-            <div className="flex items-center gap-2 pt-2">
+            {/* Actions */}
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
               <button
+                type="button"
                 onClick={handleUpdateTicket}
-                className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition"
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-lg shadow-emerald-900/30 transition cursor-pointer"
               >
                 Simpan Pembaruan
               </button>
               <button
-                onClick={() => setSelectedTicket(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                type="button"
+                onClick={() => handleDeleteTicket(selectedTicket.id)}
+                className="px-3.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 hover:text-rose-300 border border-rose-500/30 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
+                title="Hapus Tiket Ini"
               >
-                Batal
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Hapus</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTicket(null)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+              >
+                Tutup
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: BUAT TIKET MANUAL BARU */}
+      {showCreateTicketModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Buat Tiket Layanan Baru</h3>
+                  <p className="text-[11px] text-slate-400">Input permohonan pelanggan via walk-in, panggilan, atau chat</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCreateTicketModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateManualTicket} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300">Nama Pelanggan <span className="text-rose-400">*</span></label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: H. Ahmad Subardjo"
+                    value={newTicketForm.name}
+                    onChange={(e) => setNewTicketForm((prev) => ({ ...prev, name: e.target.value }))}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300">No. WhatsApp / Kontak</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 081234567890"
+                    value={newTicketForm.contact}
+                    onChange={(e) => setNewTicketForm((prev) => ({ ...prev, contact: e.target.value }))}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300">Kategori</label>
+                  <select
+                    value={newTicketForm.category}
+                    onChange={(e) => setNewTicketForm((prev) => ({ ...prev, category: e.target.value }))}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="Pembelian Produk">Pembelian Produk</option>
+                    <option value="Klaim Garansi">Klaim Garansi</option>
+                    <option value="Pengaduan Produk">Pengaduan Produk</option>
+                    <option value="Layanan Umum">Layanan Umum</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300">Prioritas</label>
+                  <select
+                    value={newTicketForm.priority}
+                    onChange={(e) => setNewTicketForm((prev) => ({ ...prev, priority: e.target.value }))}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="Normal">Normal</option>
+                    <option value="Tinggi">Tinggi</option>
+                    <option value="Urgent">Urgent</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300">Status Awal</label>
+                  <select
+                    value={newTicketForm.status}
+                    onChange={(e) => setNewTicketForm((prev) => ({ ...prev, status: e.target.value }))}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="Open">Open</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Resolved">Resolved</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-300">Deskripsi Permohonan / Pesanan <span className="text-rose-400">*</span></label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Jelaskan kebutuhan karpet, ukuran masjid, atau keluhan barang..."
+                  value={newTicketForm.description}
+                  onChange={(e) => setNewTicketForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-emerald-500 resize-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-300">Catatan Internal Petugas (Opsional)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Catatan penanganan untuk tim survey atau teknisi obras..."
+                  value={newTicketForm.notes}
+                  onChange={(e) => setNewTicketForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-emerald-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="submit"
+                  disabled={submittingNewTicket}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-lg shadow-emerald-900/30 transition disabled:opacity-50 cursor-pointer"
+                >
+                  {submittingNewTicket ? 'Menyimpan Tiket...' : 'Terbitkan Tiket Layanan'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateTicketModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+                >
+                  Batal
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

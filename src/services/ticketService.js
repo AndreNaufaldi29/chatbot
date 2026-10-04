@@ -143,6 +143,17 @@ class TicketService {
     dbService.updateTicketStatus(cleanId, status, notes, category, priority).catch(() => {});
     return tickets[index];
   }
+
+  deleteTicket(ticketId) {
+    if (!ticketId) return false;
+    const cleanId = String(ticketId).trim().toUpperCase();
+    const tickets = this.getAllTickets();
+    const filtered = tickets.filter(t => t.id && t.id.toUpperCase() !== cleanId);
+    if (filtered.length === tickets.length) return false;
+    this.saveTickets(filtered);
+    dbService.deleteTicket(cleanId).catch(() => {});
+    return true;
+  }
 }
 
 module.exports = new TicketService();

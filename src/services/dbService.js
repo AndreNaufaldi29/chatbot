@@ -171,6 +171,26 @@ class DbService {
     return null;
   }
 
+  async deleteTicket(id) {
+    const isReady = await this.checkPrisma();
+    if (isReady) {
+      try {
+        await this.prisma.serviceTicket.delete({
+          where: { id }
+        });
+      } catch (err) {}
+    }
+    try {
+      const file = path.join(__dirname, '../../data/tickets.json');
+      if (fs.existsSync(file)) {
+        const tickets = JSON.parse(fs.readFileSync(file, 'utf8') || '[]');
+        const filtered = tickets.filter(t => t.id !== id);
+        fs.writeFileSync(file, JSON.stringify(filtered, null, 2), 'utf8');
+      }
+    } catch (e) {}
+    return true;
+  }
+
   // ================= CATALOG PRODUCTS =================
   async getCatalog() {
     const isReady = await this.checkPrisma();
