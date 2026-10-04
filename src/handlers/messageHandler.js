@@ -523,6 +523,16 @@ class MessageHandler {
       return;
     }
 
+    // 1. Check if user selected a Carpet Category
+    const category = menuHandler.getCategoryByIdOrName(textTrim);
+    if (category) {
+      sessionManager.setState(jid, 'SELECT_PRODUCT', { selectedCategory: category.name });
+      const categoryProductsMenu = menuHandler.getCatalogSelectionMenu(category.name);
+      await this.sendReply(sock, jid, categoryProductsMenu, originalMsg);
+      return;
+    }
+
+    // 2. Check if user selected a Specific Carpet Product
     const product = menuHandler.getCatalogItem(textTrim);
     if (product) {
       // User memilih produk dari katalog: langsung kirim foto fisik & detail spesifikasi
@@ -530,7 +540,7 @@ class MessageHandler {
       await this.sendCatalogCard(sock, jid, product, originalMsg);
       return;
     } else {
-      const reply = 'Pilihan produk tidak ditemukan. Silakan sebutkan nomor atau nama koleksi karpet berikut:\n\n' + menuHandler.getCatalogSelectionMenu();
+      const reply = 'Pilihan kategori atau produk tidak ditemukan. Silakan pilih nomor kategori atau nama koleksi karpet berikut:\n\n' + menuHandler.getCatalogSelectionMenu();
       await this.sendReply(sock, jid, reply, originalMsg);
     }
   }

@@ -381,6 +381,65 @@ app.post('/api/config', (req, res) => {
   }
 });
 
+// Carpet Categories Management (GET, POST, DELETE)
+app.get('/api/categories', (req, res) => {
+  const categories = menuHandler.getCategories();
+  res.json(categories);
+});
+
+app.post('/api/categories', (req, res) => {
+  try {
+    const { id, name, slug, icon, description } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Nama kategori wajib diisi.' });
+    }
+    const config = menuHandler.getConfig();
+    if (!config.carpet_categories) {
+      config.carpet_categories = menuHandler.getCategories();
+    }
+
+    const catId = id || `kat-${Date.now().toString().slice(-4)}`;
+    const catSlug = slug || name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const existingIndex = config.carpet_categories.findIndex(c => c.id === catId);
+
+    const newCategory = {
+      id: catId,
+      slug: catSlug,
+      name: name.trim(),
+      icon: icon || '🏷️',
+      description: description ? description.trim() : 'Koleksi karpet pilihan dari Sultan Carpet Gallery.'
+    };
+
+    if (existingIndex !== -1) {
+      config.carpet_categories[existingIndex] = newCategory;
+    } else {
+      config.carpet_categories.push(newCategory);
+    }
+
+    menuHandler.saveConfig(config);
+    broadcastSSE('categories_updated', config.carpet_categories);
+    res.json({ success: true, category: newCategory, categories: config.carpet_categories });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/categories/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const config = menuHandler.getConfig();
+    if (!config.carpet_categories) {
+      config.carpet_categories = menuHandler.getCategories();
+    }
+    config.carpet_categories = config.carpet_categories.filter(c => c.id !== id);
+    menuHandler.saveConfig(config);
+    broadcastSSE('categories_updated', config.carpet_categories);
+    res.json({ success: true, categories: config.carpet_categories });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Catalog Management (GET, POST, PUT, DELETE)
 app.get('/api/catalog', (req, res) => {
   const catalog = menuHandler.getCatalog();
@@ -389,7 +448,7 @@ app.get('/api/catalog', (req, res) => {
 
 app.post('/api/catalog', (req, res) => {
   try {
-    const { title, price, subtitle, footer, code, url, image, imageBase64 } = req.body;
+    const { title, price, subtitle, footer, code, url, image, imageBase64, category } = req.body;
     if (!title || !price) {
       return res.status(400).json({ error: 'Nama produk (title) dan harga (price) wajib diisi.' });
     }
@@ -405,7 +464,7 @@ app.post('/api/catalog', (req, res) => {
       .filter(n => !isNaN(n));
     const nextId = numericIds.length > 0 ? String(Math.max(...numericIds) + 1) : "1";
 
-    let finalImagePath = image || 'catalog/everyday-set.jpg';
+    let finalImagePath = image || 'catalog/karpet-masjid-turki.jpg';
 
     // Handle base64 image upload if user uploaded a file
     if (imageBase64 && typeof imageBase64 === 'string') {
@@ -436,13 +495,14 @@ app.post('/api/catalog', (req, res) => {
 
     const newProduct = {
       id: nextId,
+      category: (category || 'Karpet Masjid & Musholla').trim(),
       code: (code || title.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase()).slice(0, 25),
       title: title.trim(),
-      subtitle: subtitle ? subtitle.trim() : 'Stoneware artisanal berkualitas tinggi dari Harbor.',
-      footer: footer ? footer.trim() : 'Tersedia dalam berbagai pilihan warna stoneware.',
+      subtitle: subtitle ? subtitle.trim() : 'Karpet mutu tinggi berkualitas prima dari Sultan Carpet Gallery.',
+      footer: footer ? footer.trim() : 'Tersedia berbagai pilihan ukuran dan warna eksklusif.',
       price: price.trim().startsWith('Rp') ? price.trim() : `Rp ${price.trim()}`,
-      buttonText: 'View collection ›',
-      url: url ? url.trim() : `https://harbor.example.com/collections/${nextId}`,
+      buttonText: 'Lihat Koleksi ›',
+      url: url ? url.trim() : `https://sultancarpet.co.id/products/${nextId}`,
       image: finalImagePath
     };
 
@@ -463,7 +523,7 @@ app.post('/api/catalog', (req, res) => {
 app.put('/api/catalog/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { title, price, subtitle, footer, code, url, image, imageBase64 } = req.body;
+    const { title, price, subtitle, footer, code, url, image, imageBase64, category } = req.body;
 
     const config = menuHandler.getConfig();
     if (!config.catalog) {
@@ -503,6 +563,7 @@ app.put('/api/catalog/:id', (req, res) => {
     const existing = config.catalog[index];
     config.catalog[index] = {
       ...existing,
+      category: category !== undefined ? category.trim() : (existing.category || 'Karpet Masjid & Musholla'),
       title: title !== undefined ? title.trim() : existing.title,
       price: price !== undefined ? (price.trim().startsWith('Rp') ? price.trim() : `Rp ${price.trim()}`) : existing.price,
       subtitle: subtitle !== undefined ? subtitle.trim() : existing.subtitle,

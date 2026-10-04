@@ -203,6 +203,7 @@ class DbService {
           return products.map(r => ({
             id: String(r.id),
             code: r.code,
+            category: r.category || 'Karpet Masjid & Musholla',
             title: r.title,
             subtitle: r.subtitle,
             footer: r.footer,
@@ -228,6 +229,17 @@ class DbService {
     return [];
   }
 
+  getCategories() {
+    try {
+      const configFile = path.join(__dirname, '../../config/config.json');
+      if (fs.existsSync(configFile)) {
+        const conf = JSON.parse(fs.readFileSync(configFile, 'utf8') || '{}');
+        return conf.carpet_categories || [];
+      }
+    } catch (e) {}
+    return [];
+  }
+
   async addCatalogProduct(product) {
     const isReady = await this.checkPrisma();
     if (isReady) {
@@ -235,19 +247,21 @@ class DbService {
         const created = await this.prisma.catalogProduct.create({
           data: {
             code: product.code || product.title.replace(/\s+/g, '-').toUpperCase(),
+            category: product.category || 'Karpet Masjid & Musholla',
             title: product.title,
             subtitle: product.subtitle || '',
             footer: product.footer || '',
             price: product.price,
-            buttonText: product.buttonText || 'View collection ›',
+            buttonText: product.buttonText || 'Lihat Koleksi ›',
             url: product.url || '',
-            image: product.image || 'catalog/everyday-set.jpg'
+            image: product.image || 'catalog/karpet-masjid-turki.jpg'
           }
         });
         if (created) {
           return {
             id: String(created.id),
             code: created.code,
+            category: created.category,
             title: created.title,
             subtitle: created.subtitle,
             footer: created.footer,

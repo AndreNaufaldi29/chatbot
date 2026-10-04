@@ -65,7 +65,7 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState('chats'); // 'chats' | 'gemini' | 'qr' | 'tickets' | 'catalog' | 'store_profile' | 'schedule' | 'location' | 'warranty' | 'promo' | 'complaint' | 'sender' | 'settings'
+  const [activeTab, setActiveTab] = useState('chats'); // 'chats' | 'gemini' | 'qr' | 'tickets' | 'catalog' | 'store_profile' | 'schedule' | 'location' | 'warranty' | 'promo' | 'complaint' | 'settings'
 
   // Mobile Navigation & View States
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -155,11 +155,6 @@ export default function Dashboard() {
   });
   const [submittingNewTicket, setSubmittingNewTicket] = useState(false);
   const [deletingTicketId, setDeletingTicketId] = useState(null);
-
-  // Send Manual Message Form
-  const [manualPhone, setManualPhone] = useState('');
-  const [manualMessage, setManualMessage] = useState('');
-  const [sendingManual, setSendingManual] = useState(false);
 
   // Business Settings State
   const [businessSettings, setBusinessSettings] = useState({
@@ -367,10 +362,12 @@ export default function Dashboard() {
 
   const [savingStoreInfo, setSavingStoreInfo] = useState(false);
 
-  // Product Catalog State & Modal
+  // Product Catalog & Category State & Modal
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [selectedCatalogCategory, setSelectedCatalogCategory] = useState('Semua');
   const [productForm, setProductForm] = useState({
+    category: 'Karpet Masjid & Musholla',
     title: '',
     code: '',
     price: '',
@@ -625,6 +622,13 @@ export default function Dashboard() {
       try {
         const newCatalog = JSON.parse(e.data);
         setConfig((prev) => prev ? { ...prev, catalog: newCatalog } : prev);
+      } catch (err) {}
+    });
+
+    eventSource.addEventListener('categories_updated', (e) => {
+      try {
+        const newCats = JSON.parse(e.data);
+        setConfig((prev) => prev ? { ...prev, carpet_categories: newCats } : prev);
       } catch (err) {}
     });
 
@@ -1250,34 +1254,21 @@ export default function Dashboard() {
     }
   };
 
-  const handleSendManual = async (e) => {
-    e.preventDefault();
-    if (!manualPhone || !manualMessage || sendingManual) return;
-    setSendingManual(true);
-    try {
-      const res = await fetch('/api/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: manualPhone, message: manualMessage }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToastMsg('Pesan WhatsApp berhasil dikirim!', 'success');
-        setManualMessage('');
-        setActiveTab('chats');
-      } else {
-        showToastMsg('Gagal mengirim: ' + data.error, 'error');
-      }
-    } catch (err) {
-      showToastMsg('Error: ' + err.message, 'error');
-    } finally {
-      setSendingManual(false);
+  const sendDirectWaMessage = (phone, text) => {
+    let targetPhone = phone || ownerSettings?.phone || businessSettings?.phone || '6281298765432';
+    let clean = String(targetPhone).replace(/\D/g, '');
+    if (clean.startsWith('0')) {
+      clean = '62' + clean.slice(1);
     }
+    const message = encodeURIComponent(text || '');
+    window.open(`https://wa.me/${clean}?text=${message}`, '_blank');
   };
+
 
   const handleOpenAddProduct = () => {
     setEditingProduct(null);
     setProductForm({
+      category: selectedCatalogCategory !== 'Semua' ? selectedCatalogCategory : 'Karpet Masjid & Musholla',
       title: '',
       code: '',
       price: '',
@@ -1295,6 +1286,7 @@ export default function Dashboard() {
     setEditingProduct(product);
     const cleanImg = (product.image || 'catalog/karpet-masjid-turki.jpg').replace(/^assets\//, '');
     setProductForm({
+      category: product.category || 'Karpet Masjid & Musholla',
       title: product.title || '',
       code: product.code || '',
       price: product.price || '',
@@ -1974,28 +1966,8 @@ export default function Dashboard() {
                   />
                 </button>
 
-                <button
-                  onClick={() => {
-                    setActiveTab('catalog');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'catalog'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <ShoppingBag className="w-4 h-4" />
-                    <span>Katalog Karpet</span>
-                  </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                    {config?.catalog?.length || 5}
-                  </span>
-                </button>
-
                 <div className="pt-2 pb-1 px-3">
-                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Informasi Toko Karpet</p>
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Informasi Toko Resmi</p>
                 </div>
 
                 <button
@@ -2011,6 +1983,26 @@ export default function Dashboard() {
                 >
                   <Award className="w-4 h-4 text-emerald-400" />
                   <span>Profil & Pemilik Toko</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('catalog');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'catalog'
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <ShoppingBag className="w-4 h-4 text-emerald-400" />
+                    <span>Katalog Karpet</span>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
+                    {config?.catalog?.length || 5}
+                  </span>
                 </button>
 
                 <button
@@ -2075,57 +2067,32 @@ export default function Dashboard() {
 
                 <button
                   onClick={() => {
-                    setActiveTab('complaint');
+                    setActiveTab('tickets');
                     setMobileDrawerOpen(false);
                   }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'complaint'
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'tickets' || activeTab === 'complaint'
                       ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
-                  <ShieldAlert className="w-4 h-4 text-purple-400" />
-                  <span>Pusat Komplain & CS</span>
+                  <div className="flex items-center gap-3">
+                    <ShieldAlert className="w-4 h-4 text-purple-400" />
+                    <span>Pusat Komplain & CS</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {tickets.filter(t => (t.priority || '').toLowerCase().includes('urgent') || (t.status || '').toLowerCase() === 'open').length > 0 && (
+                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                    )}
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
+                      {tickets.length}
+                    </span>
+                  </div>
                 </button>
 
                 <div className="pt-2 pb-1 px-3">
                   <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Layanan & Sistem</p>
                 </div>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('tickets');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'tickets'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Ticket className="w-4 h-4" />
-                    <span>Tiket Layanan</span>
-                  </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                    {tickets.length}
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('sender');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'sender'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <Send className="w-4 h-4" />
-                  <span>Kirim Pesan Manual</span>
-                </button>
 
                 <button
                   onClick={() => {
@@ -2264,23 +2231,6 @@ export default function Dashboard() {
               />
             </button>
 
-            <button
-              onClick={() => setActiveTab('catalog')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'catalog'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <ShoppingBag className="w-4 h-4" />
-                <span>Katalog Karpet</span>
-              </div>
-              <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                {config?.catalog?.length || 5}
-              </span>
-            </button>
-
             <div className="pt-2 pb-1 px-3">
               <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Informasi Toko Resmi</p>
             </div>
@@ -2295,6 +2245,23 @@ export default function Dashboard() {
             >
               <Award className="w-4 h-4 text-emerald-400" />
               <span>Profil & Pemilik Toko</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('catalog')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'catalog'
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <ShoppingBag className="w-4 h-4 text-emerald-400" />
+                <span>Katalog Karpet</span>
+              </div>
+              <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 font-semibold">
+                {config?.catalog?.length || 5}
+              </span>
             </button>
 
             <button
@@ -2346,9 +2313,9 @@ export default function Dashboard() {
             </button>
 
             <button
-              onClick={() => setActiveTab('complaint')}
+              onClick={() => setActiveTab('tickets')}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'complaint'
+                activeTab === 'tickets' || activeTab === 'complaint'
                   ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
@@ -2357,45 +2324,19 @@ export default function Dashboard() {
                 <ShieldAlert className="w-4 h-4 text-purple-400" />
                 <span>Pusat Komplain & CS</span>
               </div>
-              {tickets.filter(t => (t.category || '').includes('Pengaduan') || (t.category || '').includes('Garansi')).length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold">
-                  {tickets.filter(t => (t.category || '').includes('Pengaduan') || (t.category || '').includes('Garansi')).length}
+              <div className="flex items-center gap-1.5">
+                {tickets.filter(t => (t.priority || '').toLowerCase().includes('urgent') || (t.status || '').toLowerCase() === 'open').length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                )}
+                <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 font-semibold">
+                  {tickets.length}
                 </span>
-              )}
+              </div>
             </button>
 
             <div className="pt-2 pb-1 px-3">
               <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Layanan & Sistem</p>
             </div>
-
-            <button
-              onClick={() => setActiveTab('tickets')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'tickets'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Ticket className="w-4 h-4" />
-                <span>Tiket Layanan</span>
-              </div>
-              <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                {tickets.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('sender')}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'sender'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <Send className="w-4 h-4" />
-              <span>Kirim Pesan Manual</span>
-            </button>
 
             <button
               onClick={() => setActiveTab('settings')}
@@ -2493,15 +2434,13 @@ export default function Dashboard() {
               {activeTab === 'chats' && 'Live Chat Log Real-Time'}
               {activeTab === 'gemini' && 'AI Studio & Simulator Percakapan (Groq & Gemini)'}
               {activeTab === 'qr' && 'Koneksi & QR Code WhatsApp'}
-              {activeTab === 'tickets' && 'Daftar Tiket Layanan Pelanggan'}
+              {(activeTab === 'tickets' || activeTab === 'complaint') && 'Pusat Komplain & Customer Service (CS)'}
               {activeTab === 'catalog' && 'Katalog Karpet Sultan & Koleksi Lengkap'}
               {activeTab === 'store_profile' && 'Profil Toko & Pemilik Karpet'}
               {activeTab === 'schedule' && 'Jadwal & Jam Operasional Toko'}
               {activeTab === 'location' && 'Alamat & Lokasi Showroom'}
               {activeTab === 'warranty' && 'Garansi & Kebijakan Klaim Karpet'}
               {activeTab === 'promo' && 'Promo & Penawaran Diskon Aktif'}
-              {activeTab === 'complaint' && 'Pusat Pengaduan & Layanan Komplain'}
-              {activeTab === 'sender' && 'Kirim Pesan WhatsApp Langsung'}
               {activeTab === 'settings' && 'Pengaturan Bisnis'}
             </h2>
           </div>
@@ -3650,8 +3589,8 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* TAB 4: TICKETS */}
-          {activeTab === 'tickets' && (() => {
+          {/* TAB 4: PUSAT KOMPLAIN & CS (CUSTOMER SERVICE) */}
+          {(activeTab === 'tickets' || activeTab === 'complaint') && (() => {
             // Summary counts
             const totalCount = tickets.length;
             const openCount = tickets.filter((t) => (t.status || 'Open').toLowerCase() === 'open').length;
@@ -3667,9 +3606,9 @@ export default function Dashboard() {
 
             const categoriesList = [
               { id: 'Semua', label: 'Semua Tiket' },
-              { id: 'Pembelian Produk', label: 'Pembelian Produk' },
-              { id: 'Klaim Garansi', label: 'Klaim Garansi' },
               { id: 'Pengaduan Produk', label: 'Pengaduan Produk' },
+              { id: 'Klaim Garansi', label: 'Klaim Garansi' },
+              { id: 'Pembelian Produk', label: 'Pembelian Produk' },
               { id: 'Layanan Umum', label: 'Layanan Umum' },
             ];
 
@@ -3685,6 +3624,16 @@ export default function Dashboard() {
             if (ticketCategoryFilter !== 'Semua') {
               displayTickets = displayTickets.filter((t) => {
                 const cat = (t.category || 'Layanan Umum').toLowerCase();
+                const q = ticketCategoryFilter.toLowerCase();
+                if (q.includes('pengaduan') || q.includes('komplain')) {
+                  return cat.includes('pengaduan') || cat.includes('komplain') || cat.includes('keluhan') || cat.includes('rusak');
+                }
+                if (q.includes('garansi') || q.includes('klaim')) {
+                  return cat.includes('garansi') || cat.includes('klaim');
+                }
+                if (q.includes('pembelian') || q.includes('beli') || q.includes('pesan')) {
+                  return cat.includes('beli') || cat.includes('pesan') || cat.includes('order');
+                }
                 return cat.includes(ticketCategoryFilter.toLowerCase().slice(0, 5));
               });
             }
@@ -3766,39 +3715,69 @@ export default function Dashboard() {
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-1">
                   <div>
                     <div className="flex items-center gap-2.5">
-                      <h3 className="text-lg font-bold text-white">Tiket Layanan & Pemesanan Pelanggan</h3>
-                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
-                        {totalCount} Total
-                      </span>
+                      <div className="p-2 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400">
+                        <ShieldAlert className="w-5 h-5" />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-bold text-white">Pusat Komplain & Layanan Pelanggan (CS)</h3>
+                        <span className="px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 font-semibold text-xs">
+                          {totalCount} Total Pengaduan & Layanan
+                        </span>
+                        {urgentCount > 0 && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-300 font-semibold text-xs animate-pulse">
+                            {urgentCount} Butuh Atensi Segera
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Kelola pesanan karpet, klaim garansi presisi, dan komplain pelanggan secara fleksibel & terintegrasi WhatsApp
+                    <p className="text-xs text-slate-400 mt-1">
+                      Pusat kendali penanganan komplain, keluhan kualitas, klaim garansi presisi, dan respon cepat layanan pelanggan (CS) terintegrasi WhatsApp
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => setShowCreateTicketModal(true)}
-                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-lg shadow-emerald-900/30 transition flex items-center gap-1.5 cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-900/30 transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-4 h-4" />
-                      <span>+ Buat Tiket Manual</span>
-                    </button>
-                    <button
-                      onClick={handleExportTicketsCsv}
-                      title="Download Laporan Tiket (CSV/Excel)"
-                      className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Download className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="hidden sm:inline">Export CSV</span>
+                      <span>Buat Tiket Komplain / CS</span>
                     </button>
                     <button
                       onClick={fetchTickets}
-                      title="Segarkan data tiket"
+                      title="Segarkan data tiket & komplain"
                       className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
                       <span className="hidden sm:inline">Refresh</span>
                     </button>
+                  </div>
+                </div>
+
+                {/* CS Hotline & SLA Quick Info Bar */}
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-[#0f172a]/90 to-slate-900/80 border border-purple-500/30 backdrop-blur-md flex flex-wrap items-center gap-4 text-xs shadow-lg shadow-purple-950/20 text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-purple-500/20 text-purple-300">
+                      <Phone className="w-3.5 h-3.5" />
+                    </span>
+                    <span>
+                      Hotline Manajer CS: <strong className="text-white font-mono">{complaintSettings?.contact_manager || '0811-2345-6789'}</strong>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300">
+                      <Clock className="w-3.5 h-3.5" />
+                    </span>
+                    <span>
+                      Target Respon (SLA): <strong className="text-emerald-300 font-semibold">{complaintSettings?.sla || 'Maksimal 1x24 Jam Kerja'}</strong>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-blue-500/20 text-blue-300">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                    </span>
+                    <span>
+                      Garansi Resmi: <strong className="text-blue-300 font-semibold">Tukar Baru 14 Hari & Obras 1 Tahun</strong>
+                    </span>
                   </div>
                 </div>
 
@@ -3814,12 +3793,12 @@ export default function Dashboard() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-400 font-medium">Semua Tiket</span>
+                      <span className="text-xs text-slate-400 font-medium">Semua Tiket & Komplain</span>
                       <Ticket className="w-4 h-4 text-slate-400" />
                     </div>
                     <div className="mt-2 flex items-baseline gap-1.5">
                       <span className="text-2xl font-bold text-white">{totalCount}</span>
-                      <span className="text-[11px] text-slate-500">tiket</span>
+                      <span className="text-[11px] text-slate-500">laporan</span>
                     </div>
                   </button>
 
@@ -3833,12 +3812,12 @@ export default function Dashboard() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-sky-400 font-medium">Menunggu (Open)</span>
+                      <span className="text-xs text-sky-400 font-medium">Menunggu Respon (Open)</span>
                       <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse"></span>
                     </div>
                     <div className="mt-2 flex items-baseline gap-1.5">
                       <span className="text-2xl font-bold text-sky-300">{openCount}</span>
-                      <span className="text-[11px] text-sky-400/70">perlu respon</span>
+                      <span className="text-[11px] text-sky-400/70">perlu respon CS</span>
                     </div>
                   </button>
 
@@ -3852,12 +3831,12 @@ export default function Dashboard() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-amber-400 font-medium">Diproses</span>
+                      <span className="text-xs text-amber-400 font-medium">Sedang Ditindaklanjuti</span>
                       <Clock className="w-4 h-4 text-amber-400" />
                     </div>
                     <div className="mt-2 flex items-baseline gap-1.5">
                       <span className="text-2xl font-bold text-amber-300">{inProgressCount}</span>
-                      <span className="text-[11px] text-amber-400/70">tindak lanjut</span>
+                      <span className="text-[11px] text-amber-400/70">penanganan CS</span>
                     </div>
                   </button>
 
@@ -3871,12 +3850,12 @@ export default function Dashboard() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-emerald-400 font-medium">Selesai</span>
+                      <span className="text-xs text-emerald-400 font-medium">Selesai & Tuntas</span>
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     </div>
                     <div className="mt-2 flex items-baseline gap-1.5">
                       <span className="text-2xl font-bold text-emerald-300">{resolvedCount}</span>
-                      <span className="text-[11px] text-emerald-400/70">tuntas</span>
+                      <span className="text-[11px] text-emerald-400/70">terselesaikan</span>
                     </div>
                   </button>
 
@@ -3890,7 +3869,7 @@ export default function Dashboard() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-rose-400 font-medium">Prioritas Tinggi</span>
+                      <span className="text-xs text-rose-400 font-medium">Prioritas Mendesak</span>
                       <ShieldAlert className="w-4 h-4 text-rose-400" />
                     </div>
                     <div className="mt-2 flex items-baseline gap-1.5">
@@ -4354,66 +4333,267 @@ export default function Dashboard() {
           })()}
 
           {/* TAB 5: CATALOG */}
-          {activeTab === 'catalog' && (
-            <div className="space-y-6">
+          {activeTab === 'catalog' && (() => {
+            const carpetCategoriesList = config?.carpet_categories || [
+              {
+                id: "kat-masjid",
+                slug: "karpet-masjid",
+                name: "Karpet Masjid & Musholla",
+                icon: "🕌",
+                description: "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi, empuk & nyaman untuk ibadah berjamaah."
+              },
+              {
+                id: "kat-persia",
+                slug: "karpet-persia",
+                name: "Karpet Klasik & Permadani Persia",
+                icon: "🏛️",
+                description: "Koleksi permadani rajutan tangan autentik Persia & oriental klasik bermutu seni tinggi, benang sutra & wol."
+              },
+              {
+                id: "kat-minimalis",
+                slug: "karpet-minimalis",
+                name: "Karpet Ruang Tamu Minimalis Modern",
+                icon: "🛋️",
+                description: "Karpet kontemporer konsep Skandinavia & modern aesthetic, anti-slip backing untuk ruang tamu & keluarga."
+              },
+              {
+                id: "kat-shaggy",
+                slug: "karpet-shaggy",
+                name: "Karpet Bulu & Shaggy Mewah",
+                icon: "☁️",
+                description: "Karpet bulu halus ekstra empuk dengan busa memory foam untuk kamar tidur dan ruang santai keluarga."
+              },
+              {
+                id: "kat-kantor",
+                slug: "karpet-kantor",
+                name: "Karpet Tile & Kantor Komersial",
+                icon: "🏢",
+                description: "Karpet modular tile 50x50cm heavy duty, tahan api & gesekan roda kursi untuk kantor, hotel, dan ballroom."
+              }
+            ];
 
-              {/* Header with Title, Search, and Tambah Produk Button */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
-                <div>
-                  <div className="flex items-center gap-2.5">
-                    <h3 className="text-lg font-bold text-white">Koleksi Karpet Eksklusif Sultan Carpet Gallery</h3>
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
-                      {config?.catalog?.length || 0} Produk Karpet
+            const getCategoryIcon = (categoryName) => {
+              if (!categoryName) return '🏷️';
+              const cat = carpetCategoriesList.find(c => 
+                c.name.toLowerCase() === categoryName.toLowerCase() ||
+                categoryName.toLowerCase().includes(c.name.toLowerCase().slice(0, 8)) ||
+                c.name.toLowerCase().includes(categoryName.toLowerCase().slice(0, 8))
+              );
+              return cat ? cat.icon : '🏷️';
+            };
+
+            const filteredCatalog = (config?.catalog || []).filter((item) => {
+              if (selectedCatalogCategory !== 'Semua') {
+                const itemCat = (item.category || '').toLowerCase();
+                const targetCat = selectedCatalogCategory.toLowerCase();
+                const match = itemCat.includes(targetCat.slice(0, 8)) || targetCat.includes(itemCat.slice(0, 8));
+                if (!match) return false;
+              }
+
+              if (!catalogSearch.trim()) return true;
+              const q = catalogSearch.toLowerCase();
+              return (
+                item.title.toLowerCase().includes(q) ||
+                (item.code && item.code.toLowerCase().includes(q)) ||
+                (item.subtitle && item.subtitle.toLowerCase().includes(q)) ||
+                (item.footer && item.footer.toLowerCase().includes(q)) ||
+                (item.category && item.category.toLowerCase().includes(q))
+              );
+            });
+
+            return (
+              <div className="space-y-6">
+
+                {/* Header with Title, Search, and Tambah Produk Button */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <h3 className="text-lg font-bold text-white">Koleksi Karpet Eksklusif Sultan Carpet Gallery</h3>
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
+                        {config?.catalog?.length || 0} Produk
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 font-semibold text-xs">
+                        {carpetCategoriesList.length} Kategori
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Koleksi karpet masjid, permadani persia, karpet modern, bulu shaggy, dan karpet tile kantor yang terintegrasi otomatis dengan bot WhatsApp dan memori AI
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={catalogSearch}
+                        onChange={(e) => setCatalogSearch(e.target.value)}
+                        placeholder="Cari nama, warna, motif..."
+                        className="rounded-xl bg-slate-900 border border-slate-700/80 pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-48"
+                      />
+                    </div>
+                    <button
+                      onClick={handleOpenAddProduct}
+                      className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 shrink-0"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Produk Baru</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Kategori Showcase Grid */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-emerald-400" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                        Pilihan Kategori Karpet Sultan
+                      </h4>
+                    </div>
+                    <span className="text-[11px] text-slate-500">
+                      Klik kategori untuk memfilter koleksi karpet
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Koleksi karpet masjid, permadani persia, dan karpet modern yang terintegrasi otomatis dengan bot WhatsApp dan memori AI
-                  </p>
-                </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="text"
-                      value={catalogSearch}
-                      onChange={(e) => setCatalogSearch(e.target.value)}
-                      placeholder="Cari karpet..."
-                      className="rounded-xl bg-slate-900 border border-slate-700/80 pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-44"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+                    {carpetCategoriesList.map((cat) => {
+                      const isSelected = selectedCatalogCategory === cat.name;
+                      const count = (config?.catalog || []).filter(p => {
+                        const pCat = (p.category || '').toLowerCase();
+                        return pCat.includes(cat.name.toLowerCase().slice(0, 8)) || cat.name.toLowerCase().includes(pCat.slice(0, 8));
+                      }).length;
+
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setSelectedCatalogCategory(isSelected ? 'Semua' : cat.name)}
+                          className={`p-3.5 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between group relative overflow-hidden ${
+                            isSelected
+                              ? 'bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/10'
+                              : 'bg-[#0f172a]/70 hover:bg-slate-900 border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-2xl p-2 rounded-xl bg-slate-900/90 border border-slate-800 shadow group-hover:scale-110 transition duration-300">
+                                {cat.icon}
+                              </span>
+                              <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
+                                isSelected 
+                                  ? 'bg-emerald-500 text-slate-950 font-bold' 
+                                  : 'bg-slate-800/80 text-slate-400 group-hover:text-slate-200'
+                              }`}>
+                                {count} Produk
+                              </span>
+                            </div>
+                            <h5 className={`font-bold text-xs line-clamp-1 mb-1 ${
+                              isSelected ? 'text-emerald-300' : 'text-white'
+                            }`}>
+                              {cat.name}
+                            </h5>
+                            <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed">
+                              {cat.description}
+                            </p>
+                          </div>
+
+                          <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[10px]">
+                            <span className={isSelected ? 'text-emerald-400 font-semibold' : 'text-slate-500'}>
+                              {isSelected ? '✓ Sedang Dilihat' : 'Lihat Produk'}
+                            </span>
+                            <ChevronRight className={`w-3 h-3 ${isSelected ? 'text-emerald-400' : 'text-slate-600 group-hover:text-slate-400'}`} />
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <button
-                    onClick={handleOpenAddProduct}
-                    className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 shrink-0"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Tambah Produk Baru</span>
-                  </button>
                 </div>
-              </div>
 
-              {/* Product Cards Grid */}
-              {(() => {
-                const filteredCatalog = (config?.catalog || []).filter((item) => {
-                  if (!catalogSearch.trim()) return true;
-                  const q = catalogSearch.toLowerCase();
-                  return (
-                    item.title.toLowerCase().includes(q) ||
-                    (item.code && item.code.toLowerCase().includes(q)) ||
-                    (item.subtitle && item.subtitle.toLowerCase().includes(q))
-                  );
-                });
+                {/* Filter Pills & Reset */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full scrollbar-none">
+                    <button
+                      onClick={() => setSelectedCatalogCategory('Semua')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 ${
+                        selectedCatalogCategory === 'Semua'
+                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                          : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                      }`}
+                    >
+                      <span>Semua Koleksi</span>
+                      <span className="px-1.5 py-0.2 rounded-md bg-black/30 text-[10px]">
+                        {config?.catalog?.length || 0}
+                      </span>
+                    </button>
 
-                if (filteredCatalog.length === 0) {
-                  return (
-                    <div className="p-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/30">
-                      <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                      <p className="font-semibold text-slate-400 text-sm">
-                        {catalogSearch ? 'Tidak ada produk yang cocok dengan pencarian' : 'Belum ada produk di katalog'}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1 mb-4">
-                        Klik tombol di bawah untuk menambahkan produk karpet baru ke katalog Anda.
-                      </p>
+                    {carpetCategoriesList.map((cat) => {
+                      const isSelected = selectedCatalogCategory === cat.name;
+                      const count = (config?.catalog || []).filter(p => {
+                        const pCat = (p.category || '').toLowerCase();
+                        return pCat.includes(cat.name.toLowerCase().slice(0, 8)) || cat.name.toLowerCase().includes(pCat.slice(0, 8));
+                      }).length;
+
+                      return (
+                        <button
+                          key={cat.id}
+                          onClick={() => setSelectedCatalogCategory(cat.name)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                          }`}
+                        >
+                          <span>{cat.icon}</span>
+                          <span>{cat.name.replace('Karpet ', '')}</span>
+                          <span className="px-1.5 py-0.2 rounded-md bg-black/30 text-[10px]">
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {(selectedCatalogCategory !== 'Semua' || catalogSearch) && (
+                    <button
+                      onClick={() => {
+                        setSelectedCatalogCategory('Semua');
+                        setCatalogSearch('');
+                      }}
+                      className="text-xs text-rose-400 hover:text-rose-300 font-medium flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-lg hover:bg-rose-950/40 transition"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset Filter</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Product Cards Grid */}
+                {filteredCatalog.length === 0 ? (
+                  <div className="p-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/30">
+                    <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                    <p className="font-semibold text-slate-400 text-sm">
+                      {catalogSearch || selectedCatalogCategory !== 'Semua'
+                        ? 'Tidak ada produk karpet yang cocok dengan filter atau pencarian'
+                        : 'Belum ada produk di katalog'}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 mb-4">
+                      {selectedCatalogCategory !== 'Semua'
+                        ? `Belum ada produk dalam kategori "${selectedCatalogCategory}". Klik Tambah Produk untuk mengisi kategori ini.`
+                        : 'Klik tombol di bawah untuk menambahkan produk karpet baru ke katalog Anda.'}
+                    </p>
+                    <div className="flex items-center justify-center gap-3">
+                      {(selectedCatalogCategory !== 'Semua' || catalogSearch) && (
+                        <button
+                          onClick={() => {
+                            setSelectedCatalogCategory('Semua');
+                            setCatalogSearch('');
+                          }}
+                          className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition"
+                        >
+                          Tampilkan Semua Karpet
+                        </button>
+                      )}
                       <button
                         onClick={handleOpenAddProduct}
                         className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs inline-flex items-center gap-1.5 transition"
@@ -4422,10 +4602,8 @@ export default function Dashboard() {
                         <span>Tambah Produk Sekarang</span>
                       </button>
                     </div>
-                  );
-                }
-
-                return (
+                  </div>
+                ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredCatalog.map((item) => {
                       const cleanImg = (item.image || 'catalog/karpet-masjid-turki.jpg').replace(/^assets\//, '');
@@ -4446,9 +4624,16 @@ export default function Dashboard() {
                               className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                             />
                             {/* Price Badge */}
-                            <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-slate-950/80 backdrop-blur-md text-emerald-400 font-bold text-xs border border-emerald-500/30 shadow">
+                            <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-slate-950/85 backdrop-blur-md text-emerald-400 font-bold text-xs border border-emerald-500/30 shadow">
                               {item.price}
                             </span>
+                            {/* Category Badge on Bottom Left of Image */}
+                            <div className="absolute bottom-3 left-3">
+                              <span className="px-2.5 py-1 rounded-lg bg-slate-950/90 backdrop-blur-md text-emerald-300 font-semibold text-[11px] border border-emerald-500/30 shadow flex items-center gap-1.5">
+                                <span>{getCategoryIcon(item.category)}</span>
+                                <span className="truncate max-w-[170px]">{item.category || 'Karpet Masjid'}</span>
+                              </span>
+                            </div>
                             {/* Actions on Card Image */}
                             <div className="absolute top-3 left-3 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
                               <button
@@ -4471,7 +4656,7 @@ export default function Dashboard() {
 
                           <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
                             <div>
-                              <div className="flex items-center justify-between gap-2 mb-1">
+                              <div className="flex items-center justify-between gap-2 mb-1.5">
                                 <h4 className="font-bold text-white text-base truncate" title={item.title}>{item.title}</h4>
                                 <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono shrink-0">
                                   #{item.id}
@@ -4496,12 +4681,14 @@ export default function Dashboard() {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    setActiveTab('sender');
-                                    setManualMessage(`Halo! Saya tertarik memesan produk: *${item.title}* (${item.price})`);
+                                    sendDirectWaMessage(
+                                      ownerSettings?.phone || businessSettings?.phone,
+                                      `Halo Sultan Carpet! Saya tertarik memesan produk: *${item.title}* (${item.price || ''})`
+                                    );
                                   }}
                                   className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-semibold border border-emerald-500/30 transition flex items-center gap-1"
                                 >
-                                  <span>Kirim Pesan</span>
+                                  <span>Pesan via WA</span>
                                   <ArrowRight className="w-3 h-3" />
                                 </button>
                               </div>
@@ -4511,10 +4698,10 @@ export default function Dashboard() {
                       );
                     })}
                   </div>
-                );
-              })()}
-            </div>
-          )}
+                )}
+              </div>
+            );
+          })()}
 
           
           {/* TAB: STORE PROFILE & OWNER */}
@@ -4642,8 +4829,10 @@ export default function Dashboard() {
                           </button>
                           <button
                             onClick={() => {
-                              setActiveTab('sender');
-                              setManualMessage(`Halo Bapak/Ibu ${ownerSettings.owner_name}, saya ingin berkonsultasi seputar pesanan karpet.`);
+                              sendDirectWaMessage(
+                                ownerSettings.phone,
+                                `Halo Bapak/Ibu ${ownerSettings.owner_name || 'Owner'}, saya ingin berkonsultasi seputar pesanan karpet.`
+                              );
                             }}
                             className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px]"
                           >
@@ -4772,8 +4961,10 @@ export default function Dashboard() {
 
                 <button
                   onClick={() => {
-                    setActiveTab('sender');
-                    setManualMessage('Halo Sultan Carpet Gallery, saya ingin membuat janji survey dan pengukuran karpet ke lokasi kami.');
+                    sendDirectWaMessage(
+                      ownerSettings?.phone || businessSettings?.phone,
+                      'Halo Sultan Carpet Gallery, saya ingin membuat janji survey dan pengukuran karpet ke lokasi kami.'
+                    );
                   }}
                   className="py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs transition flex items-center gap-2 shrink-0 shadow-lg shadow-sky-600/20"
                 >
@@ -5112,8 +5303,10 @@ export default function Dashboard() {
 
                             <button
                               onClick={() => {
-                                setActiveTab('sender');
-                                setManualMessage(`Halo Sultan Carpet, saya ingin berkunjung ke ${loc.title} (${loc.address}). Apakah hari ini buka?`);
+                                sendDirectWaMessage(
+                                  loc.phone || ownerSettings?.phone || businessSettings?.phone,
+                                  `Halo Sultan Carpet, saya ingin berkunjung ke ${loc.title} (${loc.address}). Apakah hari ini buka?`
+                                );
                               }}
                               className="p-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 transition shrink-0"
                               title="Hubungi WhatsApp Cabang"
@@ -5184,8 +5377,10 @@ export default function Dashboard() {
                     </button>
                     <button
                       onClick={() => {
-                        setActiveTab('sender');
-                        setManualMessage('Halo Tim Garansi Sultan Carpet, saya ingin mengajukan klaim garansi untuk produk karpet kami.');
+                        sendDirectWaMessage(
+                          ownerSettings?.phone || businessSettings?.phone,
+                          'Halo Tim Garansi Sultan Carpet, saya ingin berkonsultasi seputar klaim garansi untuk produk karpet kami.'
+                        );
                       }}
                       className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition flex items-center gap-1.5"
                     >
@@ -5342,8 +5537,10 @@ export default function Dashboard() {
                         </button>
                         <button
                           onClick={() => {
-                            setActiveTab('sender');
-                            setManualMessage(`Halo! Saya tertarik dengan penawaran: *${promo.title}* (${promo.discount}). Mohon rincian lengkapnya.`);
+                            sendDirectWaMessage(
+                              ownerSettings?.phone || businessSettings?.phone,
+                              `Halo Sultan Carpet! Saya tertarik dengan promo penawaran: *${promo.title}* (${promo.discount}). Mohon informasi lengkapnya.`
+                            );
                           }}
                           className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-semibold border border-emerald-500/30 transition flex items-center gap-1"
                         >
@@ -5379,195 +5576,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* TAB: COMPLAINT & SERVICE CENTER */}
-          {activeTab === 'complaint' && (
-            <div className="space-y-6">
-
-              {/* SLA & CS Hotline Header */}
-              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
-                    <ShieldAlert className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-white text-lg">Pusat Layanan Komplain & Pengaduan Pelanggan</h3>
-                      <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 text-[11px] font-semibold">
-                        SLA 1x24 Jam
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Hotline Manajer CS: <strong className="text-white font-mono">{complaintSettings.contact_manager}</strong>
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setShowComplaintModal(true)}
-                  className="py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shrink-0 shadow-lg shadow-purple-600/20"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Buat Laporan Komplain Baru</span>
-                </button>
-              </div>
-
-              {/* 5-Step Workflow Cards */}
-              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                <h4 className="font-bold text-white text-sm">Alur & Standar Operasional Penanganan Keluhan (SOP)</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
-                  {(complaintSettings.workflow || []).map((step, i) => (
-                    <div key={i} className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1.5 flex flex-col justify-between">
-                      <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-300 font-bold font-mono text-xs flex items-center justify-center">
-                        {i + 1}
-                      </div>
-                      <p className="text-slate-300 text-[11px] leading-relaxed">{step}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Integrated Complaint Tickets Table */}
-              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                    <Ticket className="w-4 h-4 text-emerald-400" />
-                    <span>Daftar Tiket Pengaduan & Layanan Aktif</span>
-                  </h4>
-                  <span className="text-xs text-slate-400">
-                    Total {tickets.length} Tiket Terdaftar
-                  </span>
-                </div>
-
-                {tickets.length === 0 ? (
-                  <div className="p-8 text-center rounded-2xl border border-dashed border-slate-800 text-slate-500 text-xs">
-                    Belum ada tiket komplain aktif. Semua layanan berjalan lancar!
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs text-slate-300">
-                      <thead className="bg-slate-900/80 text-slate-400 uppercase font-mono text-[10px] border-b border-slate-800">
-                        <tr>
-                          <th className="py-2.5 px-3">No. Tiket</th>
-                          <th className="py-2.5 px-3">Pelanggan</th>
-                          <th className="py-2.5 px-3">Kategori & Masalah</th>
-                          <th className="py-2.5 px-3">Prioritas</th>
-                          <th className="py-2.5 px-3">Status</th>
-                          <th className="py-2.5 px-3 text-right">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60 font-sans">
-                        {tickets.slice(0, 10).map((ticket) => (
-                          <tr key={ticket.id} className="hover:bg-slate-800/30 transition">
-                            <td className="py-3 px-3 font-mono font-bold text-emerald-400">
-                              #{ticket.id}
-                            </td>
-                            <td className="py-3 px-3">
-                              <p className="font-semibold text-white">{ticket.name || ticket.sender || '-'}</p>
-                              <p className="text-[10px] text-slate-500 font-mono">{ticket.contact || ticket.sender || '-'}</p>
-                            </td>
-                            <td className="py-3 px-3 max-w-xs">
-                              <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-medium inline-block mb-0.5">
-                                {ticket.category || 'Komplain'}
-                              </span>
-                              <p className="text-slate-300 truncate" title={ticket.description}>
-                                {ticket.description}
-                              </p>
-                            </td>
-                            <td className="py-3 px-3">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                                ticket.priority === 'Tinggi' || ticket.priority === 'High'
-                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                  : 'bg-slate-800 text-slate-300'
-                              }`}>
-                                {ticket.priority || 'Normal'}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                                ticket.status === 'Open'
-                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                  : ticket.status === 'In Progress'
-                                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                                  : 'bg-slate-800 text-slate-400'
-                              }`}>
-                                {ticket.status}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 text-right">
-                              <button
-                                onClick={() => {
-                                  setActiveTab('tickets');
-                                  setSelectedTicket(ticket);
-                                }}
-                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs transition"
-                              >
-                                Detail
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 6: MANUAL SENDER */}
-          {activeTab === 'sender' && (
-            <div className="max-w-2xl mx-auto space-y-6">
-              <div className="p-8 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-2xl space-y-5">
-                <div>
-                  <h3 className="text-lg font-bold text-white">Kirim Pesan WhatsApp Manual</h3>
-                  <p className="text-xs text-slate-400">
-                    Kirim pesan resmi secara langsung ke nomor pelanggan dari dashboard
-                  </p>
-                </div>
-
-                <form onSubmit={handleSendManual} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300">Nomor Telepon / WhatsApp Tujuan</label>
-                    <input
-                      type="text"
-                      value={manualPhone}
-                      onChange={(e) => setManualPhone(e.target.value)}
-                      placeholder="Contoh: 081234567890 atau 6281234567890"
-                      required
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300">Isi Pesan WhatsApp</label>
-                    <textarea
-                      rows={5}
-                      value={manualMessage}
-                      onChange={(e) => setManualMessage(e.target.value)}
-                      placeholder="Ketik pesan resmi di sini..."
-                      required
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 leading-relaxed font-sans"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={sendingManual || !isConnected}
-                    className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-lg shadow-emerald-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span>{sendingManual ? 'Sedang Mengirim...' : 'Kirim Pesan Sekarang'}</span>
-                  </button>
-
-                  {!isConnected && (
-                    <p className="text-center text-xs text-amber-400">
-                      ⚠️ Bot WhatsApp belum terhubung. Silakan pindai QR code terlebih dahulu.
-                    </p>
-                  )}
-                </form>
-              </div>
-            </div>
-          )}
 
           {/* TAB 7: BUSINESS SETTINGS */}
           {activeTab === 'settings' && (
@@ -5688,18 +5696,18 @@ export default function Dashboard() {
             <button
               onClick={() => setActiveTab('tickets')}
               className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${
-                activeTab === 'tickets' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+                activeTab === 'tickets' || activeTab === 'complaint' ? 'text-purple-400 font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <div className="relative">
-                <Ticket className="w-5 h-5" />
+                <ShieldAlert className="w-5 h-5" />
                 {tickets.length > 0 && (
-                  <span className="absolute -top-1 -right-2 w-4 h-4 bg-emerald-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
+                  <span className="absolute -top-1 -right-2 w-4 h-4 bg-purple-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
                     {tickets.length}
                   </span>
                 )}
               </div>
-              <span className="text-[10px]">Tiket</span>
+              <span className="text-[10px]">Komplain & CS</span>
             </button>
 
             <button
@@ -5731,13 +5739,13 @@ export default function Dashboard() {
           <div className="bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
-                  <Ticket className="w-5 h-5" />
+                <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
+                  <ShieldAlert className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">Kelola Tiket #{selectedTicket.id}</h3>
+                  <h3 className="font-bold text-white text-base">Kelola Komplain & Layanan CS #{selectedTicket.id}</h3>
                   <p className="text-[11px] text-slate-400">
-                    {selectedTicket.createdAt ? new Date(selectedTicket.createdAt).toLocaleString('id-ID') : 'Tiket Aktif'}
+                    {selectedTicket.createdAt ? new Date(selectedTicket.createdAt).toLocaleString('id-ID') : 'Laporan Aktif'}
                   </p>
                 </div>
               </div>
@@ -5866,17 +5874,18 @@ export default function Dashboard() {
       )}
 
       {/* MODAL: BUAT TIKET MANUAL BARU */}
+      {/* MODAL: BUAT TIKET KOMPLAIN & CS */}
       {showCreateTicketModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
-                  <Plus className="w-5 h-5" />
+                <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
+                  <ShieldAlert className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">Buat Tiket Layanan Baru</h3>
-                  <p className="text-[11px] text-slate-400">Input permohonan pelanggan via walk-in, panggilan, atau chat</p>
+                  <h3 className="font-bold text-white text-base">Buat Tiket Komplain & Layanan CS</h3>
+                  <p className="text-[11px] text-slate-400">Input keluhan atau permohonan layanan via WhatsApp, telepon, atau walk-in</p>
                 </div>
               </div>
               <button
@@ -5897,7 +5906,7 @@ export default function Dashboard() {
                     placeholder="Contoh: H. Ahmad Subardjo"
                     value={newTicketForm.name}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, name: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-emerald-500"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500"
                   />
                 </div>
                 <div className="space-y-1">
@@ -5907,23 +5916,23 @@ export default function Dashboard() {
                     placeholder="Contoh: 081234567890"
                     value={newTicketForm.contact}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, contact: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-emerald-500"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500 font-mono"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Kategori</label>
+                  <label className="font-semibold text-slate-300">Kategori Layanan</label>
                   <select
                     value={newTicketForm.category}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, category: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-purple-500 cursor-pointer"
                   >
-                    <option value="Pembelian Produk">Pembelian Produk</option>
-                    <option value="Klaim Garansi">Klaim Garansi</option>
-                    <option value="Pengaduan Produk">Pengaduan Produk</option>
-                    <option value="Layanan Umum">Layanan Umum</option>
+                    <option value="Pengaduan Produk">🚨 Pengaduan & Komplain</option>
+                    <option value="Klaim Garansi">🛡️ Klaim Garansi</option>
+                    <option value="Pembelian Produk">🛒 Konsultasi / Pesanan</option>
+                    <option value="Layanan Umum">💬 Layanan CS Umum</option>
                   </select>
                 </div>
 
@@ -5932,11 +5941,11 @@ export default function Dashboard() {
                   <select
                     value={newTicketForm.priority}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, priority: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-purple-500 cursor-pointer"
                   >
                     <option value="Normal">Normal</option>
                     <option value="Tinggi">Tinggi</option>
-                    <option value="Urgent">Urgent</option>
+                    <option value="Urgent">Mendesak (Urgent)</option>
                   </select>
                 </div>
 
@@ -5945,35 +5954,35 @@ export default function Dashboard() {
                   <select
                     value={newTicketForm.status}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, status: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-purple-500 cursor-pointer"
                   >
-                    <option value="Open">Open</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Resolved">Resolved</option>
+                    <option value="Open">Open (Menunggu CS)</option>
+                    <option value="In Progress">In Progress (Diproses)</option>
+                    <option value="Resolved">Resolved (Tuntas)</option>
                   </select>
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Deskripsi Permohonan / Pesanan <span className="text-rose-400">*</span></label>
+                <label className="font-semibold text-slate-300">Rincian Keluhan / Permohonan Layanan <span className="text-rose-400">*</span></label>
                 <textarea
                   required
                   rows={3}
-                  placeholder="Jelaskan kebutuhan karpet, ukuran masjid, atau keluhan barang..."
+                  placeholder="Jelaskan secara detail keluhan karpet, jahitan obras, klaim garansi, atau permohonan pelanggan..."
                   value={newTicketForm.description}
                   onChange={(e) => setNewTicketForm((prev) => ({ ...prev, description: e.target.value }))}
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-emerald-500 resize-none"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500 resize-none leading-relaxed"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Catatan Internal Petugas (Opsional)</label>
+                <label className="font-semibold text-slate-300">Catatan Internal Petugas CS (Opsional)</label>
                 <textarea
                   rows={2}
-                  placeholder="Catatan penanganan untuk tim survey atau teknisi obras..."
+                  placeholder="Catatan penanganan untuk tim survey, admin CS, atau teknisi obras..."
                   value={newTicketForm.notes}
                   onChange={(e) => setNewTicketForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-emerald-500 resize-none"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500 resize-none"
                 />
               </div>
 
@@ -5981,9 +5990,9 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={submittingNewTicket}
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-lg shadow-emerald-900/30 transition disabled:opacity-50 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-900/30 transition disabled:opacity-50 cursor-pointer"
                 >
-                  {submittingNewTicket ? 'Menyimpan Tiket...' : 'Terbitkan Tiket Layanan'}
+                  {submittingNewTicket ? 'Menyimpan Tiket...' : 'Terbitkan Tiket Komplain / CS'}
                 </button>
                 <button
                   type="button"
@@ -5997,6 +6006,8 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+
       {/* MODAL: TAMBAH / EDIT PRODUK */}
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
@@ -6089,10 +6100,38 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* Category Selection */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Kategori Karpet *</span>
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-normal">Pilih klasifikasi produk</span>
+                </label>
+                <select
+                  value={productForm.category || 'Karpet Masjid & Musholla'}
+                  onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))}
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  {(config?.carpet_categories || [
+                    { name: 'Karpet Masjid & Musholla', icon: '🕌' },
+                    { name: 'Karpet Klasik & Permadani Persia', icon: '🏛️' },
+                    { name: 'Karpet Ruang Tamu Minimalis Modern', icon: '🛋️' },
+                    { name: 'Karpet Bulu & Shaggy Mewah', icon: '☁️' },
+                    { name: 'Karpet Tile & Kantor Komersial', icon: '🏢' }
+                  ]).map((c) => (
+                    <option key={c.name} value={c.name} className="bg-slate-900 text-white py-1">
+                      {c.icon || '🏷️'} {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Grid 2 Cols: Title & Price */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Nama Produk *</label>
+                  <label className="text-xs font-semibold text-slate-300">Nama Produk Karpet *</label>
                   <input
                     type="text"
                     required
@@ -6105,7 +6144,7 @@ export default function Dashboard() {
                         code: prev.code || title.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase().slice(0, 20),
                       }));
                     }}
-                    placeholder="Contoh: The Ceramic Matcha Mug"
+                    placeholder="Contoh: Karpet Masjid Sultan Turki Grade A+"
                     className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -6116,7 +6155,7 @@ export default function Dashboard() {
                     required
                     value={productForm.price}
                     onChange={(e) => setProductForm((prev) => ({ ...prev, price: e.target.value }))}
-                    placeholder="Contoh: Rp 195.000"
+                    placeholder="Contoh: Rp 3.850.000"
                     className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
                   />
                 </div>
@@ -6125,22 +6164,22 @@ export default function Dashboard() {
               {/* Grid 2 Cols: Code & Variations */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Kode Produk</label>
+                  <label className="text-xs font-semibold text-slate-300">Kode SKU Produk</label>
                   <input
                     type="text"
                     value={productForm.code}
                     onChange={(e) => setProductForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                    placeholder="Contoh: MATCHA-MUG"
+                    placeholder="Contoh: MASJID-TURKI-A"
                     className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Pilihan Warna / Varian</label>
+                  <label className="text-xs font-semibold text-slate-300">Pilihan Warna & Ukuran</label>
                   <input
                     type="text"
                     value={productForm.footer}
                     onChange={(e) => setProductForm((prev) => ({ ...prev, footer: e.target.value }))}
-                    placeholder="Contoh: Tersedia Hijau Emerald, Merah Ruby, & Sapphire."
+                    placeholder="Contoh: Warna: Hijau Emerald & Merah Ruby. Ukuran: Roll 1.2m x 6m."
                     className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                   />
                 </div>

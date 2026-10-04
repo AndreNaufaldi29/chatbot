@@ -379,22 +379,121 @@ ${branch.maps_url || 'https://maps.google.com'}
 Silakan sampaikan jika Anda ingin melihat cabang lain atau membutuhkan jadwal survey gratis.`);
   }
 
-  getCatalogSelectionMenu() {
+  getCategories() {
     const config = this.getConfig();
+    return config.carpet_categories || [
+      { id: "kat-masjid", slug: "karpet-masjid", name: "Karpet Masjid & Musholla", icon: "🕌", description: "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi." },
+      { id: "kat-persia", slug: "karpet-persia", name: "Karpet Klasik & Permadani Persia", icon: "🏛️", description: "Permadani rajutan tangan autentik Persia & oriental klasik bermutu seni tinggi." },
+      { id: "kat-minimalis", slug: "karpet-minimalis", name: "Karpet Ruang Tamu Minimalis Modern", icon: "🛋️", description: "Karpet kontemporer konsep Skandinavia & modern aesthetic untuk hunian." },
+      { id: "kat-shaggy", slug: "karpet-shaggy", name: "Karpet Bulu & Shaggy Mewah", icon: "☁️", description: "Karpet bulu halus ekstra empuk dengan busa memory foam." },
+      { id: "kat-kantor", slug: "karpet-kantor", name: "Karpet Tile & Kantor Komersial", icon: "🏢", description: "Karpet modular tile heavy duty untuk perkantoran, hotel, dan ballroom." }
+    ];
+  }
+
+  getCategoryByIdOrName(identifier) {
+    if (!identifier) return null;
+    const clean = String(identifier).trim().toLowerCase();
+    const categories = this.getCategories();
+
+    // 1. By index: "1", "2", etc.
+    const num = parseInt(clean, 10);
+    if (!isNaN(num) && num >= 1 && num <= categories.length) {
+      return categories[num - 1];
+    }
+
+    // 2. By ID or Slug
+    const exact = categories.find(c => 
+      c.id.toLowerCase() === clean || 
+      (c.slug && c.slug.toLowerCase() === clean)
+    );
+    if (exact) return exact;
+
+    // 3. By Keywords
+    const keywordMatches = {
+      'masjid': 'kat-masjid',
+      'musholla': 'kat-masjid',
+      'mesjid': 'kat-masjid',
+      'turki': 'kat-masjid',
+      'turkey': 'kat-masjid',
+      'shaf': 'kat-masjid',
+      'persia': 'kat-persia',
+      'tabriz': 'kat-persia',
+      'permadani': 'kat-persia',
+      'oriental': 'kat-persia',
+      'klasik': 'kat-persia',
+      'minimalis': 'kat-minimalis',
+      'nordic': 'kat-minimalis',
+      'scandi': 'kat-minimalis',
+      'ruang tamu': 'kat-minimalis',
+      'modern': 'kat-minimalis',
+      'shaggy': 'kat-shaggy',
+      'bulu': 'kat-shaggy',
+      'fluffy': 'kat-shaggy',
+      'kelinci': 'kat-shaggy',
+      'kantor': 'kat-kantor',
+      'office': 'kat-kantor',
+      'tile': 'kat-kantor',
+      'hotel': 'kat-kantor',
+      'ballroom': 'kat-kantor',
+    };
+
+    for (const [kw, catId] of Object.entries(keywordMatches)) {
+      if (clean.includes(kw)) {
+        return categories.find(c => c.id === catId) || null;
+      }
+    }
+
+    // 4. By Name substring
+    return categories.find(c => c.name.toLowerCase().includes(clean)) || null;
+  }
+
+  getCatalogSelectionMenu(categoryIdentifier = null) {
+    const config = this.getConfig();
+    const categories = this.getCategories();
     const catalog = this.getCatalog();
 
-    let text = `KOLEKSI PRODUK ${config.business.name.toUpperCase()}\n`;
-    text += `${config.business.tagline}\n\n`;
-    text += `Berikut daftar koleksi karpet unggulan kami:\n\n`;
+    // If a category is requested, display products within that category
+    if (categoryIdentifier) {
+      const selectedCategory = this.getCategoryByIdOrName(categoryIdentifier);
+      if (selectedCategory) {
+        const productsInCategory = catalog.filter(p => {
+          const pCat = (p.category || '').toLowerCase();
+          return pCat.includes(selectedCategory.name.toLowerCase()) || 
+                 pCat.includes(selectedCategory.slug.toLowerCase()) ||
+                 selectedCategory.name.toLowerCase().includes(pCat);
+        });
 
-    catalog.forEach((item, idx) => {
-      text += `${idx + 1}. ${item.title}\n`;
-      text += `   Harga: ${item.price}\n`;
-      text += `   Spesifikasi: ${item.subtitle}\n`;
-      text += `   Varian: ${item.footer}\n\n`;
+        let text = `KOLEKSI ${selectedCategory.name.toUpperCase()}\n`;
+        text += `${selectedCategory.description}\n\n`;
+
+        if (productsInCategory.length === 0) {
+          text += `Belum ada produk terdaftar dalam kategori ini.\n\n`;
+        } else {
+          productsInCategory.forEach((item, idx) => {
+            text += `${idx + 1}. ${item.title}\n`;
+            text += `   Harga: ${item.price}\n`;
+            text += `   Spesifikasi: ${item.subtitle}\n`;
+            text += `   Varian: ${item.footer}\n\n`;
+          });
+        }
+
+        text += `Silakan balas dengan nomor atau nama produk untuk melihat foto dan spesifikasi lengkap, atau ketik KATALOG untuk kembali ke daftar kategori.`;
+        return stripStarsAndEmojis(text);
+      }
+    }
+
+    // Default: Display Category Options First
+    let text = `KATEGORI KOLEKSI KARPET SULTAN GALLERY\n`;
+    text += `${config.business.tagline}\n\n`;
+    text += `Silakan pilih kategori karpet yang Anda minati:\n\n`;
+
+    categories.forEach((cat, idx) => {
+      const count = catalog.filter(p => (p.category || '').toLowerCase().includes(cat.name.toLowerCase().slice(0, 7))).length;
+      text += `${idx + 1}. ${cat.name} (${count} Produk)\n`;
+      text += `   ${cat.description}\n\n`;
     });
 
-    text += `Silakan sebutkan nama produk atau nomor yang ingin Anda tanyakan lebih lengkap atau Anda pesan.`;
+    text += `Balas dengan nomor kategori (1-${categories.length}) atau sebutkan nama kategori karpet yang Anda cari untuk melihat koleksi produknya.`;
     return stripStarsAndEmojis(text);
   }
 
@@ -405,6 +504,7 @@ Silakan sampaikan jika Anda ingin melihat cabang lain atau membutuhkan jadwal su
 
 Produk Pilihan:
 ${product.title}
+Kategori: ${product.category || 'Koleksi Karpet Sultan'}
 Harga: ${product.price}
 Spesifikasi: ${product.subtitle}
 Varian / Ukuran: ${product.footer}

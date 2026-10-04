@@ -251,9 +251,47 @@
   "server": {
     "port": 3000
   },
+  "carpet_categories": [
+    {
+      "id": "kat-masjid",
+      "slug": "karpet-masjid",
+      "name": "Karpet Masjid & Musholla",
+      "icon": "🕌",
+      "description": "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi, empuk & nyaman untuk ibadah berjamaah."
+    },
+    {
+      "id": "kat-persia",
+      "slug": "karpet-persia",
+      "name": "Karpet Klasik & Permadani Persia",
+      "icon": "🏛️",
+      "description": "Koleksi permadani rajutan tangan autentik Persia & oriental klasik bermutu seni tinggi, benang sutra & wol."
+    },
+    {
+      "id": "kat-minimalis",
+      "slug": "karpet-minimalis",
+      "name": "Karpet Ruang Tamu Minimalis Modern",
+      "icon": "🛋️",
+      "description": "Karpet kontemporer konsep Skandinavia & modern aesthetic, anti-slip backing untuk ruang tamu & keluarga."
+    },
+    {
+      "id": "kat-shaggy",
+      "slug": "karpet-shaggy",
+      "name": "Karpet Bulu & Shaggy Mewah",
+      "icon": "☁️",
+      "description": "Karpet bulu halus ekstra empuk dengan busa memory foam untuk kamar tidur dan ruang santai keluarga."
+    },
+    {
+      "id": "kat-kantor",
+      "slug": "karpet-kantor",
+      "name": "Karpet Tile & Kantor Komersial",
+      "icon": "🏢",
+      "description": "Karpet modular tile 50x50cm heavy duty, tahan api & gesekan roda kursi untuk kantor, hotel, dan ballroom."
+    }
+  ],
   "catalog": [
     {
       "id": "1",
+      "category": "Karpet Masjid & Musholla",
       "code": "MASJID-TURKI-A",
       "title": "Karpet Masjid Sultan Turki Grade A+",
       "subtitle": "Tebal 14mm, benang Polypropylene Heatset ultra-soft, motif kubah mihrab gold rapi & empuk untuk sujud.",
@@ -265,6 +303,19 @@
     },
     {
       "id": "2",
+      "category": "Karpet Masjid & Musholla",
+      "code": "MASJID-MADINAH-16",
+      "title": "Karpet Masjid Madinah Royal Tebal 16mm",
+      "subtitle": "Grade super premium 16mm benang twist ganda anti-rontok, density 1.2 juta dot/m² standar masjid agung.",
+      "footer": "Warna: Hijau Tosca & Merah Marun. Ukuran: Roll 1.2m x 6m (custom sambung obras).",
+      "price": "Rp 4.650.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/karpet-masjid-madinah",
+      "image": "catalog/karpet-masjid-turki.jpg"
+    },
+    {
+      "id": "3",
+      "category": "Karpet Klasik & Permadani Persia",
       "code": "PERSIA-TABRIZ",
       "title": "Karpet Klasik Persia Royal Tabriz Sutra & Wol",
       "subtitle": "Rajutan tangan padat 1.5 juta knot, motif medali floral mewah warisan Persia kuno bernilai estetika tinggi.",
@@ -275,7 +326,20 @@
       "image": "catalog/karpet-persia-mewah.jpg"
     },
     {
-      "id": "3",
+      "id": "4",
+      "category": "Karpet Klasik & Permadani Persia",
+      "code": "PERSIA-ISFAHAN-SILK",
+      "title": "Permadani Persia Isfahan Masterpiece Silk Touch",
+      "subtitle": "Detail rajutan medali Shah Abbas megah dengan kilau benang sutra murni, rumbai kepang tangan eksklusif.",
+      "footer": "Warna: Antique Ivory, Ruby Wine & Persian Gold. Ukuran: 250 x 350 cm.",
+      "price": "Rp 9.800.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/permadani-persia-isfahan",
+      "image": "catalog/karpet-persia-mewah.jpg"
+    },
+    {
+      "id": "5",
+      "category": "Karpet Ruang Tamu Minimalis Modern",
       "code": "NORDIC-SCANDI",
       "title": "Karpet Minimalis Scandinavia Nordic Line",
       "subtitle": "Karpet ruang tamu modern minimalis bertekstur lembut, anti-slip backing, motif geometris kontemporer chic.",
@@ -286,7 +350,20 @@
       "image": "catalog/karpet-scandi-modern.jpg"
     },
     {
-      "id": "4",
+      "id": "6",
+      "category": "Karpet Ruang Tamu Minimalis Modern",
+      "code": "MODERN-MARBLE-GOLD",
+      "title": "Karpet Modern Luxury Abstract Marble Gold",
+      "subtitle": "Aksen corak marmer abstrak dengan garis metallic gold emboss, memberikan nuansa mewah elegan pada ruang tamu.",
+      "footer": "Warna: White Carrara Gold & Charcoal Slate Gold. Ukuran: 200 x 290 cm.",
+      "price": "Rp 1.850.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/karpet-marble-gold",
+      "image": "catalog/karpet-scandi-modern.jpg"
+    },
+    {
+      "id": "7",
+      "category": "Karpet Bulu & Shaggy Mewah",
       "code": "SHAGGY-CLOUD",
       "title": "Karpet Bulu Shaggy Fluffy Cloud Luxury",
       "subtitle": "Bulu shaggy tebal 5 cm sangat halus dan empuk, lapisan busa memory foam, nyaman untuk kamar tidur & ruang keluarga.",
@@ -297,7 +374,20 @@
       "image": "catalog/karpet-shaggy-bulu.jpg"
     },
     {
-      "id": "5",
+      "id": "8",
+      "category": "Karpet Bulu & Shaggy Mewah",
+      "code": "RABBIT-FUR-KOREA",
+      "title": "Karpet Bulu Kelinci Faux Fur Korea Super Soft",
+      "subtitle": "Sensasi sehalus bulu kelinci alami (100% cruelty-free microfiber), tebal padat, backing suede anti-selip.",
+      "footer": "Warna: Snow White, Dusty Pink & Cloud Grey. Ukuran: 160 x 210 cm.",
+      "price": "Rp 1.150.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/karpet-bulu-kelinci",
+      "image": "catalog/karpet-shaggy-bulu.jpg"
+    },
+    {
+      "id": "9",
+      "category": "Karpet Tile & Kantor Komersial",
       "code": "OFFICE-TILE-50",
       "title": "Karpet Tile Kantor Heavy Duty Commercial",
       "subtitle": "Modular tile 50x50 cm tahan gesekan roda kursi kerja, tahan noda, tahan api (fire retardant) & anti-statis.",
@@ -305,6 +395,18 @@
       "price": "Rp 975.000",
       "buttonText": "Lihat Koleksi ›",
       "url": "https://sultancarpet.co.id/products/karpet-tile-office",
+      "image": "catalog/karpet-kantor-tile.jpg"
+    },
+    {
+      "id": "10",
+      "category": "Karpet Tile & Kantor Komersial",
+      "code": "BROADLOOM-BALLROOM",
+      "title": "Karpet Roll Komersial Hotel & Ballroom Broadloom",
+      "subtitle": "Karpet roll lebar 4 meter bersertifikasi komersial heavy traffic, motif elegan untuk ballroom, koridor, dan ruang rapat.",
+      "footer": "Warna: Patterned Gold & Deep Burgundy. Lebar: 4 meter (pembelian roll).",
+      "price": "Rp 320.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://sultancarpet.co.id/products/karpet-broadloom-hotel",
       "image": "catalog/karpet-kantor-tile.jpg"
     }
   ],
