@@ -548,16 +548,16 @@ setInterval(() => {
   }
 }, 30000);
 
-// Send Custom WhatsApp Message (Supports direct web reply to JID / LID and phone)
+// Send Custom WhatsApp Message (Supports direct web reply to JID / LID, phone, and optional images)
 app.post('/api/send', async (req, res) => {
-  const { jid, phone, message, senderName, clientMessageId } = req.body;
+  const { jid, phone, message, senderName, clientMessageId, image, imageBase64, imagePath } = req.body;
   const target = jid || phone;
-  if (!target || !message) {
-    return res.status(400).json({ error: 'Tujuan pengiriman (JID atau nomor telepon) dan pesan wajib diisi.' });
+  if (!target || (!message && !image && !imageBase64)) {
+    return res.status(400).json({ error: 'Tujuan pengiriman (JID atau nomor telepon) dan pesan/gambar wajib diisi.' });
   }
 
   // Deduplication check: ignore identical message to the same target within 4 seconds
-  const dedupKey = `${target}_${String(message).trim()}`;
+  const dedupKey = `${target}_${String(message || image || '').trim()}`;
   const now = Date.now();
   const lastSent = recentSends.get(dedupKey);
   if (lastSent && now - lastSent < 4000) {
@@ -572,7 +572,8 @@ app.post('/api/send', async (req, res) => {
       message,
       senderName || 'Admin (Balasan Web)',
       phone,
-      clientMessageId
+      clientMessageId,
+      { image, imageBase64, imagePath }
     );
     res.json({ success: true, result });
   } catch (err) {

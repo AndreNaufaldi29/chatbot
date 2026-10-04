@@ -43,15 +43,109 @@ class MenuHandler {
 
   getCatalogItem(identifier) {
     if (!identifier) return null;
-    const clean = String(identifier).trim().toLowerCase();
+    let clean = String(identifier).trim().toLowerCase();
     const catalog = this.getCatalog();
+    if (!catalog || catalog.length === 0) return null;
 
-    return catalog.find((item, idx) => 
+    // 1. Direct ID, Index, or exact Code match
+    const direct = catalog.find((item, idx) => 
       String(item.id).toLowerCase() === clean ||
       String(idx + 1) === clean ||
-      String(item.code || '').toLowerCase() === clean ||
-      item.title.toLowerCase().includes(clean)
-    ) || null;
+      String(item.code || '').toLowerCase() === clean
+    );
+    if (direct) return direct;
+
+    // 2. Clean out common prefix/filler words:
+    // e.g. "foto no 1", "lihat nomor 2", "katalog 3", "karpet persia", "gambar karpet masjid"
+    clean = clean
+      .replace(/^(foto|gambar|gambarnya|fotonya|poto|potonya|lihat|liat|spill|detail|katalog|produk|koleksi|nomor|no\.?|ke)\s+/gi, '')
+      .replace(/\b(nomor|no\.?|ke)\s+/gi, '')
+      .trim();
+
+    // Re-check direct ID / index after stripping prefixes (e.g. "foto no 1" -> "1")
+    const afterPrefix = catalog.find((item, idx) => 
+      String(item.id).toLowerCase() === clean ||
+      String(idx + 1) === clean ||
+      String(item.code || '').toLowerCase() === clean
+    );
+    if (afterPrefix) return afterPrefix;
+
+    // 3. Keyword / Weighted matching against catalog items
+    const rawLower = String(identifier).toLowerCase();
+    let bestItem = null;
+    let highestScore = 0;
+
+    const distinctiveKeywords = {
+      'masjid': 12,
+      'turki': 12,
+      'turkey': 12,
+      'mihrab': 10,
+      'kubah': 8,
+      'shaf': 8,
+      'musholla': 12,
+      'mesjid': 12,
+      'persia': 12,
+      'tabriz': 12,
+      'sutra': 8,
+      'klasik': 8,
+      'nordic': 12,
+      'scandi': 12,
+      'scandinavia': 12,
+      'shaggy': 12,
+      'fluffy': 10,
+      'bulu': 8,
+      'kantor': 12,
+      'office': 12,
+      'tile': 12
+    };
+
+    for (const item of catalog) {
+      let score = 0;
+      const code = (item.code || '').toLowerCase();
+      const title = item.title.toLowerCase();
+      const subtitle = (item.subtitle || '').toLowerCase();
+
+      // Check number reference in raw text: e.g. "no 1", "nomor 2", "produk 3"
+      const numMatch = rawLower.match(/\b(?:no\.?|nomor|ke|produk|pilihan)\s*([1-9])\b/);
+      if (numMatch && String(item.id) === numMatch[1]) {
+        score += 30;
+      }
+      if (new RegExp(`\\b${item.id}\\b`).test(rawLower) && !rawLower.includes('http')) {
+        score += 15;
+      }
+
+      // Check exact code in text
+      if (code && rawLower.includes(code)) {
+        score += 25;
+      }
+
+      // Check distinctive keywords
+      for (const [kw, pts] of Object.entries(distinctiveKeywords)) {
+        if (rawLower.includes(kw) && (title.includes(kw) || subtitle.includes(kw) || code.includes(kw))) {
+          score += pts;
+        }
+      }
+
+      // Check title significant words (excluding generic words)
+      const stopWords = new Set(['karpet', 'sultan', 'gallery', 'grade', 'koleksi', 'produk', 'mewah', 'dan', 'yang', 'untuk', 'dengan']);
+      const titleWords = title.split(/\s+/).filter(w => w.length > 3 && !stopWords.has(w));
+      for (const word of titleWords) {
+        if (rawLower.includes(word)) {
+          score += 5;
+        }
+      }
+
+      if (score > highestScore) {
+        highestScore = score;
+        bestItem = item;
+      }
+    }
+
+    if (highestScore >= 5) {
+      return bestItem;
+    }
+
+    return null;
   }
 
   getBranches() {

@@ -462,7 +462,7 @@ class WhatsAppBot extends EventEmitter {
     };
   }
 
-  async sendCustomMessage(target, text, senderName = 'Admin (Balasan Web)', explicitPhone = null, customMessageId = null) {
+  async sendCustomMessage(target, text, senderName = 'Admin (Balasan Web)', explicitPhone = null, customMessageId = null, options = {}) {
     if (!this.sock || this.status !== 'connected') {
       throw new Error('Bot belum terhubung ke WhatsApp.');
     }
@@ -493,10 +493,41 @@ class WhatsAppBot extends EventEmitter {
 
     console.log(`[WhatsAppBot] Mengirim pesan web ke ${jid} (Phone: ${resolvedPhone || 'LID'}): "${text}"`);
 
+    // Prepare message payload (text or image)
+    let messagePayload = { text: text || '' };
+    let hasImage = false;
+    let imageLog = null;
+
+    if (options.image || options.imageBase64) {
+      let imageBuffer = null;
+      if (options.imageBase64 && typeof options.imageBase64 === 'string') {
+        const matches = options.imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        const b64 = matches ? matches[2] : options.imageBase64;
+        imageBuffer = Buffer.from(b64, 'base64');
+      } else if (Buffer.isBuffer(options.image)) {
+        imageBuffer = options.image;
+      } else if (typeof options.image === 'string') {
+        if (options.image.startsWith('http://') || options.image.startsWith('https://')) {
+          messagePayload = { image: { url: options.image }, caption: text || '', mimetype: 'image/jpeg' };
+          hasImage = true;
+          imageLog = options.image;
+        } else if (fs.existsSync(options.image)) {
+          imageBuffer = fs.readFileSync(options.image);
+          imageLog = options.image;
+        }
+      }
+
+      if (imageBuffer) {
+        messagePayload = { image: imageBuffer, caption: text || '', mimetype: 'image/jpeg' };
+        hasImage = true;
+        imageLog = options.imagePath || imageLog || 'custom_upload.jpg';
+      }
+    }
+
     // 🛡️ Global rate limit wait & send with retry limit
     await protectionService.waitForGlobalRateLimit();
     await protectionService.withRetry(async () => {
-      return await this.sock.sendMessage(jid, { text });
+      return await this.sock.sendMessage(jid, messagePayload);
     }, {
       maxRetries: 2,
       baseDelayMs: 1000,
@@ -512,13 +543,16 @@ class WhatsAppBot extends EventEmitter {
       jid,
       phone: resolvedPhone,
       senderName,
-      text,
+      text: text || (hasImage ? '[Foto Terkirim]' : ''),
+      mediaType: hasImage ? 'image' : 'text',
+      image: imageLog,
       isAi: false,
       timestamp: new Date().toISOString()
     };
 
     // Emit to live log & web dashboard
     this.emit('chat_log', logData);
+    dbService.saveChatMessage(logData).catch(() => {});
 
     return { success: true, jid, phone: resolvedPhone, message: logData };
   }

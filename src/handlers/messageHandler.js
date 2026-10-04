@@ -506,6 +506,7 @@ class MessageHandler {
   async handleSelectProductState(sock, jid, text, originalMsg) {
     const textTrim = text.trim();
     const textLower = textTrim.toLowerCase();
+    const session = sessionManager.getSession(jid);
 
     if (['0', 'menu', 'batal', 'kembali'].includes(textLower)) {
       sessionManager.resetSession(jid);
@@ -513,18 +514,23 @@ class MessageHandler {
       return;
     }
 
-    let productId = textTrim;
-    if (textLower.startsWith('katalog ') || textLower.startsWith('produk ')) {
-      productId = textLower.replace(/^(katalog|produk)\s+/i, '').trim();
+    // Check if user is confirming or asking for photo of a pending product from previous discussion
+    if (session.data?.pendingDetailProduct && /^(foto|detail|fotonya|gambar|gambarnya|poto|potonya|mau|kirim|ok|oke|ya|boleh)$/i.test(textTrim)) {
+      const prod = session.data.pendingDetailProduct;
+      delete session.data.pendingDetailProduct;
+      sessionManager.setState(jid, 'IDLE');
+      await this.sendCatalogCard(sock, jid, prod, originalMsg);
+      return;
     }
 
-    const product = menuHandler.getCatalogItem(productId);
+    const product = menuHandler.getCatalogItem(textTrim);
     if (product) {
-      sessionManager.setState(jid, 'CONFIRM_PRODUCT', { selectedProduct: product });
-      const reply = menuHandler.getProductConfirmationMessage(product);
-      await this.sendReply(sock, jid, reply, originalMsg);
+      // User memilih produk dari katalog: langsung kirim foto fisik & detail spesifikasi
+      sessionManager.setState(jid, 'IDLE');
+      await this.sendCatalogCard(sock, jid, product, originalMsg);
+      return;
     } else {
-      const reply = 'Pilihan produk tidak ditemukan. Silakan pilih nomor produk berikut:\n\n' + menuHandler.getCatalogSelectionMenu();
+      const reply = 'Pilihan produk tidak ditemukan. Silakan sebutkan nomor atau nama koleksi karpet berikut:\n\n' + menuHandler.getCatalogSelectionMenu();
       await this.sendReply(sock, jid, reply, originalMsg);
     }
   }
@@ -568,7 +574,12 @@ class MessageHandler {
       textLower === 'detail' ||
       textLower.includes('foto') ||
       textLower.includes('gambar') ||
-      textLower.includes('detail')
+      textLower.includes('detail') ||
+      textLower.includes('poto') ||
+      textLower.includes('liat') ||
+      textLower.includes('lihat') ||
+      textLower.includes('spill') ||
+      textLower.includes('pic')
     ) {
       sessionManager.setState(jid, 'IDLE');
       await this.sendCatalogCard(sock, jid, product, originalMsg);
@@ -633,8 +644,9 @@ class MessageHandler {
     const pendingProduct = session.data?.pendingDetailProduct;
 
     const isDetailConfirmation = 
-      /^(foto|detail|fotonya|gambar|spill|lihat|pic|pict|mau|ya|boleh|kirim|ok|oke|ya mau|mau foto|minta foto|kirim foto|lihat foto)$/i.test(textTrim) ||
-      /\b(foto|detail|fotonya|gambar|spill|lihat foto|minta foto|kirim foto)\b/i.test(textLower);
+      /^(foto|detail|fotonya|gambar|gambarnya|poto|potonya|spill|lihat|liat|pic|pict|mau|ya|boleh|kirim|ok|oke|siap|tentu|coba|iya|ya mau|mau foto|minta foto|kirim foto|lihat foto|liat foto|kirim fotonya|kirim gambar|kirim gambarnya|mau dong|kirim dong|boleh dong|iya mau|iya boleh|mana fotonya|mana gambarnya|gambarnya mana|fotonya mana)$/i.test(textTrim) ||
+      /\b(foto|fotonya|gambar|gambarnya|poto|potonya|spill|pic|pict|detail)\b/i.test(textLower) ||
+      (/\b(mau|lihat|liat|kirim|tampilkan|spill)\b/i.test(textLower) && /\b(foto|gambar|poto|pic|fotonya|gambarnya)\b/i.test(textLower));
 
     // CASE 1: User confirms photo/detail for a previously offered/discussed product
     if (pendingProduct && isDetailConfirmation) {
@@ -645,17 +657,11 @@ class MessageHandler {
     }
 
     // CASE 2: User explicitly mentions a specific product name AND requests photo/detail
-    const isAskingPhoto = /\b(foto|gambar|pic|pict|lihat|spill|detail|fotonya)\b/i.test(textLower);
+    const isAskingPhoto = /\b(foto|fotonya|gambar|gambarnya|poto|potonya|pic|pict|spill)\b/i.test(textLower) ||
+      (/\b(lihat|liat|minta|kirim|ada|mau)\b/i.test(textLower) && /\b(foto|gambar|poto|pic|fotonya|gambarnya|produk|katalog)\b/i.test(textLower));
+
     if (isAskingPhoto) {
-      let matchedItem = null;
-      for (const item of catalog) {
-        const code = (item.code || '').toLowerCase();
-        const titleWords = item.title.toLowerCase().split(' ').filter(w => w.length > 3);
-        if ((code && textLower.includes(code)) || titleWords.some(w => textLower.includes(w))) {
-          matchedItem = item;
-          break;
-        }
-      }
+      const matchedItem = menuHandler.getCatalogItem(textLower);
 
       if (matchedItem) {
         delete session.data.pendingDetailProduct;
@@ -666,7 +672,7 @@ class MessageHandler {
       // If user asks for photos in general without specifying a product:
       // DO NOT blast photos! Ask user to select or confirm which product first (1 message).
       sessionManager.setState(jid, 'SELECT_PRODUCT');
-      const askMsg = `Kami menyediakan beragam koleksi karpet berkualitas tinggi. Silakan sebutkan jenis karpet yang ingin Kakak lihat foto dan spesifikasi detailnya:\n\n` +
+      const askMsg = `Kami menyediakan beragam koleksi karpet berkualitas tinggi. Silakan sebutkan nomor atau jenis karpet yang ingin Kakak lihat foto dan spesifikasi detailnya:\n\n` +
         menuHandler.getCatalogSelectionMenu();
       await this.sendReply(sock, jid, askMsg, originalMsg);
       return;
@@ -746,39 +752,60 @@ class MessageHandler {
 
         const aiReply = await aiService.generateReply(jid, aiPrompt, senderName);
         if (aiReply) {
+          // Detect if AI output contains [KIRIM_FOTO: KODE_PRODUK]
+          const photoTagMatch = aiReply.match(/\[KIRIM_FOTO:\s*([^\]]+)\]/i);
+          let photoProduct = null;
+          if (photoTagMatch) {
+            photoProduct = menuHandler.getCatalogItem(photoTagMatch[1].trim());
+          }
+
+          // Check if customer explicitly requested photo in current turn
+          const customerRequestedPhoto = /\b(foto|fotonya|gambar|gambarnya|poto|potonya|pic|pict|spill)\b/i.test(textLower) ||
+            (/\b(lihat|liat|minta|kirim|mau)\b/i.test(textLower) && /\b(foto|gambar|poto|pic|fotonya|gambarnya)\b/i.test(textLower));
+
           // Detect if any specific product is mentioned or recommended
-          let matchedProduct = null;
-          for (const item of catalog) {
-            const code = (item.code || '').toLowerCase();
-            const titleWords = item.title.toLowerCase().split(' ').filter(w => w.length > 3);
-            if (
-              (code && (textLower.includes(code) || aiReply.toLowerCase().includes(code))) ||
-              titleWords.some(w => textLower.includes(w) || aiReply.toLowerCase().includes(w))
-            ) {
-              matchedProduct = item;
-              break;
-            }
-          }
+          let matchedProduct = photoProduct || menuHandler.getCatalogItem(textLower);
 
-          // If no specific product matched but question is about carpets/masjid/kantor, select appropriate candidate
           if (!matchedProduct) {
-            if (textLower.includes('masjid')) {
-              matchedProduct = catalog.find(c => (c.category || '').toLowerCase().includes('masjid') || c.title.toLowerCase().includes('masjid')) || catalog[0];
-            } else if (textLower.includes('kantor')) {
-              matchedProduct = catalog.find(c => (c.category || '').toLowerCase().includes('kantor') || c.title.toLowerCase().includes('kantor')) || catalog[0];
-            } else if (textLower.includes('rekomendasi') || textLower.includes('koleksi') || textLower.includes('karpet') || textLower.includes('harga')) {
-              matchedProduct = catalog[0];
+            for (const item of catalog) {
+              const code = (item.code || '').toLowerCase();
+              if (code && (textLower.includes(code) || aiReply.toLowerCase().includes(code))) {
+                matchedProduct = item;
+                break;
+              }
             }
           }
 
-          // Save pendingDetailProduct in session so user can confirm with "FOTO" or "DETAIL"
-          if (matchedProduct) {
-            session.data.pendingDetailProduct = matchedProduct;
+          if (!matchedProduct) {
+            if (textLower.includes('masjid') || aiReply.toLowerCase().includes('masjid')) {
+              matchedProduct = catalog.find(c => (c.code || '').includes('MASJID') || c.title.toLowerCase().includes('masjid')) || catalog[0];
+            } else if (textLower.includes('kantor') || aiReply.toLowerCase().includes('kantor')) {
+              matchedProduct = catalog.find(c => (c.code || '').includes('OFFICE') || c.title.toLowerCase().includes('kantor')) || catalog[0];
+            } else if (textLower.includes('persia') || aiReply.toLowerCase().includes('persia')) {
+              matchedProduct = catalog.find(c => (c.code || '').includes('PERSIA') || c.title.toLowerCase().includes('persia')) || catalog[0];
+            } else if (textLower.includes('nordic') || textLower.includes('scandi') || aiReply.toLowerCase().includes('nordic')) {
+              matchedProduct = catalog.find(c => (c.code || '').includes('NORDIC') || c.title.toLowerCase().includes('nordic')) || catalog[0];
+            } else if (textLower.includes('shaggy') || textLower.includes('bulu') || aiReply.toLowerCase().includes('shaggy')) {
+              matchedProduct = catalog.find(c => (c.code || '').includes('SHAGGY') || c.title.toLowerCase().includes('shaggy')) || catalog[0];
+            }
           }
 
           // Clean up reply: strip [KIRIM_FOTO: ...] tags
           let cleanReply = aiReply.replace(/\[KIRIM_FOTO:[^\]]+\]/gi, '').trim();
           cleanReply = stripStarsAndEmojis(cleanReply);
+
+          // If AI explicitly requested to send photo OR customer explicitly requested photo and product is identified:
+          if (photoProduct || (customerRequestedPhoto && matchedProduct)) {
+            const productToSend = photoProduct || matchedProduct;
+            delete session.data.pendingDetailProduct;
+            await this.sendCatalogCard(sock, jid, productToSend, originalMsg, cleanReply);
+            return;
+          }
+
+          // General product discussion: save pendingDetailProduct in session so user can confirm with "FOTO" or "DETAIL"
+          if (matchedProduct) {
+            session.data.pendingDetailProduct = matchedProduct;
+          }
 
           // Append confirmation prompt if product is discussed and confirmation hint is missing
           if (matchedProduct && !cleanReply.toLowerCase().includes('foto') && !cleanReply.toLowerCase().includes('detail')) {
@@ -931,9 +958,18 @@ class MessageHandler {
       // 4. Simulasi Mengetik Alami ('composing')
       await protectionService.simulateTypingPresence(sock, jid, textContent.length);
 
-      // 5. Kirim via Baileys dengan Retry Limit & Exponential Backoff
+      // 5. Kirim via Baileys dengan Retry Limit & Exponential Backoff + Unquoted Fallback
       const result = await protectionService.withRetry(async () => {
-        return await sock.sendMessage(jid, messagePayload, { quoted: originalMsg });
+        try {
+          return await sock.sendMessage(jid, messagePayload, originalMsg ? { quoted: originalMsg } : {});
+        } catch (sendErr) {
+          // Jika pengiriman dengan quoted pesan error (misal format stanza lama tidak valid), coba kirim langsung tanpa quoted
+          if (originalMsg) {
+            console.warn(`[Protection:QuotedRetry] Gagal kirim dengan quoted (${sendErr.message}), mencoba kirim langsung tanpa quoted...`);
+            return await sock.sendMessage(jid, messagePayload);
+          }
+          throw sendErr;
+        }
       }, {
         maxRetries: 2,
         baseDelayMs: 1000,
@@ -1001,34 +1037,69 @@ class MessageHandler {
     await this.sendReply(sock, jid, selectionMenu, originalMsg);
   }
 
-  async sendCatalogCard(sock, jid, product, originalMsg) {
-    let imageFullPath = null;
-    const candidates = [
-      product.image,
-      product.image ? path.join(__dirname, '../../', product.image) : null,
-      product.image ? path.join(__dirname, '../../assets/', product.image.replace(/^assets[\\/]/, '')) : null,
-      product.image ? path.join(__dirname, '../../public/', product.image.replace(/^public[\\/]/, '')) : null,
-      path.join(__dirname, '../../assets/catalog/karpet-masjid-turki.jpg')
-    ];
+  async sendCatalogCard(sock, jid, product, originalMsg, customCaption = null) {
+    if (!product) return;
 
-    for (const cand of candidates) {
-      if (cand && fs.existsSync(cand) && fs.statSync(cand).isFile()) {
-        imageFullPath = cand;
-        break;
+    let imagePayload = null;
+    let localImagePath = null;
+
+    // 1. Check if product.image is a remote URL (http:// or https://)
+    if (product.image && (product.image.startsWith('http://') || product.image.startsWith('https://'))) {
+      imagePayload = { url: product.image };
+    } else {
+      // 2. Resolve local file path across known assets/catalog directories
+      const baseName = product.image ? path.basename(product.image) : '';
+      const candidates = [
+        product.image,
+        product.image ? path.resolve(__dirname, '../../', product.image) : null,
+        product.image ? path.resolve(__dirname, '../../assets/', product.image.replace(/^assets[\\/]/, '')) : null,
+        product.image ? path.resolve(__dirname, '../../public/', product.image.replace(/^public[\\/]/, '')) : null,
+        baseName ? path.resolve(__dirname, '../../assets/catalog/', baseName) : null,
+        baseName ? path.resolve(__dirname, '../../public/catalog/', baseName) : null,
+        path.resolve(__dirname, '../../assets/catalog/karpet-masjid-turki.jpg')
+      ];
+
+      for (const cand of candidates) {
+        if (cand && fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+          localImagePath = cand;
+          break;
+        }
+      }
+
+      if (localImagePath) {
+        try {
+          imagePayload = fs.readFileSync(localImagePath);
+        } catch (e) {
+          console.warn('[sendCatalogCard] Gagal membaca file gambar lokal:', e.message);
+        }
       }
     }
 
-    const hasLocalImage = imageFullPath !== null;
-    const caption = stripStarsAndEmojis(`${product.title.toUpperCase()}\n` +
-      `${product.subtitle}\n\n` +
-      `Varian: ${product.footer}\n` +
-      `Harga: ${product.price}\n\n` +
-      `Detail Koleksi: ${product.url || 'https://sultancarpet.co.id'}\n` +
-      `───────────────────\n` +
-      `Bila Anda ingin memesan ${product.title} atau survey gratis, silakan beri tahu kami.`);
+    const hasImage = Boolean(imagePayload);
 
-    const messagePayload = hasLocalImage
-      ? { image: fs.readFileSync(imageFullPath), caption }
+    let caption;
+    if (customCaption) {
+      caption = stripStarsAndEmojis(
+        `${customCaption}\n\n` +
+        `Koleksi: ${product.title}\n` +
+        `Harga: ${product.price}\n` +
+        `Spesifikasi: ${product.subtitle}\n` +
+        `Varian: ${product.footer}`
+      );
+    } else {
+      caption = stripStarsAndEmojis(
+        `${product.title.toUpperCase()}\n` +
+        `${product.subtitle}\n\n` +
+        `Varian: ${product.footer}\n` +
+        `Harga: ${product.price}\n\n` +
+        `Detail Koleksi: ${product.url || 'https://sultancarpet.co.id'}\n` +
+        `───────────────────\n` +
+        `Bila Anda ingin memesan ${product.title} atau survey gratis, silakan beri tahu kami.`
+      );
+    }
+
+    const messagePayload = hasImage
+      ? { image: imagePayload, caption, mimetype: 'image/jpeg' }
       : { text: caption };
 
     await this.safeSendMessage(
@@ -1040,7 +1111,7 @@ class MessageHandler {
         id: `out_cat_${Date.now()}`,
         senderName: 'Sultan Carpet Bot',
         image: product.image,
-        mediaType: hasLocalImage ? 'image' : 'text'
+        mediaType: hasImage ? 'image' : 'text'
       }
     );
   }
