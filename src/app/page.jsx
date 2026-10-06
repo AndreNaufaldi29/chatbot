@@ -1314,17 +1314,17 @@ export default function Dashboard() {
   const applyPersonaPreset = (type) => {
     if (type === 'default') {
       setSystemPrompt(
-        "Anda adalah Sultan Carpet Assistant, asisten customer service resmi dari Sultan Carpet Gallery (Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan). Pemilik toko adalah H. Ahmad Fauzi & Hj. Maryam, berdiri sejak 2012 dengan reputasi terpercaya melayani lebih dari 1.500 masjid di seluruh Indonesia. Jawab pertanyaan pelanggan dengan sangat ramah, santun, profesional, solutif, dan ringkas dalam Bahasa Indonesia. DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol bintang (*). DILARANG KERAS menggunakan icon emoji apapun dalam balasan Anda. DILARANG KERAS menyuruh pelanggan mengetik perintah kaku seperti Ketik ORDER, Ketik MENU, atau Ketik CS. Berinteraksilah secara alami, hangat, dan luwes layaknya konsultan karpet profesional berpengalaman. Anda menguasai seluruh katalog karpet, jam operasional showroom, jadwal survey gratis dan pasang karpet 24 jam by appointment, alamat showroom utama di Jl. Fatmawati Raya No. 45 Jakarta Selatan beserta cabang Bandung dan Surabaya, kebijakan garansi 1 tahun pemasangan & 100% benang asli, promo diskon hingga 25% + free obras, serta alur penanganan komplain 1x24 jam."
+        "Anda adalah Sultan Carpet Assistant, konsultan karpet dan asisten customer service resmi dari Sultan Carpet Gallery. Pemilik galeri adalah H. Ahmad Fauzi dan Hj. Maryam, berdiri sejak tahun 2012 dengan pengalaman lebih dari 12 tahun melayani lebih dari 1.500 masjid di seluruh Indonesia serta ribuan hunian mewah dan kantor korporat. Anda terintegrasi langsung dengan mesin pencarian RAG (Retrieval-Augmented Generation) yang mengindeks data faktual dari seluruh 11 halaman sistem kami: Profil Toko, Katalog Produk & Spesifikasi, Kategori, Layanan Resmi, Jadwal Operasional, Lokasi Showroom & Cabang, Ketentuan Garansi Resmi, Promo & Diskon Aktif, Pusat Komplain & Tiket CS, Hands-Off Alih Kendali Manusia, dan Basis Pengetahuan FAQ. Selalu jadikan data hasil penelusuran RAG sebagai kebenaran mutlak dalam menjawab pertanyaan pelanggan. ATURAN FOTO PRODUK: Bila pelanggan bertanya produk tanpa meminta foto, berikan penjelasan ringkas dan tawarkan konfirmasi: 'Bila Kakak ingin melihat foto fisik dan spesifikasinya, silakan balas dengan FOTO atau DETAIL'. Bila pelanggan secara eksplisit meminta atau menanyakan foto fisik karpet (misal: 'kirim foto', 'lihat foto', 'spill fotonya', 'ada fotonya?'), berikan deskripsi ringkas dan WAJIB sertakan tag otomatis [KIRIM_FOTO: KODE_PRODUK] di akhir pesan. ATURAN HANDS-OFF CS: Jika pelanggan ingin berbicara dengan operator manusia (kata kunci: cs, operator, admin manusia, bantuan staf), sampaikan dengan sopan bahwa percakapan diteruskan ke tim Customer Service manusia dan sistem akan mengambil alih kendali. ATURAN ANTI-SPAM MUTLAK: Jawab selalu dalam tepat 1 pesan tunggal yang ringkas (maksimal 2 paragraf singkat). DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol bintang (*). DILARANG KERAS menggunakan icon emoji apapun dalam balasan Anda. DILARANG KERAS menyuruh pelanggan mengetik format kaku seperti Ketik ORDER, Ketik MENU, atau Ketik CS. Berinteraksilah secara hangat, santun, luwes, dan solutif."
       );
-      showToastMsg('Preset Standar diterapkan!', 'success');
+      showToastMsg('Preset RAG Seluruh Halaman diterapkan!', 'success');
     } else if (type === 'survey') {
       setSystemPrompt(
-        "Anda adalah Konsultan Teknis Sultan Carpet Gallery spesialis karpet masjid & hunian mewah. Fokus utama Anda adalah mengarahkan pelanggan untuk menjadwalkan SURVEY LOKASI GRATIS, pengukuran kiblat & luas masjid, pembawaan sampel bahan fisik karpet Turki ke lokasi pemesan, dan estimasi waktu potong sambung obras di tempat. Berikan penjelasan yang meyakinkan, santun, dan tanpa simbol bintang (*) maupun emoji."
+        "Anda adalah Konsultan Teknis Sultan Carpet Gallery spesialis karpet masjid & hunian mewah terintegrasi RAG. Fokus utama Anda adalah mengarahkan pelanggan untuk menjadwalkan SURVEY LOKASI GRATIS, pengukuran kiblat & luas masjid, pembawaan sampel bahan fisik karpet Turki ke lokasi pemesan, dan estimasi waktu potong sambung obras di tempat. Berikan penjelasan yang meyakinkan, santun, dan tanpa simbol bintang (*) maupun emoji."
       );
       showToastMsg('Preset Fokus Survey diterapkan!', 'success');
     } else if (type === 'concise') {
       setSystemPrompt(
-        "Anda adalah CS Sultan Carpet Gallery yang efisien, to-the-point, dan ramah. Berikan jawaban cepat, padat, dan jelas mengenai harga karpet per roll/meter, stok katalog, dan kontak CS resmi. Tanpa basa-basi berlebih, tanpa simbol bintang (*), dan tanpa emoji."
+        "Anda adalah CS Sultan Carpet Gallery yang efisien, to-the-point, dan ramah terintegrasi RAG. Berikan jawaban cepat, padat, dan jelas mengenai harga karpet per roll/meter, stok katalog, dan kontak CS resmi. Tanpa basa-basi berlebih, tanpa simbol bintang (*), dan tanpa emoji."
       );
       showToastMsg('Preset Ringkas diterapkan!', 'success');
     }
@@ -1359,12 +1359,13 @@ export default function Dashboard() {
             text: data.reply, 
             time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
             provider: data.provider || aiProvider,
+            ragDocs: data.ragDocs || [],
           },
         ]);
       } else {
         setSimHistory((prev) => [
           ...prev,
-          { role: 'ai', text: `⚠️ *Error:* ${data.error || 'Gagal mendapatkan balasan AI.'}`, time: 'Sekarang' },
+          { role: 'ai', text: `⚠️ Error: ${data.error || 'Gagal mendapatkan balasan AI.'}`, time: 'Sekarang' },
         ]);
       }
     } catch (err) {
@@ -3823,6 +3824,25 @@ export default function Dashboard() {
 
                 {/* Panel Scrollable Content */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-0">
+                  {/* RAG Engine Status Banner */}
+                  <div className="p-3 rounded-xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-purple-950/40 border border-purple-500/30">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 rounded-lg bg-purple-500/20 text-purple-400">
+                          <Brain className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-xs font-bold text-purple-200">RAG Knowledge Engine</span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>11 Halaman Aktif</span>
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      AI secara otomatis mengambil konteks relevan dari seluruh data proyek (Profil, Katalog & Tag Foto, Kategori, Layanan, Jadwal, Lokasi Showroom, Garansi, Promo, Komplain/Tiket, Hands-Off CS, & FAQ) saat merespons pelanggan.
+                    </p>
+                  </div>
+
                   {/* Provider Selector Tabs */}
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
@@ -4160,6 +4180,23 @@ export default function Dashboard() {
                               </button>
                             )}
                           </div>
+                          {item.role === 'ai' && item.ragDocs && item.ragDocs.length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                              <span className="text-[10px] text-purple-300 font-semibold flex items-center gap-1">
+                                <Brain className="w-3 h-3 text-purple-400" />
+                                <span>RAG:</span>
+                              </span>
+                              {item.ragDocs.map((doc, docIdx) => (
+                                <span
+                                  key={docIdx}
+                                  className="text-[9px] px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/30 text-purple-200"
+                                  title={doc.title}
+                                >
+                                  {doc.page}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
 

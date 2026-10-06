@@ -13,6 +13,7 @@ const prisma = require('../db/prisma');
 const dbService = require('../services/dbService');
 const protectionService = require('../services/protectionService');
 const sessionManager = require('../services/sessionManager');
+const ragService = require('../services/ragService');
 
 const app = express();
 app.use(cors());
@@ -887,9 +888,32 @@ app.post('/api/ai/simulate', async (req, res) => {
         error: `AI ${chosenProvider.toUpperCase()} tidak menghasilkan balasan. Pastikan API Key telah diisi dengan benar di Pengaturan atau file .env.` 
       });
     }
-    res.json({ success: true, reply, provider: chosenProvider });
+
+    const ragDocs = ragService.search(message, 3);
+    res.json({ success: true, reply, provider: chosenProvider, ragDocs });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// RAG Status & Retrieval Endpoints for AI Studio
+app.get('/api/rag/status', (req, res) => {
+  try {
+    const status = ragService.getStatus();
+    res.json({ success: true, ...status });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/rag/search', (req, res) => {
+  try {
+    const { query, topK } = req.body;
+    const results = ragService.search(query || '', topK || 4);
+    const context = ragService.retrieveContext(query || '', topK || 4);
+    res.json({ success: true, results, context });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -906,7 +930,8 @@ app.post('/api/gemini/simulate', async (req, res) => {
         error: 'AI tidak menghasilkan balasan. Pastikan API Key telah diisi dengan benar di Pengaturan atau file .env.' 
       });
     }
-    res.json({ success: true, reply, provider: aiService.getActiveProvider() });
+    const ragDocs = ragService.search(message, 3);
+    res.json({ success: true, reply, provider: aiService.getActiveProvider(), ragDocs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

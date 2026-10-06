@@ -636,7 +636,11 @@ function initAiStudioForm() {
         const data = await res.json();
 
         if (res.ok && data.reply) {
-          thinkingBubble.innerHTML = `<strong>AI Customer Service (${data.provider || currentAiProvider}):</strong><p>${formatWhatsAppText(data.reply)}</p>`;
+          let ragInfo = '';
+          if (data.ragDocs && data.ragDocs.length > 0) {
+            ragInfo = `<div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; font-size:10px;"><span style="color:#c084fc; font-weight:600;">📚 RAG Sumber:</span>${data.ragDocs.map(d => `<span style="background:rgba(192,132,252,0.15); border:1px solid rgba(192,132,252,0.3); color:#e9d5ff; padding:1px 6px; border-radius:999px;">${escapeHtml(d.page)}</span>`).join('')}</div>`;
+          }
+          thinkingBubble.innerHTML = `<strong>AI Customer Service (${data.provider || currentAiProvider}):</strong><p>${formatWhatsAppText(data.reply)}</p>${ragInfo}`;
         } else {
           thinkingBubble.innerHTML = `<strong>AI Error:</strong><p style="color:#fca5a5;">${escapeHtml(data.error || 'AI tidak menghasilkan balasan.')}</p>`;
         }

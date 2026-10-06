@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const menuHandler = require('../handlers/menuHandler');
+const ragService = require('./ragService');
 const { stripStarsAndEmojis } = require('../utils/textCleaner');
 require('dotenv').config();
 
@@ -105,7 +106,7 @@ class GeminiService {
     }
   }
 
-  buildSystemInstruction() {
+  buildSystemInstruction(userText = '') {
     const config = menuHandler.getConfig();
     const b = config.business || {};
     const o = config.owner_info || {};
@@ -134,10 +135,11 @@ class GeminiService {
     ).join('\n\n');
 
     const customPrompt = config.ai?.system_instructions || '';
+    const ragContext = userText ? ragService.retrieveContext(userText, 4) : '';
 
     return `${customPrompt}
 
-=== INFORMASI RESMI TOKO & PEMILIK ===
+${ragContext ? `${ragContext}\n\n` : ''}=== INFORMASI RESMI TOKO & PEMILIK ===
 Nama Toko: ${b.name} (${b.tagline})
 Pemilik / Founder: ${o.owner_name || b.owner || 'H. Ahmad Fauzi & Hj. Maryam'}
 Jabatan: ${o.role || 'Founder & Managing Director'}
@@ -200,7 +202,7 @@ ${faqSummary}
     }
 
     const model = this.getModel();
-    const systemInstruction = this.buildSystemInstruction();
+    const systemInstruction = this.buildSystemInstruction(userText);
 
     // Get or initialize conversation history for this JID
     let history = this.conversationHistories.get(jid) || [];
