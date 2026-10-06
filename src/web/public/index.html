@@ -86,6 +86,12 @@
           <span class="nav-text">Knowledge Base</span>
           <span class="badge-counter" id="qna-counter">0</span>
         </button>
+
+        <button class="nav-item" data-tab="tab-handoff" id="nav-btn-handoff">
+          <span class="nav-icon">🎧</span>
+          <span class="nav-text">Hands-Off CS & AI</span>
+          <span class="badge-counter" id="handoff-counter">0</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -825,6 +831,134 @@
                 <div class="spinner"></div>
                 <p>Memuat database pertanyaan dan jawaban AI...</p>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: HANDS-OFF CUSTOMER SERVICE & AI TAKEOVER -->
+        <section class="tab-panel" id="tab-handoff">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>🎧 Hands-Off Customer Service & AI Takeover</h3>
+                <p>Kelola alih kendali otomatis dan manual dari asisten AI ke Customer Service manusia secara real-time</p>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <span class="tag-status" id="handoff-status-badge">Modul Aktif</span>
+              </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="qna-stats-bar">
+              <div class="qstat-box">
+                <span class="qstat-val" id="stat-active-handoffs">0</span>
+                <span class="qstat-lbl">Kontak Takeover CS</span>
+              </div>
+              <div class="qstat-box">
+                <span class="qstat-val" id="stat-handoff-keywords">0</span>
+                <span class="qstat-lbl">Kata Kunci Pemicu</span>
+              </div>
+              <div class="qstat-box">
+                <span class="qstat-val" id="stat-handoff-expire">2 Jam</span>
+                <span class="qstat-lbl">Auto Expire Sesi</span>
+              </div>
+              <div class="qstat-box highlight-qstat">
+                <span class="qstat-val" id="stat-handoff-mode">Otomatis & Manual</span>
+                <span class="qstat-lbl">Metode Eskalasi</span>
+              </div>
+            </div>
+
+            <!-- Manual Takeover Bar -->
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; margin-bottom: 20px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                <span>⚡ Takeover Manual Nomor WhatsApp</span>
+              </h4>
+              <p style="margin: 0 0 12px 0; font-size: 12px; color: var(--text-secondary);">Masukkan nomor WhatsApp pelanggan untuk langsung mematikan AI bot dan mengalihkan chat ke penanganan manusia.</p>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <input type="text" id="manual-handoff-input" placeholder="Contoh: 628123456789 atau 08123456789" style="flex: 1; min-width: 240px; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;">
+                <input type="text" id="manual-handoff-reason" placeholder="Alasan (opsional)" style="flex: 1; min-width: 200px; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;">
+                <button class="btn btn-primary" id="btn-do-manual-handoff" style="white-space: nowrap;">
+                  <span>Takeover Sekarang</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Active Takeovers Table/List -->
+            <div style="margin-bottom: 28px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h4 style="margin: 0; font-size: 15px; font-weight: 600;">📋 Kontak yang Sedang Ditangani Manusia (AI Nonaktif)</h4>
+                <button class="btn btn-secondary" id="btn-refresh-handoffs" style="padding: 6px 12px; font-size: 12px;">
+                  <span>Segarkan Data</span>
+                </button>
+              </div>
+              <div id="handoffs-list-container">
+                <div class="empty-state">
+                  <div class="spinner"></div>
+                  <p>Memuat daftar kontak alih kendali...</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Rules & Config Section -->
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 20px; margin-bottom: 24px;">
+              <h4 style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600;">⚙️ Aturan Deteksi Kata Kunci & Notifikasi Otomatis</h4>
+              
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="handoff-keywords-input">Kata Kunci Pemicu Takeover (Pisahkan dengan koma)</label>
+                  <input type="text" id="handoff-keywords-input" placeholder="cs, operator, admin manusia, keluhan, komplain" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;">
+                  <small style="color: var(--text-secondary); font-size: 11px;">Bila pesan pelanggan memuat kata ini, bot otomatis menyerahkan chat ke CS manusia.</small>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="release-keywords-input">Kata Kunci Kembalikan ke Bot (Pisahkan dengan koma)</label>
+                  <input type="text" id="release-keywords-input" placeholder="aktifkan bot, bot on, reset bot" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;">
+                  <small style="color: var(--text-secondary); font-size: 11px;">Kata kunci dari admin atau customer untuk mengaktifkan bot kembali.</small>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="handoff-expire-input">Masa Berlaku Takeover (Jam)</label>
+                  <input type="number" id="handoff-expire-input" min="1" max="72" value="2" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;">
+                  <small style="color: var(--text-secondary); font-size: 11px;">Setelah waktu ini, bot otomatis aktif kembali bila tidak ada interaksi baru.</small>
+                </div>
+                <div class="form-group" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: center;">
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="handoff-enabled-toggle" checked style="width: 18px; height: 18px;">
+                    <span style="font-weight: 600; color: var(--text-primary);">Aktifkan Fitur Alih Kendali (Human Handoff)</span>
+                  </label>
+                  <small style="color: var(--text-secondary); font-size: 11px; margin-top: 4px;">Bila dimatikan, bot akan selalu merespons tanpa eskalasi otomatis.</small>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 16px;">
+                <label for="handoff-takeover-notice">Pesan Otomatis Saat Ditakeover ke CS Manusia</label>
+                <textarea id="handoff-takeover-notice" rows="2" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;"></textarea>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 20px;">
+                <label for="handoff-release-notice">Pesan Otomatis Saat Bot Diaktifkan Kembali</label>
+                <textarea id="handoff-release-notice" rows="2" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;"></textarea>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end;">
+                <button class="btn btn-primary" id="btn-save-handoff-config">
+                  <span>Simpan Pengaturan Hands-Off</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Keyword Tester -->
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">🧪 Simulator Uji Kata Kunci Handoff</h4>
+              <p style="margin: 0 0 12px 0; font-size: 12px; color: var(--text-secondary);">Ketik contoh pesan pelanggan untuk melihat apakah sistem akan memicu alih kendali ke CS manusia.</p>
+              <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <input type="text" id="test-handoff-input" placeholder="Contoh: halo admin saya ingin bicara langsung dengan CS" style="flex: 1; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;">
+                <button class="btn btn-secondary" id="btn-test-handoff">
+                  <span>Uji Pesan</span>
+                </button>
+              </div>
+              <div id="test-handoff-result" style="display: none; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px;"></div>
             </div>
           </div>
         </section>

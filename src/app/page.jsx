@@ -503,6 +503,26 @@ export default function Dashboard() {
 
   // Fetch initial config & status
   useEffect(() => {
+    // Detect tab from URL parameter, hash, or pathname (e.g. /handoff, /?tab=handoff, /#handoff)
+    if (typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tabParam = urlParams.get('tab');
+        const hash = window.location.hash.replace('#', '').toLowerCase();
+        const pathname = window.location.pathname.replace(/^\/+/g, '').toLowerCase();
+
+        if (tabParam) {
+          setActiveTab(tabParam);
+        } else if (hash === 'handoff' || hash === 'hands-off' || hash === 'cs') {
+          setActiveTab('handoff');
+        } else if (hash) {
+          setActiveTab(hash);
+        } else if (pathname === 'handoff' || pathname === 'hands-off' || pathname === 'cs') {
+          setActiveTab('handoff');
+        }
+      } catch (err) {}
+    }
+
     fetchStatus();
     fetchConfig();
     fetchTickets();

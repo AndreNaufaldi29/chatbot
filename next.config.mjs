@@ -7,6 +7,22 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  async rewrites() {
+    return [
+      {
+        source: '/handoff',
+        destination: '/',
+      },
+      {
+        source: '/hands-off',
+        destination: '/',
+      },
+      {
+        source: '/cs',
+        destination: '/',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

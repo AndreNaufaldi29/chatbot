@@ -22,7 +22,7 @@ const ticketCounter = document.getElementById('ticket-counter');
 const ticketsTbody = document.getElementById('tickets-tbody');
 const ticketModal = document.getElementById('ticket-modal');
 
-// Titles Map (All 11 Sidebar Items)
+// Titles Map (All 12 Sidebar Items)
 const tabTitles = {
   'tab-chats': { title: '💬 Obrolan WhatsApp', subtitle: 'Memantau pesan masuk dari pelanggan dan balasan otomatis bot secara real-time' },
   'tab-ai': { title: '✨ AI Studio & Simulator Respons', subtitle: 'Kelola penyedia AI (Groq / Gemini) dan uji coba simulasi percakapan sebelum melayani customer' },
@@ -35,6 +35,7 @@ const tabTitles = {
   'tab-promo': { title: '🏷️ Promo & Diskon Spesial', subtitle: 'Paket karpet masjid barakah, potongan khusus DKM pengurus, dan fasilitas survey gratis' },
   'tab-tickets': { title: '⚙️ Pusat Komplain & Customer Service', subtitle: 'Kelola permohonan layanan, keluhan pelanggan, dan eskalasi penanganan tim CS' },
   'tab-qna': { title: '🧠 Basis Tanya Jawab AI (Knowledge Base)', subtitle: 'Kelola basis pertanyaan dan jawaban resmi toko agar AI menjawab pertanyaan pelanggan secara konsisten dan akurat' },
+  'tab-handoff': { title: '🎧 Hands-Off Customer Service & AI Takeover', subtitle: 'Kelola alih kendali otomatis dan manual dari asisten AI ke Customer Service manusia secara real-time' },
   'tab-sender': { title: 'Kirim Pesan WhatsApp Langsung', subtitle: 'Kirim pesan individual ke nomor pelanggan tertentu langsung dari dashboard' }
 };
 
@@ -55,6 +56,22 @@ document.addEventListener('DOMContentLoaded', () => {
   initModal();
   initWaMenuModal();
   loadRecentChatLogs();
+  loadHandoffs();
+  initHandoffForm();
+
+  // Detect URL parameter or hash to activate specific tab directly
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    const hash = window.location.hash.replace('#', '').toLowerCase();
+    if (tabParam === 'handoff' || tabParam === 'tab-handoff' || hash === 'handoff' || hash === 'hands-off' || hash === 'tab-handoff') {
+      switchTab('tab-handoff');
+    } else if (tabParam && tabTitles[tabParam]) {
+      switchTab(tabParam);
+    } else if (hash && tabTitles[hash]) {
+      switchTab(hash);
+    }
+  } catch (e) {}
 });
 
 // Navigation / Tab Switching
@@ -95,6 +112,8 @@ function switchTab(tabId) {
     loadCustomerQuestions();
   } else if (tabId === 'tab-ai') {
     loadAiStudio();
+  } else if (tabId === 'tab-handoff') {
+    loadHandoffs();
   }
 }
 
@@ -154,6 +173,31 @@ function initSSE() {
   eventSource.addEventListener('human_cs_requested', (e) => {
     const data = JSON.parse(e.data);
     showToast(`⚠️ Pelanggan ${data.phone} (${data.senderName}) meminta bantuan CS Manusia!`, 'info');
+    loadHandoffs();
+  });
+
+  eventSource.addEventListener('human_handoff_started', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      showToast(`🎧 Sesi CS Manusia Aktif untuk: ${data.phone || data.jid}`, 'info');
+      loadHandoffs();
+    } catch (err) {}
+  });
+
+  eventSource.addEventListener('human_handoff_ended', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      showToast(`🤖 AI Bot diaktifkan kembali untuk: ${data.phone || data.jid}`, 'success');
+      loadHandoffs();
+    } catch (err) {}
+  });
+
+  eventSource.addEventListener('contact_ai_toggled', () => {
+    loadHandoffs();
+  });
+
+  eventSource.addEventListener('protections_updated', () => {
+    loadHandoffs();
   });
 
   eventSource.onerror = () => {
@@ -1202,5 +1246,265 @@ window.selectMenuItem = function(itemId, itemTitle, element) {
     closeMenuPopup();
   }, 350);
 };
+
+// ========================================================
+// HANDS-OFF CUSTOMER SERVICE & AI TAKEOVER CONTROLLER
+// ========================================================
+let handoffConfigData = {
+  enabled: true,
+  keywords: ['cs', 'operator', 'admin', 'bantuan manusia', 'komplain'],
+  release_keywords: ['aktifkan bot', 'bot on', 'reset bot'],
+  auto_expire_hours: 2,
+  takeover_notice: 'Halo! Permintaan Anda telah kami teruskan ke Customer Service Sultan Carpet. Tim kami akan segera merespons Anda.',
+  release_notice: 'Bot asisten Sultan Carpet telah aktif kembali. Silakan ketik pertanyaan atau konsultasi karpet Anda.'
+};
+
+async function loadHandoffs() {
+  try {
+    const res = await fetch('/api/handoffs');
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    if (data.config) {
+      handoffConfigData = { ...handoffConfigData, ...data.config };
+      populateHandoffConfigUI(handoffConfigData);
+    }
+
+    const handoffs = data.handoffs || [];
+    const counterEl = document.getElementById('handoff-counter');
+    if (counterEl) {
+      counterEl.textContent = handoffs.length;
+      counterEl.style.display = handoffs.length > 0 ? 'inline-block' : 'none';
+    }
+
+    const statActive = document.getElementById('stat-active-handoffs');
+    if (statActive) statActive.textContent = handoffs.length;
+
+    const statKeywords = document.getElementById('stat-handoff-keywords');
+    if (statKeywords) statKeywords.textContent = (handoffConfigData.keywords || []).length;
+
+    const statExpire = document.getElementById('stat-handoff-expire');
+    if (statExpire) statExpire.textContent = `${handoffConfigData.auto_expire_hours || 2} Jam`;
+
+    renderHandoffsList(handoffs);
+  } catch (err) {
+    console.error('Error loading handoffs:', err);
+  }
+}
+
+function populateHandoffConfigUI(cfg) {
+  const kwInput = document.getElementById('handoff-keywords-input');
+  if (kwInput && !kwInput.matches(':focus')) {
+    kwInput.value = (cfg.keywords || []).join(', ');
+  }
+
+  const rkwInput = document.getElementById('release-keywords-input');
+  if (rkwInput && !rkwInput.matches(':focus')) {
+    rkwInput.value = (cfg.release_keywords || []).join(', ');
+  }
+
+  const expInput = document.getElementById('handoff-expire-input');
+  if (expInput && !expInput.matches(':focus')) {
+    expInput.value = cfg.auto_expire_hours || 2;
+  }
+
+  const toggle = document.getElementById('handoff-enabled-toggle');
+  if (toggle) {
+    toggle.checked = cfg.enabled !== false;
+  }
+
+  const badge = document.getElementById('handoff-status-badge');
+  if (badge) {
+    badge.textContent = cfg.enabled !== false ? 'Modul Aktif' : 'Modul Nonaktif';
+    badge.className = cfg.enabled !== false ? 'tag-status' : 'tag-status tag-closed';
+  }
+
+  const tNotice = document.getElementById('handoff-takeover-notice');
+  if (tNotice && !tNotice.matches(':focus')) {
+    tNotice.value = cfg.takeover_notice || '';
+  }
+
+  const rNotice = document.getElementById('handoff-release-notice');
+  if (rNotice && !rNotice.matches(':focus')) {
+    rNotice.value = cfg.release_notice || '';
+  }
+}
+
+function renderHandoffsList(handoffs) {
+  const container = document.getElementById('handoffs-list-container');
+  if (!container) return;
+
+  if (!handoffs || handoffs.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 32px 16px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-color); border-radius: var(--radius-md);">
+        <div style="font-size: 28px; margin-bottom: 8px;">✅</div>
+        <p style="font-weight: 600; color: var(--text-primary); margin: 0 0 4px 0;">Tidak Ada Kontak dalam Mode Takeover</p>
+        <p style="font-size: 13px; color: var(--text-secondary); margin: 0;">Semua chat pelanggan saat ini ditangani otomatis oleh asisten AI bot.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      ${handoffs.map(h => {
+        const jid = h.jid || h.phone || '';
+        const phone = h.phone || jid.replace('@s.whatsapp.net', '');
+        const timeStr = h.startedAt ? new Date(h.startedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
+        return `
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: var(--radius-md); flex-wrap: wrap; gap: 12px;">
+            <div>
+              <div style="font-weight: 600; color: #f87171; display: flex; align-items: center; gap: 8px;">
+                <span>👤 +${escapeHtml(phone)}</span>
+                <span style="font-size: 11px; background: rgba(239, 68, 68, 0.2); padding: 2px 8px; border-radius: 999px;">CS Aktif</span>
+              </div>
+              <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                Alasan: <em>${escapeHtml(h.reason || 'Takeover oleh sistem')}</em> • Waktu: ${timeStr} WIB
+              </div>
+            </div>
+            <div>
+              <button class="btn btn-secondary" onclick="releaseHandoffDirect('${escapeHtml(jid)}')" style="padding: 6px 14px; font-size: 12px; background: rgba(255,255,255,0.08); border: 1px solid var(--border-color);">
+                <span>Kembalikan ke Bot</span>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+window.releaseHandoffDirect = async function(jid) {
+  try {
+    const res = await fetch(`/api/chats/${encodeURIComponent(jid)}/toggle-ai`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aiEnabled: true, isHumanHandoff: false })
+    });
+    if (res.ok) {
+      showToast('Bot AI berhasil diaktifkan kembali untuk kontak ini', 'success');
+      loadHandoffs();
+    } else {
+      showToast('Gagal mengubah status kontak', 'error');
+    }
+  } catch (err) {
+    showToast('Terjadi kesalahan jaringan', 'error');
+  }
+};
+
+function initHandoffForm() {
+  const btnRefresh = document.getElementById('btn-refresh-handoffs');
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', () => {
+      loadHandoffs();
+      showToast('Data alih kendali disegarkan', 'info');
+    });
+  }
+
+  const btnManual = document.getElementById('btn-do-manual-handoff');
+  if (btnManual) {
+    btnManual.addEventListener('click', async () => {
+      const input = document.getElementById('manual-handoff-input');
+      const reasonInput = document.getElementById('manual-handoff-reason');
+      const phone = (input?.value || '').trim();
+      const reason = (reasonInput?.value || '').trim() || 'Takeover manual oleh admin';
+
+      if (!phone) {
+        showToast('Masukkan nomor WhatsApp pelanggan', 'error');
+        return;
+      }
+
+      const cleanPhone = phone.replace(/\D/g, '');
+      const jid = cleanPhone.includes('@') ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
+
+      try {
+        const res = await fetch(`/api/chats/${encodeURIComponent(jid)}/toggle-ai`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ aiEnabled: false, isHumanHandoff: true, reason })
+        });
+        if (res.ok) {
+          showToast(`Nomor +${cleanPhone} berhasil ditakeover oleh CS Manusia`, 'success');
+          if (input) input.value = '';
+          if (reasonInput) reasonInput.value = '';
+          loadHandoffs();
+        } else {
+          showToast('Gagal melakukan takeover manual', 'error');
+        }
+      } catch (err) {
+        showToast('Kesalahan jaringan', 'error');
+      }
+    });
+  }
+
+  const btnSaveConfig = document.getElementById('btn-save-handoff-config');
+  if (btnSaveConfig) {
+    btnSaveConfig.addEventListener('click', async () => {
+      const kwInput = document.getElementById('handoff-keywords-input');
+      const rkwInput = document.getElementById('release-keywords-input');
+      const expInput = document.getElementById('handoff-expire-input');
+      const toggle = document.getElementById('handoff-enabled-toggle');
+      const tNotice = document.getElementById('handoff-takeover-notice');
+      const rNotice = document.getElementById('handoff-release-notice');
+
+      const keywords = (kwInput?.value || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      const release_keywords = (rkwInput?.value || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      const auto_expire_hours = Number(expInput?.value || 2);
+      const enabled = toggle ? toggle.checked : true;
+      const takeover_notice = tNotice?.value || '';
+      const release_notice = rNotice?.value || '';
+
+      try {
+        const res = await fetch('/api/handoffs/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enabled,
+            keywords,
+            release_keywords,
+            auto_expire_hours,
+            takeover_notice,
+            release_notice
+          })
+        });
+        if (res.ok) {
+          showToast('Pengaturan Hands-Off berhasil disimpan!', 'success');
+          loadHandoffs();
+        } else {
+          showToast('Gagal menyimpan pengaturan', 'error');
+        }
+      } catch (err) {
+        showToast('Kesalahan jaringan saat menyimpan', 'error');
+      }
+    });
+  }
+
+  const btnTest = document.getElementById('btn-test-handoff');
+  if (btnTest) {
+    btnTest.addEventListener('click', () => {
+      const input = document.getElementById('test-handoff-input');
+      const text = (input?.value || '').toLowerCase().trim();
+      const resultBox = document.getElementById('test-handoff-result');
+      if (!text || !resultBox) return;
+
+      const keywords = handoffConfigData.keywords || [];
+      const matched = keywords.filter(k => text.includes(k.toLowerCase()));
+
+      resultBox.style.display = 'block';
+      if (matched.length > 0) {
+        resultBox.style.background = 'rgba(239, 68, 68, 0.15)';
+        resultBox.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+        resultBox.style.color = '#fca5a5';
+        resultBox.innerHTML = `⚠️ <strong>Memicu Alih Kendali!</strong> Kata kunci terdeteksi: <strong>"${matched.join('", "')}"</strong>. Sistem akan menghentikan bot dan menyerahkan chat ke CS manusia.`;
+      } else {
+        resultBox.style.background = 'rgba(34, 197, 94, 0.15)';
+        resultBox.style.border = '1px solid rgba(34, 197, 94, 0.4)';
+        resultBox.style.color = '#86efac';
+        resultBox.innerHTML = `✅ <strong>Aman (Dijawab AI Bot)</strong>: Pesan ini tidak memicu alih kendali. Bot AI akan merespons pertanyaan pelanggan secara normal.`;
+      }
+    });
+  }
+}
+
 
 
