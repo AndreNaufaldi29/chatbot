@@ -14,6 +14,7 @@ const dbService = require('../services/dbService');
 const protectionService = require('../services/protectionService');
 const sessionManager = require('../services/sessionManager');
 const ragService = require('../services/ragService');
+const crawlerService = require('../services/crawlerService');
 
 const app = express();
 app.use(cors());
@@ -912,6 +913,51 @@ app.post('/api/rag/search', (req, res) => {
     const results = ragService.search(query || '', topK || 4);
     const context = ragService.retrieveContext(query || '', topK || 4);
     res.json({ success: true, results, context });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Web Crawler & Scraper Endpoints (RAG Web Knowledge Ingestion)
+app.get('/api/crawler/pages', (req, res) => {
+  try {
+    const pages = crawlerService.getAllPages();
+    res.json({ success: true, count: pages.length, pages });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/crawler/crawl', async (req, res) => {
+  try {
+    const { url, maxPages, followLinks } = req.body;
+    if (!url || typeof url !== 'string' || !url.trim().startsWith('http')) {
+      return res.status(400).json({ success: false, error: 'URL website tidak valid (wajib diawali http:// atau https://).' });
+    }
+    const result = await crawlerService.crawl(url.trim(), { maxPages: maxPages || 1, followLinks: Boolean(followLinks) });
+    broadcastSSE('rag_updated', { source: 'crawler', url });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/crawler/pages/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = crawlerService.deletePage(id);
+    broadcastSSE('rag_updated', { source: 'crawler', deletedId: id });
+    res.json({ success: deleted });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/crawler/pages', (req, res) => {
+  try {
+    crawlerService.clearAll();
+    broadcastSSE('rag_updated', { source: 'crawler', cleared: true });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

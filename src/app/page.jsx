@@ -71,7 +71,9 @@ import {
   Headphones,
   ToggleLeft,
   ToggleRight,
-  Power
+  Power,
+  Globe,
+  Link as LinkIcon
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -197,8 +199,17 @@ export default function Dashboard() {
   });
   const [customerQuestions, setCustomerQuestions] = useState([]);
   const [loadingCustomerQuestions, setLoadingCustomerQuestions] = useState(false);
-  const [faqSubTab, setFaqSubTab] = useState('qa_list'); // 'qa_list' | 'customer_insights'
+  const [faqSubTab, setFaqSubTab] = useState('qa_list'); // 'qa_list' | 'customer_insights' | 'web_crawler'
   const [syncingFaqsToAi, setSyncingFaqsToAi] = useState(false);
+
+  // Web Crawler / Scraper States
+  const [crawledPages, setCrawledPages] = useState([]);
+  const [loadingCrawledPages, setLoadingCrawledPages] = useState(false);
+  const [crawlUrlInput, setCrawlUrlInput] = useState('');
+  const [crawlMaxPages, setCrawlMaxPages] = useState(1);
+  const [crawlFollowLinks, setCrawlFollowLinks] = useState(false);
+  const [crawlingWeb, setCrawlingWeb] = useState(false);
+  const [viewingCrawlPage, setViewingCrawlPage] = useState(null);
 
   // Store Pages State (Nama Toko/Pemilik, Jadwal Kerja, Lokasi Alamat, Garansi, Promo, Komplain)
   const [ownerSettings, setOwnerSettings] = useState({
@@ -530,9 +541,14 @@ export default function Dashboard() {
     fetchDbStatus();
     fetchFaqs();
     fetchCustomerQuestions();
+    fetchCrawledPages();
 
     // Setup SSE for real-time events
     const eventSource = new EventSource('/api/events');
+
+    eventSource.addEventListener('rag_updated', () => {
+      fetchCrawledPages();
+    });
 
     eventSource.addEventListener('init', (e) => {
       try {
@@ -1411,6 +1427,76 @@ export default function Dashboard() {
       console.warn('Gagal memuat pertanyaan pelanggan:', e.message);
     } finally {
       setLoadingCustomerQuestions(false);
+    }
+  };
+
+  const fetchCrawledPages = async () => {
+    try {
+      setLoadingCrawledPages(true);
+      const res = await fetch('/api/crawler/pages');
+      if (res.ok) {
+        const data = await res.json();
+        setCrawledPages(data.pages || []);
+      }
+    } catch (e) {
+      console.warn('Gagal memuat crawled pages:', e.message);
+    } finally {
+      setLoadingCrawledPages(false);
+    }
+  };
+
+  const handleStartCrawl = async (e) => {
+    if (e) e.preventDefault();
+    const url = (crawlUrlInput || '').trim();
+    if (!url || !url.startsWith('http')) {
+      showToastMsg('Masukkan URL website yang valid (wajib diawali http:// atau https://)', 'error');
+      return;
+    }
+
+    setCrawlingWeb(true);
+    try {
+      const res = await fetch('/api/crawler/crawl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          maxPages: crawlMaxPages,
+          followLinks: crawlFollowLinks
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg(`Berhasil mengekstrak ${data.totalCrawled || 1} halaman web ke dalam RAG!`, 'success');
+        setCrawlUrlInput('');
+        fetchCrawledPages();
+      } else {
+        showToastMsg(data.error || 'Gagal melakukan scraping pada website tersebut.', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Terjadi kesalahan jaringan saat crawling website.', 'error');
+    } finally {
+      setCrawlingWeb(false);
+    }
+  };
+
+  const handleDeleteCrawledPage = async (pageId) => {
+    const ok = await askConfirmation({
+      title: 'Hapus Halaman Web?',
+      message: 'Apakah Anda yakin ingin menghapus data website ini dari basis pengetahuan RAG AI?',
+      type: 'danger'
+    });
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`/api/crawler/pages/${pageId}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToastMsg('Halaman web dihapus dari memori RAG.', 'success');
+        fetchCrawledPages();
+      } else {
+        showToastMsg('Gagal menghapus halaman.', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Kesalahan jaringan saat menghapus.', 'error');
     }
   };
 
@@ -6336,6 +6422,24 @@ export default function Dashboard() {
                       </span>
                     )}
                   </button>
+
+                  <button
+                    onClick={() => {
+                      setFaqSubTab('web_crawler');
+                      fetchCrawledPages();
+                    }}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                      faqSubTab === 'web_crawler'
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Website Crawling / Scraping</span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] font-mono text-purple-300">
+                      {crawledPages.length}
+                    </span>
+                  </button>
                 </div>
 
                 <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400">
@@ -6623,6 +6727,238 @@ export default function Dashboard() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* SUB-TAB: WEBSITE CRAWLER / SCRAPER */}
+              {faqSubTab === 'web_crawler' && (
+                <div className="space-y-6">
+                  {/* Hero / Input Crawl Card */}
+                  <div className="p-6 sm:p-7 rounded-3xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/30 via-slate-900/60 to-slate-950/80 backdrop-blur-xl shadow-xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="relative z-10 space-y-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-inner">
+                            <Globe className="w-6 h-6 animate-pulse" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-lg font-bold text-white tracking-tight">Website Crawler & Scraping Engine</h3>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                RAG Sync Otomatis
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              Pindai halaman web/landing page produk, katalog online, artikel, atau FAQ website. Teks otomatis diolah menjadi potongan semantik RAG agar AI dapat menjawab langsung dari materi website.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => fetchCrawledPages()}
+                          disabled={loadingCrawledPages}
+                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-medium border border-slate-700 flex items-center gap-2 self-start sm:self-center transition disabled:opacity-50 cursor-pointer"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${loadingCrawledPages ? 'animate-spin' : ''}`} />
+                          <span>{loadingCrawledPages ? 'Menyegarkan...' : 'Segarkan Data'}</span>
+                        </button>
+                      </div>
+
+                      {/* URL Crawler Form */}
+                      <form onSubmit={handleStartCrawl} className="bg-slate-900/80 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                            <LinkIcon className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Target URL Website:</span>
+                          </label>
+                          <div className="relative flex items-center">
+                            <input
+                              type="url"
+                              value={crawlUrlInput}
+                              onChange={(e) => setCrawlUrlInput(e.target.value)}
+                              placeholder="https://sultancarpet.com/katalog atau https://toko-anda.com/faq"
+                              required
+                              disabled={crawlingWeb}
+                              className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition disabled:opacity-60"
+                            />
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            Masukkan URL publik (HTTP/HTTPS). Bot akan otomatis membersihkan tag HTML, iklan, dan script agar menyisakan teks informatif murni.
+                          </p>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-slate-800/80">
+                          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                            <div className="flex items-center gap-2">
+                              <label className="text-slate-400">Maks. Halaman:</label>
+                              <select
+                                value={crawlMaxPages}
+                                onChange={(e) => setCrawlMaxPages(Number(e.target.value))}
+                                disabled={crawlingWeb}
+                                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                              >
+                                <option value={1}>1 Halaman Saja</option>
+                                <option value={3}>3 Halaman Terkait</option>
+                                <option value={5}>5 Halaman Terkait</option>
+                                <option value={10}>10 Halaman Terkait</option>
+                              </select>
+                            </div>
+
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={crawlFollowLinks}
+                                onChange={(e) => setCrawlFollowLinks(e.target.checked)}
+                                disabled={crawlingWeb || crawlMaxPages <= 1}
+                                className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-950"
+                              />
+                              <span className="text-slate-300">Jelajahi Sub-link Internal domain yang sama</span>
+                            </label>
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={crawlingWeb || !crawlUrlInput.trim()}
+                            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer"
+                          >
+                            {crawlingWeb ? (
+                              <>
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                <span>Sedang Scraping & Ekstraksi...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Globe className="w-4 h-4" />
+                                <span>Mulai Crawling Sekarang</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </form>
+
+                      {/* Stat summary */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                          <p className="text-[11px] text-slate-400 font-medium">Halaman Terkumpul</p>
+                          <p className="text-lg font-bold text-white mt-0.5">{crawledPages.length} Halaman</p>
+                        </div>
+                        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                          <p className="text-[11px] text-slate-400 font-medium">Total Chunk RAG</p>
+                          <p className="text-lg font-bold text-indigo-400 mt-0.5">
+                            {crawledPages.reduce((acc, p) => acc + (p.chunks?.length || 0), 0)} Chunk
+                          </p>
+                        </div>
+                        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                          <p className="text-[11px] text-slate-400 font-medium">Karakter Bersih</p>
+                          <p className="text-lg font-bold text-sky-400 mt-0.5">
+                            {(crawledPages.reduce((acc, p) => acc + (p.content?.length || 0), 0)).toLocaleString('id-ID')}
+                          </p>
+                        </div>
+                        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                          <p className="text-[11px] text-slate-400 font-medium">Status Pengetahuan</p>
+                          <p className="text-xs font-semibold text-emerald-400 mt-1 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                            Aktif di Otak AI
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* List of Crawled Pages */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Database className="w-4 h-4 text-indigo-400" />
+                        <span>Daftar Halaman Website Terindeks ({crawledPages.length})</span>
+                      </h4>
+                      {crawledPages.length > 0 && (
+                        <p className="text-xs text-slate-400">
+                          Data ini otomatis disinkronkan ke Vector RAG untuk referensi tanya jawab pelanggan
+                        </p>
+                      )}
+                    </div>
+
+                    {loadingCrawledPages ? (
+                      <div className="p-12 text-center text-slate-400 text-xs">Memuat daftar scraping...</div>
+                    ) : crawledPages.length === 0 ? (
+                      <div className="p-12 rounded-3xl border border-slate-800 bg-slate-900/40 text-center space-y-3">
+                        <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 mx-auto flex items-center justify-center text-xl">
+                          🌐
+                        </div>
+                        <h4 className="text-sm font-semibold text-white">Belum Ada Website Yang Di-crawl</h4>
+                        <p className="text-xs text-slate-400 max-w-md mx-auto">
+                          Ketikkan alamat website toko, landing page, atau katalog Anda di formulir atas lalu klik "Mulai Crawling Sekarang". AI akan langsung membaca dan memahami isinya.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {crawledPages.map((page) => (
+                          <div
+                            key={page.id}
+                            className="p-5 rounded-2xl border border-slate-800 bg-[#0f172a]/70 hover:border-slate-700 transition space-y-3 shadow-md flex flex-col justify-between"
+                          >
+                            <div className="space-y-2.5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="space-y-1 min-w-0">
+                                  <h5 className="text-sm font-bold text-white truncate" title={page.title || page.url}>
+                                    {page.title || 'Halaman Web'}
+                                  </h5>
+                                  <a
+                                    href={page.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-xs text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-1 truncate"
+                                  >
+                                    <ExternalLink className="w-3 h-3 shrink-0" />
+                                    <span className="truncate">{page.url}</span>
+                                  </a>
+                                </div>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 shrink-0">
+                                  {page.chunks?.length || 0} Chunks
+                                </span>
+                              </div>
+
+                              {page.description && (
+                                <p className="text-xs text-slate-400 line-clamp-2">
+                                  {page.description}
+                                </p>
+                              )}
+
+                              <div className="text-[11px] text-slate-500 bg-slate-950/60 p-2.5 rounded-xl border border-slate-850 line-clamp-3 leading-relaxed">
+                                {page.content ? page.content.slice(0, 220) + '...' : 'Tidak ada konten teks.'}
+                              </div>
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                              <span className="text-[10px] text-slate-500">
+                                {page.crawledAt ? new Date(page.crawledAt).toLocaleString('id-ID') : 'Baru saja'}
+                              </span>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setViewingCrawlPage(page)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 font-medium text-xs flex items-center gap-1.5 transition cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Lihat Chunk</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCrawledPage(page.id)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-medium text-xs flex items-center gap-1 transition cursor-pointer"
+                                  title="Hapus dari RAG"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Hapus</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -8594,6 +8930,102 @@ export default function Dashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DETAIL & CHUNKS WEBSITE CRAWLER */}
+      {viewingCrawlPage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-[#0b1329] border border-slate-700/80 rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-white text-sm truncate" title={viewingCrawlPage.title}>
+                    {viewingCrawlPage.title || 'Detail Halaman Scraping'}
+                  </h3>
+                  <a
+                    href={viewingCrawlPage.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-indigo-400 hover:underline flex items-center gap-1 truncate"
+                  >
+                    <ExternalLink className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{viewingCrawlPage.url}</span>
+                  </a>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingCrawlPage(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content / Chunks */}
+            <div className="p-6 space-y-4 overflow-y-auto text-xs flex-1">
+              <div className="flex items-center justify-between text-slate-400 pb-2 border-b border-slate-800/80">
+                <span>
+                  Total <strong>{viewingCrawlPage.chunks?.length || 0}</strong> Potongan Semantik (RAG Chunks)
+                </span>
+                <span className="text-[11px]">
+                  Terakhir discraping: {viewingCrawlPage.crawledAt ? new Date(viewingCrawlPage.crawledAt).toLocaleString('id-ID') : '-'}
+                </span>
+              </div>
+
+              {(!viewingCrawlPage.chunks || viewingCrawlPage.chunks.length === 0) ? (
+                <div className="p-8 text-center text-slate-500">
+                  Tidak ada potongan teks tersimpan.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {viewingCrawlPage.chunks.map((chunk, idx) => (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 hover:border-slate-700 transition"
+                    >
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-indigo-300">
+                          Chunk #{idx + 1} {chunk.heading ? `• ${chunk.heading}` : ''}
+                        </span>
+                        <span className="text-slate-500">{chunk.content?.length || 0} karakter</span>
+                      </div>
+                      <p className="text-slate-200 leading-relaxed font-sans whitespace-pre-wrap bg-slate-950/70 p-3 rounded-lg border border-slate-800/80">
+                        {chunk.content}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  const id = viewingCrawlPage.id;
+                  setViewingCrawlPage(null);
+                  handleDeleteCrawledPage(id);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Hapus Halaman Ini</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewingCrawlPage(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs transition cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}

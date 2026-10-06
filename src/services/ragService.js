@@ -238,6 +238,38 @@ Sumber: ${faq.source || 'Sistem Resmi Toko'}`
         });
       });
 
+      // 12. DOKUMEN HASIL CRAWLING & SCRAPING WEBSITE
+      try {
+        const crawlerService = require('./crawlerService');
+        const crawledPages = crawlerService.getAllPages();
+        crawledPages.forEach((page) => {
+          if (page.status !== 'success' || !page.chunks || page.chunks.length === 0) return;
+          page.chunks.forEach((chunk, cIdx) => {
+            docs.push({
+              id: `crawled_${page.id}_${cIdx}`,
+              page: 'Website Scraping',
+              title: `${page.title || 'Web'} • ${chunk.heading || 'Info'}`,
+              keywords: [
+                'website',
+                'web',
+                'online',
+                page.url ? page.url.toLowerCase() : '',
+                ...(page.title ? page.title.toLowerCase().split(/\s+/).filter(w => w.length > 2) : []),
+                ...(chunk.heading ? chunk.heading.toLowerCase().split(/\s+/).filter(w => w.length > 2) : [])
+              ],
+              content: `Sumber Website: ${page.url}
+Halaman: ${page.title || '-'}
+Bagian: ${chunk.heading || '-'}
+Konten:
+${chunk.content}
+Waktu Crawl: ${page.crawledAt || '-'}`
+            });
+          });
+        });
+      } catch (crawlErr) {
+        console.warn('[RagService] Info: modul crawlerService opsional:', crawlErr.message);
+      }
+
       this.documents = docs;
       this.lastIndexTime = Date.now();
       return docs;

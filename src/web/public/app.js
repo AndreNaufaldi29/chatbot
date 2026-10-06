@@ -58,6 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadRecentChatLogs();
   loadHandoffs();
   initHandoffForm();
+  loadCrawledPages();
+  initCrawlerForm();
 
   // Detect URL parameter or hash to activate specific tab directly
   try {
@@ -198,6 +200,10 @@ function initSSE() {
 
   eventSource.addEventListener('protections_updated', () => {
     loadHandoffs();
+  });
+
+  eventSource.addEventListener('rag_updated', () => {
+    loadCrawledPages();
   });
 
   eventSource.onerror = () => {
@@ -1510,5 +1516,169 @@ function initHandoffForm() {
   }
 }
 
+// ========================================================
+// WEBSITE CRAWLER & SCRAPING CONTROLLER
+// ========================================================
+let crawledPagesData = [];
 
+async function loadCrawledPages() {
+  const container = document.getElementById('crawled-pages-container');
+  if (!container) return;
 
+  try {
+    const res = await fetch('/api/crawler/pages');
+    if (!res.ok) throw new Error('Gagal memuat data crawler');
+    const data = await res.json();
+    crawledPagesData = data.pages || [];
+    renderCrawledPagesList(crawledPagesData);
+  } catch (err) {
+    if (container) {
+      container.innerHTML = `<div class="empty-state"><p style="color: #f87171;">Gagal memuat data: ${escapeHtml(err.message)}</p></div>`;
+    }
+  }
+}
+
+function renderCrawledPagesList(pages) {
+  const container = document.getElementById('crawled-pages-container');
+  if (!container) return;
+
+  if (!pages || pages.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 28px 16px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-color); border-radius: var(--radius-md);">
+        <div style="font-size: 26px; margin-bottom: 8px;">🌐</div>
+        <p style="font-weight: 600; color: var(--text-primary); margin: 0 0 4px 0;">Belum Ada Halaman Website Terindeks</p>
+        <p style="font-size: 13px; color: var(--text-secondary); margin: 0;">Masukkan URL website/katalog pada formulir di atas untuk mulai scraping ke otak RAG.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px;">
+      ${pages.map(p => {
+        const timeStr = p.crawledAt ? new Date(p.crawledAt).toLocaleString('id-ID') : '-';
+        const chunkCount = p.chunks ? p.chunks.length : 0;
+        const excerpt = p.content ? escapeHtml(p.content.slice(0, 160)) + '...' : 'Tidak ada ringkasan teks.';
+        return `
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                <h4 style="font-size: 14px; font-weight: 700; color: #fff; margin: 0; line-height: 1.3;" title="${escapeHtml(p.title || '')}">
+                  ${escapeHtml(p.title || 'Halaman Web')}
+                </h4>
+                <span style="font-size: 11px; font-weight: 600; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 999px; padding: 2px 8px; white-space: nowrap;">
+                  ${chunkCount} Chunks
+                </span>
+              </div>
+              <a href="${escapeHtml(p.url)}" target="_blank" rel="noreferrer" style="font-size: 12px; color: #38bdf8; text-decoration: none; margin-top: 6px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                🔗 ${escapeHtml(p.url)}
+              </a>
+              <p style="font-size: 12px; color: #94a3b8; margin: 8px 0 0 0; line-height: 1.5; background: rgba(2, 6, 23, 0.5); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
+                ${excerpt}
+              </p>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; pt-2; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
+              <span style="font-size: 11px; color: #64748b;">
+                ${timeStr}
+              </span>
+              <button onclick="deleteCrawledPageDirect('${escapeHtml(p.id)}')" class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px; background: rgba(239, 68, 68, 0.12); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3);">
+                🗑️ Hapus
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+window.deleteCrawledPageDirect = async function(id) {
+  const ok = await askConfirmDialog({
+    title: 'Hapus Halaman Website dari RAG?',
+    message: 'Potongan teks halaman ini akan dihapus dari basis pengetahuan AI bot.',
+    confirmText: 'Ya, Hapus',
+    cancelText: 'Batal',
+    type: 'danger'
+  });
+  if (!ok) return;
+
+  try {
+    const res = await fetch(`/api/crawler/pages/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (res.ok) {
+      showToast('Halaman website berhasil dihapus dari RAG', 'success');
+      loadCrawledPages();
+    } else {
+      showToast('Gagal menghapus halaman website', 'error');
+    }
+  } catch (err) {
+    showToast('Kesalahan jaringan: ' + err.message, 'error');
+  }
+};
+
+function initCrawlerForm() {
+  const form = document.getElementById('crawler-form');
+  const btnRefresh = document.getElementById('btn-refresh-crawler');
+  const statusLabel = document.getElementById('crawler-status-label');
+  const submitBtn = document.getElementById('btn-start-crawl');
+
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', () => {
+      loadCrawledPages();
+      showToast('Data website crawler disegarkan', 'info');
+    });
+  }
+
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const urlInput = document.getElementById('crawler-url-input');
+      const maxPagesSelect = document.getElementById('crawler-max-pages');
+      const followCheckbox = document.getElementById('crawler-follow-links');
+
+      const url = (urlInput?.value || '').trim();
+      const maxPages = Number(maxPagesSelect?.value || 1);
+      const followInternalLinks = followCheckbox ? followCheckbox.checked : false;
+
+      if (!url) {
+        showToast('Masukkan URL website yang valid', 'error');
+        return;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span>Sedang Scraping...</span>';
+      }
+      if (statusLabel) {
+        statusLabel.textContent = '⏳ Mengunduh & mengekstrak konten web...';
+      }
+
+      try {
+        const res = await fetch('/api/crawler/crawl', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, maxPages, followInternalLinks })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          showToast(`Berhasil scrape ${data.totalPages || 1} halaman (${data.totalChunks || 0} chunks RAG)!`, 'success');
+          if (urlInput) urlInput.value = '';
+          loadCrawledPages();
+        } else {
+          showToast('Gagal scraping: ' + (data.error || 'Kesalahan server'), 'error');
+        }
+      } catch (err) {
+        showToast('Kesalahan jaringan saat crawling: ' + err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>Mulai Scraping Web</span>';
+        }
+        if (statusLabel) {
+          statusLabel.textContent = '';
+        }
+      }
+    });
+  }
+}

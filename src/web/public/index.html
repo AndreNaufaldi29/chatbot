@@ -833,6 +833,54 @@
               </div>
             </div>
           </div>
+
+          <!-- Website Crawling / Scraping Card (RAG Integration) -->
+          <div class="card" style="margin-top: 24px; border-top: 3px solid #6366f1;">
+            <div class="card-header">
+              <div>
+                <h3 style="display: flex; align-items: center; gap: 8px;">
+                  <span>🌐</span>
+                  <span>Website Crawling / Scraping Engine (RAG Otomatis)</span>
+                </h3>
+                <p>Ekstrak konten teks dari website, landing page, atau katalog Anda secara cerdas. AI otomatis menjawab berdasarkan halaman web yang dipindai.</p>
+              </div>
+              <div>
+                <button class="btn btn-secondary" id="btn-refresh-crawler" style="padding: 6px 12px; font-size: 12px;">
+                  <span>Segarkan Halaman Web</span>
+                </button>
+              </div>
+            </div>
+
+            <div style="padding: 16px 20px;">
+              <form id="crawler-form" style="display: flex; flex-direction: column; gap: 12px; background: rgba(15, 23, 42, 0.6); padding: 16px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08);">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                  <input type="url" id="crawler-url-input" placeholder="https://sultancarpet.com/katalog atau https://toko-anda.com/faq" required style="flex: 1; min-width: 260px; padding: 10px 14px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #fff; font-size: 13px;">
+                  <select id="crawler-max-pages" style="padding: 10px 12px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #fff; font-size: 13px;">
+                    <option value="1">1 Halaman</option>
+                    <option value="3">3 Halaman</option>
+                    <option value="5">5 Halaman</option>
+                  </select>
+                  <button type="submit" id="btn-start-crawl" class="btn btn-primary" style="background: linear-gradient(135deg, #6366f1, #0ea5e9); border: none; padding: 10px 18px;">
+                    <span>Mulai Scraping Web</span>
+                  </button>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 12px; color: #94a3b8;">
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+                    <input type="checkbox" id="crawler-follow-links">
+                    <span>Jelajahi sub-link internal domain yang sama</span>
+                  </label>
+                  <span id="crawler-status-label" style="color: #38bdf8;"></span>
+                </div>
+              </form>
+
+              <!-- Crawled Pages List Container -->
+              <div id="crawled-pages-container" style="margin-top: 18px;">
+                <div class="empty-state">
+                  <p>Memuat daftar scraping website...</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- TAB: HANDS-OFF CUSTOMER SERVICE & AI TAKEOVER -->
