@@ -6966,17 +6966,27 @@ export default function Dashboard() {
 
           {/* TAB: HANDS-OFF CS & AI TAKEOVER */}
           {activeTab === 'handoff' && (() => {
-            const activeHandoffs = (conversations || []).filter((c) => Boolean(c.isHumanHandoff));
+            const activeHandoffs = (conversations || []).filter((c) => Boolean(c?.isHumanHandoff));
             const filteredConversations = (conversations || []).filter((c) => {
+              if (!c) return false;
               if (handoffFilter === 'handoff' && !c.isHumanHandoff) return false;
               if (handoffFilter === 'ai' && c.isHumanHandoff) return false;
               if (!handoffSearch.trim()) return true;
               const q = handoffSearch.toLowerCase();
+              const sName = c.senderName && typeof c.senderName === 'string' ? c.senderName.toLowerCase() : '';
+              const sPhone = c.phone ? String(c.phone).toLowerCase() : '';
+              const sFormatted = c.formattedPhone ? String(c.formattedPhone).toLowerCase() : '';
+              let sLastMsg = '';
+              if (typeof c.lastMessage === 'string') {
+                sLastMsg = c.lastMessage.toLowerCase();
+              } else if (c.lastMessage && typeof c.lastMessage === 'object') {
+                sLastMsg = String(c.lastMessage.text || c.lastMessage.caption || '').toLowerCase();
+              }
               return (
-                (c.senderName && c.senderName.toLowerCase().includes(q)) ||
-                (c.phone && c.phone.includes(q)) ||
-                (c.formattedPhone && c.formattedPhone.includes(q)) ||
-                (c.lastMessage && c.lastMessage.toLowerCase().includes(q))
+                sName.includes(q) ||
+                sPhone.includes(q) ||
+                sFormatted.includes(q) ||
+                sLastMsg.includes(q)
               );
             });
 
@@ -7242,13 +7252,29 @@ export default function Dashboard() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                        {filteredConversations.map((c) => {
+                        {filteredConversations.map((c, idx) => {
                           const isHandoff = Boolean(c.isHumanHandoff);
-                          const contactName = c.senderName && !/^\+?\d{10,}$/.test(c.senderName.trim()) ? c.senderName : (c.formattedPhone || c.phone || 'Pelanggan');
+                          const rawName = c.senderName && typeof c.senderName === 'string' ? c.senderName.trim() : '';
+                          const contactName = rawName && !/^\+?\d{10,}$/.test(rawName)
+                            ? rawName
+                            : (c.formattedPhone || (c.phone ? `+${c.phone}` : 'Pelanggan'));
+                          const initialChar = (contactName ? String(contactName).trim().charAt(0) : 'P').toUpperCase() || 'P';
+
+                          let lastMsgText = '(Belum ada pesan teks)';
+                          if (typeof c.lastMessage === 'string') {
+                            lastMsgText = c.lastMessage || '(Belum ada pesan teks)';
+                          } else if (c.lastMessage && typeof c.lastMessage === 'object') {
+                            lastMsgText = c.lastMessage.text || c.lastMessage.caption || c.lastMessage.content || (c.lastMessage.type ? `[${c.lastMessage.type}]` : '(Pesan media/pesan masuk)');
+                          }
+
+                          const rawTimestamp = c.updatedAt || c.lastMessage?.timestamp || c.lastTimestamp;
+                          const formattedTime = rawTimestamp
+                            ? new Date(rawTimestamp).toLocaleDateString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                            : 'Terbaru';
 
                           return (
                             <div
-                              key={c.jid || c.phone}
+                              key={c.jid || c.phone || `conv_${idx}`}
                               className={`p-4 rounded-2xl border transition-all duration-200 flex flex-col justify-between space-y-3 ${
                                 isHandoff
                                   ? 'bg-[#1a1505]/70 border-amber-500/40 ring-1 ring-amber-500/20 shadow-lg shadow-amber-950/20'
@@ -7261,11 +7287,11 @@ export default function Dashboard() {
                                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
                                       isHandoff ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                                     }`}>
-                                      {contactName.charAt(0).toUpperCase()}
+                                      {initialChar}
                                     </div>
                                     <div>
                                       <h5 className="font-bold text-white text-sm line-clamp-1">{contactName}</h5>
-                                      <p className="text-[11px] text-slate-400 font-mono">{c.formattedPhone || c.phone}</p>
+                                      <p className="text-[11px] text-slate-400 font-mono">{c.formattedPhone || (c.phone ? `+${c.phone}` : '')}</p>
                                     </div>
                                   </div>
 
@@ -7291,7 +7317,7 @@ export default function Dashboard() {
 
                                 <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-850 text-xs text-slate-300">
                                   <p className="line-clamp-2 leading-relaxed">
-                                    {c.lastMessage || '(Belum ada pesan teks)'}
+                                    {lastMsgText}
                                   </p>
                                 </div>
                               </div>
@@ -7299,7 +7325,7 @@ export default function Dashboard() {
                               {/* Action Row */}
                               <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
                                 <span className="text-[11px] text-slate-500">
-                                  {c.lastTimestamp ? new Date(c.lastTimestamp).toLocaleDateString('id-ID', { hour: '2-digit', minute: '2-digit' }) : 'Terbaru'}
+                                  {formattedTime}
                                 </span>
 
                                 <div className="flex items-center gap-2">

@@ -236,11 +236,11 @@ app.post('/api/chats/:jid/handoff', (req, res) => {
   res.json({ success: true, jid, active: isHandoff, aiEnabled });
 });
 
-// Per-Contact AI On/Off Toggle
-app.post('/api/chats/:jid/ai-toggle', (req, res) => {
+// Per-Contact AI On/Off Toggle (supports both ai-toggle and toggle-ai aliases)
+app.post(['/api/chats/:jid/ai-toggle', '/api/chats/:jid/toggle-ai'], (req, res) => {
   const { jid } = req.params;
-  const { enabled, reason } = req.body;
-  const aiEnabled = enabled !== false;
+  const { enabled, aiEnabled: bodyAiEnabled, isHumanHandoff, reason } = req.body;
+  const aiEnabled = enabled !== undefined ? Boolean(enabled) : (bodyAiEnabled !== undefined ? Boolean(bodyAiEnabled) : !isHumanHandoff);
   const isHandoff = !aiEnabled;
   sessionManager.setHumanMode(jid, isHandoff, reason || (isHandoff ? 'AI dinonaktifkan oleh Admin (Mode CS Manusia)' : 'AI diaktifkan kembali oleh Admin'));
   broadcastSSE('contact_ai_toggled', { jid, aiEnabled, isHumanHandoff: isHandoff });
