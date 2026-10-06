@@ -379,14 +379,19 @@ ${branch.maps_url || 'https://maps.google.com'}
 Silakan sampaikan jika Anda ingin melihat cabang lain atau membutuhkan jadwal survey gratis.`);
   }
 
+  getFaqs() {
+    const config = this.getConfig();
+    return config.faqs || [];
+  }
+
   getCategories() {
     const config = this.getConfig();
     return config.carpet_categories || [
-      { id: "kat-masjid", slug: "karpet-masjid", name: "Karpet Masjid & Musholla", icon: "🕌", description: "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi." },
-      { id: "kat-persia", slug: "karpet-persia", name: "Karpet Klasik & Permadani Persia", icon: "🏛️", description: "Permadani rajutan tangan autentik Persia & oriental klasik bermutu seni tinggi." },
-      { id: "kat-minimalis", slug: "karpet-minimalis", name: "Karpet Ruang Tamu Minimalis Modern", icon: "🛋️", description: "Karpet kontemporer konsep Skandinavia & modern aesthetic untuk hunian." },
-      { id: "kat-shaggy", slug: "karpet-shaggy", name: "Karpet Bulu & Shaggy Mewah", icon: "☁️", description: "Karpet bulu halus ekstra empuk dengan busa memory foam." },
-      { id: "kat-kantor", slug: "karpet-kantor", name: "Karpet Tile & Kantor Komersial", icon: "🏢", description: "Karpet modular tile heavy duty untuk perkantoran, hotel, dan ballroom." }
+      { id: "kat-masjid", slug: "karpet-masjid", name: "Karpet Masjid & Musholla", description: "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi." },
+      { id: "kat-persia", slug: "karpet-persia", name: "Karpet Klasik & Permadani Persia", description: "Permadani rajutan tangan autentik Persia & oriental klasik bermutu seni tinggi." },
+      { id: "kat-minimalis", slug: "karpet-minimalis", name: "Karpet Ruang Tamu Minimalis Modern", description: "Karpet kontemporer konsep Skandinavia & modern aesthetic untuk hunian." },
+      { id: "kat-shaggy", slug: "karpet-shaggy", name: "Karpet Bulu & Shaggy Mewah", description: "Karpet bulu halus ekstra empuk dengan busa memory foam." },
+      { id: "kat-kantor", slug: "karpet-kantor", name: "Karpet Tile & Kantor Komersial", description: "Karpet modular tile heavy duty untuk perkantoran, hotel, dan ballroom." }
     ];
   }
 

@@ -9,10 +9,14 @@ import {
   Send,
   Sparkles,
   Settings,
+  Brain,
+  Lightbulb,
+  BookOpen,
   RefreshCw,
   LogOut,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Clock,
   ExternalLink,
   Bot,
@@ -30,6 +34,8 @@ import {
   Search,
   Sliders,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   ArrowRight,
   Plus,
   Edit3,
@@ -61,7 +67,11 @@ import {
   UserCheck,
   Download,
   ArrowUpDown,
-  CheckCircle
+  CheckCircle,
+  Headphones,
+  ToggleLeft,
+  ToggleRight,
+  Power
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -102,6 +112,7 @@ export default function Dashboard() {
   const [config, setConfig] = useState(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [toast, setToast] = useState(null);
+  const [confirmModal, setConfirmModal] = useState(null);
 
   // AI Provider & State
   const [aiProvider, setAiProvider] = useState('groq'); // 'groq' | 'gemini'
@@ -168,6 +179,26 @@ export default function Dashboard() {
     address: 'Jl. Fatmawati Raya No. 45, Cilandak, Jakarta Selatan 12430',
     hours: 'Senin - Sabtu: 08:30 - 20:00 WIB\nMinggu & Libur Nasional: 09:00 - 18:00 WIB\nLayanan Survey & Pasang: 24 Jam (By Appointment)'
   });
+
+  // Q&A & Customer Behavior Knowledge States (Pembelajaran AI)
+  const [faqs, setFaqs] = useState([]);
+  const [faqLoading, setFaqLoading] = useState(false);
+  const [faqSaving, setFaqSaving] = useState(false);
+  const [faqSearchQuery, setFaqSearchQuery] = useState('');
+  const [faqCategoryFilter, setFaqCategoryFilter] = useState('Semua');
+  const [showFaqModal, setShowFaqModal] = useState(false);
+  const [editingFaq, setEditingFaq] = useState(null);
+  const [faqForm, setFaqForm] = useState({
+    id: '',
+    q: '',
+    a: '',
+    category: 'Karpet Masjid & Musholla',
+    source: 'Input Admin'
+  });
+  const [customerQuestions, setCustomerQuestions] = useState([]);
+  const [loadingCustomerQuestions, setLoadingCustomerQuestions] = useState(false);
+  const [faqSubTab, setFaqSubTab] = useState('qa_list'); // 'qa_list' | 'customer_insights'
+  const [syncingFaqsToAi, setSyncingFaqsToAi] = useState(false);
 
   // Store Pages State (Nama Toko/Pemilik, Jadwal Kerja, Lokasi Alamat, Garansi, Promo, Komplain)
   const [ownerSettings, setOwnerSettings] = useState({
@@ -364,6 +395,10 @@ export default function Dashboard() {
 
   // Product Catalog & Category State & Modal
   const [showProductModal, setShowProductModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showCategoryCards, setShowCategoryCards] = useState(false);
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
+  const [savingCategory, setSavingCategory] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [selectedCatalogCategory, setSelectedCatalogCategory] = useState('Semua');
   const [productForm, setProductForm] = useState({
@@ -407,12 +442,63 @@ export default function Dashboard() {
   const [togglingAiJid, setTogglingAiJid] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
 
+  // Hands-Off (Human Handoff & CS Takeover) State
+  const [handoffConfig, setHandoffConfig] = useState({
+    enabled: true,
+    keywords: ['cs', 'admin', 'operator', 'manusia', 'orang', 'live agent', 'bantuan manusia'],
+    release_keywords: ['!bot', 'aktifkan bot', 'kembali ke bot', 'bot', 'menu', 'selesai'],
+    auto_expire_hours: 2,
+    takeover_notice: 'Halo! Permintaan Anda telah kami teruskan ke Customer Service Sultan Carpet. Tim kami akan segera merespons Anda.',
+    release_notice: 'Bot asisten Sultan Carpet telah aktif kembali. Silakan ketik pertanyaan atau konsultasi karpet Anda.'
+  });
+  const [savingHandoffConfig, setSavingHandoffConfig] = useState(false);
+  const [handoffSubTab, setHandoffSubTab] = useState('contacts'); // 'contacts' | 'rules' | 'tester'
+  const [handoffSearch, setHandoffSearch] = useState('');
+  const [handoffFilter, setHandoffFilter] = useState('all'); // 'all' | 'handoff' | 'ai'
+  const [newHandoffKeyword, setNewHandoffKeyword] = useState('');
+  const [newReleaseKeyword, setNewReleaseKeyword] = useState('');
+  const [manualHandoffPhone, setManualHandoffPhone] = useState('');
+  const [manualHandoffReason, setManualHandoffReason] = useState('Takeover manual oleh admin');
+  const [testHandoffQuery, setTestHandoffQuery] = useState('');
+  const [testHandoffResult, setTestHandoffResult] = useState(null);
+
+  const activeHandoffCount = React.useMemo(() => {
+    return (conversations || []).filter((c) => Boolean(c.isHumanHandoff)).length;
+  }, [conversations]);
+
   const chatContainerRef = useRef(null);
 
   // Show Toast Notification
   const showToastMsg = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  // Custom In-App Confirmation Pop-up (Replaces native browser localhost alerts)
+  const askConfirmation = ({
+    title = 'Konfirmasi Tindakan',
+    message,
+    confirmText = 'Ya, Lanjutkan',
+    cancelText = 'Batal',
+    type = 'warning'
+  }) => {
+    return new Promise((resolve) => {
+      setConfirmModal({
+        title,
+        message,
+        confirmText,
+        cancelText,
+        type,
+        onConfirm: () => {
+          setConfirmModal(null);
+          resolve(true);
+        },
+        onCancel: () => {
+          setConfirmModal(null);
+          resolve(false);
+        }
+      });
+    });
   };
 
   // Fetch initial config & status
@@ -422,6 +508,8 @@ export default function Dashboard() {
     fetchTickets();
     fetchChats();
     fetchDbStatus();
+    fetchFaqs();
+    fetchCustomerQuestions();
 
     // Setup SSE for real-time events
     const eventSource = new EventSource('/api/events');
@@ -699,6 +787,13 @@ export default function Dashboard() {
       } catch (err) {}
     });
 
+    eventSource.addEventListener('faqs_updated', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (Array.isArray(data)) setFaqs(data);
+      } catch (err) {}
+    });
+
     return () => {
       eventSource.close();
     };
@@ -842,6 +937,15 @@ export default function Dashboard() {
       if (data.complaint_info) {
         setComplaintSettings(data.complaint_info);
       }
+      if (data.faqs && Array.isArray(data.faqs)) {
+        setFaqs(data.faqs);
+      }
+      if (data.protections?.human_handoff) {
+        setHandoffConfig((prev) => ({
+          ...prev,
+          ...data.protections.human_handoff,
+        }));
+      }
     } catch (err) {
       console.error('Error fetching config:', err);
     } finally {
@@ -939,7 +1043,14 @@ export default function Dashboard() {
   };
 
   const handleDeletePromo = async (indexToDelete) => {
-    if (!confirm('Hapus promo ini?')) return;
+    const ok = await askConfirmation({
+      title: 'Hapus Promo Ini?',
+      message: 'Promo ini akan dihapus dari daftar penawaran aktif dan AI tidak akan lagi menawarkannya ke pelanggan.',
+      confirmText: 'Hapus Promo',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
     const currentPromos = (promoSettings.active_promos || []).filter((_, idx) => idx !== indexToDelete);
     const updatedPromoSettings = { ...promoSettings, active_promos: currentPromos };
     setPromoSettings(updatedPromoSettings);
@@ -1004,7 +1115,14 @@ export default function Dashboard() {
   };
 
   const handleDeleteLocation = async (indexToDelete, locTitle) => {
-    if (!confirm(`Hapus lokasi "${locTitle || 'ini'}"?`)) return;
+    const ok = await askConfirmation({
+      title: `Hapus Lokasi "${locTitle || 'ini'}"?`,
+      message: 'Data showroom/gudang ini akan dihapus dari daftar lokasi resmi toko.',
+      confirmText: 'Hapus Lokasi',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
     const currentItems = (locationSettings.items || []).filter((_, idx) => idx !== indexToDelete);
     const updatedLocationSettings = {
       ...locationSettings,
@@ -1066,7 +1184,14 @@ export default function Dashboard() {
   };
 
   const handleRestart = async () => {
-    if (!confirm('Mulai ulang koneksi WhatsApp?')) return;
+    const ok = await askConfirmation({
+      title: 'Mulai Ulang Koneksi WhatsApp?',
+      message: 'Sistem akan memuat ulang socket WhatsApp dan menyegarkan koneksi bot secara otomatis.',
+      confirmText: 'Mulai Ulang',
+      cancelText: 'Batal',
+      type: 'info'
+    });
+    if (!ok) return;
     try {
       showToastMsg('Memulai ulang koneksi...', 'info');
       const res = await fetch('/api/restart', { method: 'POST' });
@@ -1079,7 +1204,14 @@ export default function Dashboard() {
   };
 
   const handleLogout = async () => {
-    if (!confirm('Logout dan hapus sesi WhatsApp? Anda perlu scan QR ulang.')) return;
+    const ok = await askConfirmation({
+      title: 'Logout Sesi WhatsApp?',
+      message: 'Sesi WhatsApp aktif akan dihapus dari server dan Anda perlu melakukan scan QR ulang untuk menghubungkan kembali.',
+      confirmText: 'Logout & Reset QR',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
     try {
       showToastMsg('Menghapus sesi & memuat QR...', 'info');
       await fetch('/api/logout', { method: 'POST' });
@@ -1231,26 +1363,145 @@ export default function Dashboard() {
     handleSimulateAiWithText(simPrompt);
   };
 
-  const handleSaveBusiness = async (e) => {
-    e.preventDefault();
-    if (!config) return;
-    const updated = {
-      ...config,
-      business: businessSettings,
-    };
+  const fetchFaqs = async () => {
     try {
-      const res = await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
+      setFaqLoading(true);
+      const res = await fetch('/api/faqs');
+      if (res.ok) {
+        const data = await res.json();
+        setFaqs(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.warn('Gagal memuat FAQs:', e.message);
+    } finally {
+      setFaqLoading(false);
+    }
+  };
+
+  const fetchCustomerQuestions = async () => {
+    try {
+      setLoadingCustomerQuestions(true);
+      const res = await fetch('/api/customer-questions');
+      if (res.ok) {
+        const data = await res.json();
+        setCustomerQuestions(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.warn('Gagal memuat pertanyaan pelanggan:', e.message);
+    } finally {
+      setLoadingCustomerQuestions(false);
+    }
+  };
+
+  const handleOpenAddFaq = (prefill = null) => {
+    if (prefill) {
+      setFaqForm({
+        id: '',
+        q: prefill.q || prefill.text || '',
+        a: prefill.a || '',
+        category: prefill.category || 'Karpet Masjid & Musholla',
+        source: prefill.source || (prefill.senderName ? `WhatsApp: ${prefill.senderName}` : 'Chat WhatsApp Pelanggan')
+      });
+      setEditingFaq(null);
+    } else {
+      setFaqForm({
+        id: '',
+        q: '',
+        a: '',
+        category: 'Karpet Masjid & Musholla',
+        source: 'Input Admin'
+      });
+      setEditingFaq(null);
+    }
+    setShowFaqModal(true);
+  };
+
+  const handleEditFaq = (faq) => {
+    setEditingFaq(faq);
+    setFaqForm({
+      id: faq.id || '',
+      q: faq.q || '',
+      a: faq.a || '',
+      category: faq.category || 'Karpet Masjid & Musholla',
+      source: faq.source || 'Input Admin'
+    });
+    setShowFaqModal(true);
+  };
+
+  const handleSaveFaq = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!faqForm.q.trim() || !faqForm.a.trim()) {
+      showToastMsg('Pertanyaan dan jawaban wajib diisi!', 'error');
+      return;
+    }
+    setFaqSaving(true);
+    try {
+      let res;
+      if (editingFaq) {
+        res = await fetch(`/api/faqs/${editingFaq.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(faqForm)
+        });
+      } else {
+        res = await fetch('/api/faqs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(faqForm)
+        });
+      }
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg(editingFaq ? 'Tanya-Jawab berhasil diperbarui!' : 'Tanya-Jawab berhasil dipelajari AI!', 'success');
+        setShowFaqModal(false);
+        setEditingFaq(null);
+        if (data.faqs) setFaqs(data.faqs);
+        fetchCustomerQuestions();
+      } else {
+        showToastMsg(data.error || 'Gagal menyimpan Tanya-Jawab', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Error: ' + err.message, 'error');
+    } finally {
+      setFaqSaving(false);
+    }
+  };
+
+  const handleDeleteFaq = async (id) => {
+    const ok = await askConfirmation({
+      title: 'Hapus Tanya-Jawab AI?',
+      message: 'Apakah Anda yakin ingin menghapus Tanya-Jawab ini dari Knowledge Base memori AI?',
+      confirmText: 'Hapus Tanya-Jawab',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/faqs/${id}`, {
+        method: 'DELETE'
       });
       const data = await res.json();
       if (data.success) {
-        setConfig(updated);
-        showToastMsg('Profil bisnis berhasil diperbarui!', 'success');
+        showToastMsg('Tanya-Jawab berhasil dihapus dari memori AI.', 'success');
+        if (data.faqs) setFaqs(data.faqs);
+        fetchCustomerQuestions();
+      } else {
+        showToastMsg(data.error || 'Gagal menghapus', 'error');
       }
     } catch (err) {
-      showToastMsg('Gagal: ' + err.message, 'error');
+      showToastMsg('Error: ' + err.message, 'error');
+    }
+  };
+
+  const handleSyncFaqsToAi = async () => {
+    setSyncingFaqsToAi(true);
+    try {
+      await fetchFaqs();
+      showToastMsg('Data Tanya-Jawab 100% tersinkron ke Groq & Gemini!', 'success');
+    } catch (err) {
+      showToastMsg('Gagal sinkron: ' + err.message, 'error');
+    } finally {
+      setSyncingFaqsToAi(false);
     }
   };
 
@@ -1265,10 +1516,37 @@ export default function Dashboard() {
   };
 
 
+  // Dynamic Carpet Categories (Without Icons & 100% Flexible)
+  const carpetCategoriesList = React.useMemo(() => {
+    const configuredCategories = (config?.carpet_categories && config.carpet_categories.length > 0)
+      ? config.carpet_categories
+      : [
+          { id: "kat-masjid", slug: "karpet-masjid", name: "Karpet Masjid & Musholla", description: "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi, empuk & nyaman untuk ibadah berjamaah." },
+          { id: "kat-persia", slug: "karpet-persia", name: "Karpet Klasik & Permadani Persia", description: "Koleksi permadani rajutan tangan autentik Persia & oriental klasik bermutu seni tinggi, benang sutra & wol." },
+          { id: "kat-minimalis", slug: "karpet-minimalis", name: "Karpet Ruang Tamu Minimalis Modern", description: "Karpet kontemporer konsep Skandinavia & modern aesthetic, anti-slip backing untuk ruang tamu & keluarga." },
+          { id: "kat-shaggy", slug: "karpet-shaggy", name: "Karpet Bulu & Shaggy Mewah", description: "Karpet bulu halus ekstra empuk dengan busa memory foam untuk kamar tidur dan ruang santai keluarga." },
+          { id: "kat-kantor", slug: "karpet-kantor", name: "Karpet Tile & Kantor Komersial", description: "Karpet modular tile 50x50cm heavy duty, tahan api & gesekan roda kursi untuk kantor, hotel, dan ballroom." }
+        ];
+
+    const extraCategories = (config?.catalog || [])
+      .map((p) => (p.category || '').trim())
+      .filter((catName) => catName && !configuredCategories.some((c) => c.name.toLowerCase() === catName.toLowerCase()))
+      .filter((val, idx, arr) => arr.indexOf(val) === idx)
+      .map((catName, idx) => ({
+        id: `extra-cat-${idx}`,
+        slug: catName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+        name: catName,
+        description: `Koleksi karpet pilihan untuk ${catName}.`
+      }));
+
+    return [...configuredCategories, ...extraCategories];
+  }, [config?.carpet_categories, config?.catalog]);
+
   const handleOpenAddProduct = () => {
     setEditingProduct(null);
+    const defaultCat = selectedCatalogCategory !== 'Semua' ? selectedCatalogCategory : (carpetCategoriesList[0]?.name || 'Karpet Masjid & Musholla');
     setProductForm({
-      category: selectedCatalogCategory !== 'Semua' ? selectedCatalogCategory : 'Karpet Masjid & Musholla',
+      category: defaultCat,
       title: '',
       code: '',
       price: '',
@@ -1286,7 +1564,7 @@ export default function Dashboard() {
     setEditingProduct(product);
     const cleanImg = (product.image || 'catalog/karpet-masjid-turki.jpg').replace(/^assets\//, '');
     setProductForm({
-      category: product.category || 'Karpet Masjid & Musholla',
+      category: product.category || (carpetCategoriesList[0]?.name || 'Karpet Masjid & Musholla'),
       title: product.title || '',
       code: product.code || '',
       price: product.price || '',
@@ -1352,7 +1630,14 @@ export default function Dashboard() {
   };
 
   const handleDeleteProduct = async (productId, productTitle) => {
-    if (!confirm(`Hapus produk "${productTitle}" dari katalog?`)) return;
+    const ok = await askConfirmation({
+      title: `Hapus Produk "${productTitle}"?`,
+      message: 'Produk ini akan dihapus permanen dari katalog dan bot AI tidak akan merekomendasikannya lagi.',
+      confirmText: 'Hapus Produk',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
     setDeletingProductId(productId);
     try {
       const res = await fetch(`/api/catalog/${productId}`, { method: 'DELETE' });
@@ -1367,6 +1652,77 @@ export default function Dashboard() {
       showToastMsg('Error: ' + err.message, 'error');
     } finally {
       setDeletingProductId(null);
+    }
+  };
+
+  const handleOpenAddCategory = () => {
+    setCategoryForm({ name: '', description: '' });
+    setShowCategoryModal(true);
+  };
+
+  const handleSaveCategory = async (e) => {
+    e.preventDefault();
+    if (!categoryForm.name.trim()) {
+      showToastMsg('Nama kategori wajib diisi!', 'error');
+      return;
+    }
+
+    setSavingCategory(true);
+    try {
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: categoryForm.name.trim(),
+          description: categoryForm.description.trim() || `Koleksi karpet pilihan ${categoryForm.name.trim()} Sultan Carpet Gallery.`
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg(`Kategori "${categoryForm.name.trim()}" berhasil ditambahkan!`, 'success');
+        setShowCategoryModal(false);
+        if (data.categories) {
+          setConfig((prev) => prev ? { ...prev, carpet_categories: data.categories } : prev);
+        }
+        if (showProductModal) {
+          setProductForm((prev) => ({ ...prev, category: categoryForm.name.trim() }));
+        }
+      } else {
+        showToastMsg(data.error || 'Gagal menyimpan kategori', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Error: ' + err.message, 'error');
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const handleDeleteCategory = async (catId, catName) => {
+    const ok = await askConfirmation({
+      title: `Hapus Kategori "${catName}"?`,
+      message: 'Kategori ini akan dihapus dari pilihan katalog. Produk yang menggunakan kategori ini tidak akan terhapus.',
+      confirmText: 'Hapus Kategori',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`/api/categories/${catId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg(`Kategori "${catName}" berhasil dihapus`, 'success');
+        if (data.categories) {
+          setConfig((prev) => prev ? { ...prev, carpet_categories: data.categories } : prev);
+        }
+        if (selectedCatalogCategory === catName) {
+          setSelectedCatalogCategory('Semua');
+        }
+      } else {
+        showToastMsg(data.error || 'Gagal menghapus kategori', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Error: ' + err.message, 'error');
     }
   };
 
@@ -1459,7 +1815,14 @@ export default function Dashboard() {
     const targetName = (conv.senderName && !/^\+?\d{10,}$/.test(conv.senderName.trim()) && conv.senderName !== 'Pelanggan')
       ? conv.senderName.trim()
       : (conv.formattedPhone && !conv.formattedPhone.includes('LID') ? conv.formattedPhone : 'pelanggan ini');
-    if (!confirm(`Hapus seluruh riwayat obrolan dengan "${targetName}"? Obrolan akan dihapus secara permanen.`)) return;
+    const ok = await askConfirmation({
+      title: `Hapus Obrolan "${targetName}"?`,
+      message: 'Seluruh riwayat pesan obrolan dengan pelanggan ini akan dihapus secara permanen dari server.',
+      confirmText: 'Hapus Obrolan',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
 
     const targetKey = conv.jid || conv.phone;
     try {
@@ -1480,7 +1843,14 @@ export default function Dashboard() {
   };
 
   const handleClearAllChats = async () => {
-    if (!confirm('Hapus seluruh riwayat obrolan semua pelanggan? Seluruh daftar obrolan akan dikosongkan secara permanen.')) return;
+    const ok = await askConfirmation({
+      title: 'Kosongkan Seluruh Riwayat Obrolan?',
+      message: 'Semua riwayat obrolan pelanggan akan dihapus secara permanen dari server. Tindakan ini tidak dapat dibatalkan!',
+      confirmText: 'Kosongkan Semua Chat',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
     try {
       const res = await fetch('/api/chats', { method: 'DELETE' });
       if (!res.ok) throw new Error('Gagal membersihkan riwayat obrolan dari server');
@@ -1549,6 +1919,193 @@ export default function Dashboard() {
       );
     } finally {
       setTogglingAiJid(null);
+    }
+  };
+
+  // HANDS-OFF MANAGEMENT HANDLERS
+  const handleSaveHandoffConfig = async (overrideConfig = null) => {
+    try {
+      setSavingHandoffConfig(true);
+      const payload = overrideConfig || handoffConfig;
+      const res = await fetch('/api/handoffs/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg('Konfigurasi Hands-Off berhasil disimpan!', 'success');
+        if (data.human_handoff) {
+          setHandoffConfig((prev) => ({ ...prev, ...data.human_handoff }));
+          setConfig((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  protections: {
+                    ...(prev.protections || {}),
+                    human_handoff: data.human_handoff,
+                  },
+                }
+              : prev
+          );
+        }
+      } else {
+        throw new Error(data.error || 'Gagal menyimpan konfigurasi');
+      }
+    } catch (err) {
+      showToastMsg('Error: ' + err.message, 'error');
+    } finally {
+      setSavingHandoffConfig(false);
+    }
+  };
+
+  const handleAddHandoffKeyword = () => {
+    const kw = newHandoffKeyword.trim().toLowerCase();
+    if (!kw) return;
+    if ((handoffConfig.keywords || []).includes(kw)) {
+      showToastMsg('Kata kunci sudah terdaftar', 'info');
+      return;
+    }
+    const updated = {
+      ...handoffConfig,
+      keywords: [...(handoffConfig.keywords || []), kw],
+    };
+    setHandoffConfig(updated);
+    setNewHandoffKeyword('');
+  };
+
+  const handleRemoveHandoffKeyword = (kw) => {
+    const updated = {
+      ...handoffConfig,
+      keywords: (handoffConfig.keywords || []).filter((k) => k !== kw),
+    };
+    setHandoffConfig(updated);
+  };
+
+  const handleAddReleaseKeyword = () => {
+    const kw = newReleaseKeyword.trim().toLowerCase();
+    if (!kw) return;
+    if ((handoffConfig.release_keywords || []).includes(kw)) {
+      showToastMsg('Kata kunci rilis sudah terdaftar', 'info');
+      return;
+    }
+    const updated = {
+      ...handoffConfig,
+      release_keywords: [...(handoffConfig.release_keywords || []), kw],
+    };
+    setHandoffConfig(updated);
+    setNewReleaseKeyword('');
+  };
+
+  const handleRemoveReleaseKeyword = (kw) => {
+    const updated = {
+      ...handoffConfig,
+      release_keywords: (handoffConfig.release_keywords || []).filter((k) => k !== kw),
+    };
+    setHandoffConfig(updated);
+  };
+
+  const handleLoadDefaultHandoffPresets = (type) => {
+    if (type === 'trigger') {
+      const presets = ['cs', 'admin', 'operator', 'manusia', 'orang', 'live agent', 'bantuan manusia', 'staf', 'bicara orang', 'hubungi admin'];
+      const merged = Array.from(new Set([...(handoffConfig.keywords || []), ...presets]));
+      setHandoffConfig((prev) => ({ ...prev, keywords: merged }));
+      showToastMsg('Rekomendasi kata kunci CS berhasil ditambahkan', 'success');
+    } else if (type === 'release') {
+      const presets = ['!bot', 'aktifkan bot', 'kembali ke bot', 'bot', 'menu', 'selesai', 'nyalakan bot', 'tanya bot'];
+      const merged = Array.from(new Set([...(handoffConfig.release_keywords || []), ...presets]));
+      setHandoffConfig((prev) => ({ ...prev, release_keywords: merged }));
+      showToastMsg('Rekomendasi kata kunci rilis bot berhasil ditambahkan', 'success');
+    }
+  };
+
+  const handleManualHandoffTakeover = async (e) => {
+    if (e) e.preventDefault();
+    const phone = manualHandoffPhone.trim().replace(/\D/g, '');
+    if (!phone) {
+      showToastMsg('Silakan masukkan nomor WhatsApp yang valid', 'error');
+      return;
+    }
+    const cleanPhone = phone.startsWith('0') ? '62' + phone.slice(1) : phone;
+    const targetJid = `${cleanPhone}@s.whatsapp.net`;
+
+    try {
+      const res = await fetch(`/api/chats/${encodeURIComponent(targetJid)}/handoff`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: true, reason: manualHandoffReason || 'Takeover manual oleh admin' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg(`Mode CS Manusia aktif untuk +${cleanPhone}. Bot AI dinonaktifkan.`, 'success');
+        setConversations((prev) => {
+          const exists = prev.some((c) => c.jid === targetJid || c.phone === cleanPhone);
+          if (exists) {
+            return prev.map((c) =>
+              c.jid === targetJid || c.phone === cleanPhone
+                ? { ...c, isHumanHandoff: true, aiEnabled: false }
+                : c
+            );
+          } else {
+            return [
+              {
+                jid: targetJid,
+                phone: cleanPhone,
+                formattedPhone: `+${cleanPhone}`,
+                senderName: `+${cleanPhone}`,
+                lastMessage: '(Diambil alih manual oleh CS)',
+                lastTimestamp: Date.now(),
+                isHumanHandoff: true,
+                aiEnabled: false,
+                unreadCount: 0,
+              },
+              ...prev,
+            ];
+          }
+        });
+        setManualHandoffPhone('');
+      } else {
+        throw new Error(data.error || 'Gagal mengambil alih chat');
+      }
+    } catch (err) {
+      showToastMsg('Error: ' + err.message, 'error');
+    }
+  };
+
+  const handleTestHandoffMessage = () => {
+    const q = testHandoffQuery.trim().toLowerCase();
+    if (!q) {
+      setTestHandoffResult(null);
+      return;
+    }
+
+    const releaseKws = handoffConfig.release_keywords || [];
+    const triggerKws = handoffConfig.keywords || [];
+
+    const matchedRelease = releaseKws.find((kw) => q === kw || q.startsWith(`${kw} `) || q.includes(kw));
+    const matchedTrigger = triggerKws.find((kw) => q === kw || q.startsWith(`${kw} `) || q.includes(kw));
+
+    if (matchedRelease) {
+      setTestHandoffResult({
+        type: 'RELEASE',
+        matched: matchedRelease,
+        title: 'Kembali ke Bot AI (RELEASE)',
+        message: `Pesan customer cocok dengan kata kunci rilis: "${matchedRelease}". Bot AI akan otomatis diaktifkan kembali.`,
+      });
+    } else if (matchedTrigger) {
+      setTestHandoffResult({
+        type: 'TRIGGER',
+        matched: matchedTrigger,
+        title: 'Hands-Off Dipicu (CS Manusia)',
+        message: `Pesan customer cocok dengan kata kunci pemicu: "${matchedTrigger}". Bot AI otomatis berhenti membalas dan percakapan dialihkan ke CS manusia.`,
+      });
+    } else {
+      setTestHandoffResult({
+        type: 'AI_REPLY',
+        matched: null,
+        title: 'Dijawab Normal oleh Bot AI',
+        message: 'Tidak ada kata kunci hands-off yang terdeteksi. Pesan akan dijawab oleh Bot AI Sultan Carpet menggunakan AI Knowledge Base.',
+      });
     }
   };
 
@@ -1695,9 +2252,14 @@ export default function Dashboard() {
   };
 
   const handleDeleteTicket = async (ticketId) => {
-    if (!window.confirm(`Yakin ingin menghapus tiket #${ticketId}? Data tiket akan dihapus secara permanen.`)) {
-      return;
-    }
+    const ok = await askConfirmation({
+      title: `Hapus Tiket #${ticketId}?`,
+      message: 'Data tiket komplain / penanganan CS ini akan dihapus secara permanen.',
+      confirmText: 'Hapus Tiket',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
     setDeletingTicketId(ticketId);
     try {
       const res = await fetch(`/api/tickets/${ticketId}`, {
@@ -1874,6 +2436,66 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Custom In-App Confirmation Modal Pop-up (Replaces native browser localhost confirm/alerts) */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div 
+            className="w-full max-w-md bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 sm:p-7 shadow-2xl shadow-black/90 flex flex-col gap-5 transform animate-in zoom-in-95 duration-200"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex items-start gap-4">
+              <div className={`p-3.5 rounded-2xl flex-shrink-0 border ${
+                confirmModal.type === 'danger'
+                  ? 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+                  : confirmModal.type === 'info'
+                  ? 'bg-sky-500/15 border-sky-500/30 text-sky-400'
+                  : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+              }`}>
+                {confirmModal.type === 'danger' ? (
+                  <Trash2 className="w-6 h-6" />
+                ) : confirmModal.type === 'info' ? (
+                  <RotateCcw className="w-6 h-6" />
+                ) : (
+                  <AlertTriangle className="w-6 h-6" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-bold text-white tracking-tight leading-snug">
+                  {confirmModal.title}
+                </h3>
+                <p className="text-sm text-slate-300 leading-relaxed mt-2">
+                  {confirmModal.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={confirmModal.onCancel}
+                className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white font-medium text-sm transition"
+              >
+                {confirmModal.cancelText || 'Batal'}
+              </button>
+              <button
+                type="button"
+                onClick={confirmModal.onConfirm}
+                className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition flex items-center gap-2 shadow-lg ${
+                  confirmModal.type === 'danger'
+                    ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-600/30'
+                    : confirmModal.type === 'info'
+                    ? 'bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 text-white shadow-sky-600/30'
+                    : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-amber-600/30'
+                }`}
+              >
+                {confirmModal.confirmText || 'Ya, Lanjutkan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MOBILE DRAWER NAVIGATION */}
       {mobileDrawerOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm md:hidden flex animate-in fade-in duration-200">
@@ -1912,7 +2534,7 @@ export default function Dashboard() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <MessageSquare className="w-4 h-4" />
+                    <span className="text-sm">💬</span>
                     <span>Obrolan WhatsApp</span>
                   </div>
                   {conversations.length > 0 && (
@@ -1934,13 +2556,13 @@ export default function Dashboard() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Sparkles className="w-4 h-4 text-purple-400" />
-                    <span>AI Studio (Groq / Gemini)</span>
+                    <span className="text-sm">✨</span>
+                    <span>AI Studio</span>
                   </div>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
                     aiProvider === 'groq' ? 'bg-amber-500/30 text-amber-200' : 'bg-purple-500/30 text-purple-200'
                   }`}>
-                    {aiProvider === 'groq' ? 'Groq' : 'Gemini'}
+                    {aiProvider === 'groq' ? '⚡ Groq' : '🔮 Gemini'}
                   </span>
                 </button>
 
@@ -1956,7 +2578,7 @@ export default function Dashboard() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <QrCode className="w-4 h-4" />
+                    <span className="text-sm font-mono">▦</span>
                     <span>Koneksi WhatsApp</span>
                   </div>
                   <span
@@ -1967,7 +2589,7 @@ export default function Dashboard() {
                 </button>
 
                 <div className="pt-2 pb-1 px-3">
-                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Informasi Toko Resmi</p>
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">INFORMASI TOKO</p>
                 </div>
 
                 <button
@@ -1981,7 +2603,7 @@ export default function Dashboard() {
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
-                  <Award className="w-4 h-4 text-emerald-400" />
+                  <span className="text-sm">♙</span>
                   <span>Profil & Pemilik Toko</span>
                 </button>
 
@@ -1997,8 +2619,8 @@ export default function Dashboard() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <ShoppingBag className="w-4 h-4 text-emerald-400" />
-                    <span>Katalog Karpet</span>
+                    <span className="text-sm">🛍️</span>
+                    <span>Katalog Produk</span>
                   </div>
                   <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
                     {config?.catalog?.length || 5}
@@ -2016,7 +2638,7 @@ export default function Dashboard() {
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
-                  <Calendar className="w-4 h-4 text-sky-400" />
+                  <span className="text-sm">🕐</span>
                   <span>Jadwal & Jam Kerja</span>
                 </button>
 
@@ -2031,7 +2653,7 @@ export default function Dashboard() {
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
-                  <MapPin className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm">📍</span>
                   <span>Lokasi & Alamat</span>
                 </button>
 
@@ -2046,7 +2668,7 @@ export default function Dashboard() {
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
-                  <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                  <span className="text-sm">🛡️</span>
                   <span>Ketentuan Garansi</span>
                 </button>
 
@@ -2061,7 +2683,7 @@ export default function Dashboard() {
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
-                  <Tag className="w-4 h-4 text-rose-400" />
+                  <span className="text-sm">🏷️</span>
                   <span>Promo & Diskon</span>
                 </button>
 
@@ -2077,7 +2699,7 @@ export default function Dashboard() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <ShieldAlert className="w-4 h-4 text-purple-400" />
+                    <span className="text-sm">⚙️</span>
                     <span>Pusat Komplain & CS</span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -2091,22 +2713,58 @@ export default function Dashboard() {
                 </button>
 
                 <div className="pt-2 pb-1 px-3">
-                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Layanan & Sistem</p>
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">AI KNOWLEDGE</p>
                 </div>
 
                 <button
                   onClick={() => {
-                    setActiveTab('settings');
+                    setActiveTab('qna');
                     setMobileDrawerOpen(false);
                   }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'settings'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'qna'
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
-                  <Settings className="w-4 h-4" />
-                  <span>Pengaturan Bisnis</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm">🧠</span>
+                    <span>Knowledge Base</span>
+                  </div>
+                  {faqs.length > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold">
+                      {faqs.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('handoff');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'handoff'
+                      ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm">🎧</span>
+                    <span>Hands-Off CS & AI</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {activeHandoffCount > 0 && (
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                    )}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                      activeHandoffCount > 0
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {activeHandoffCount}
+                    </span>
+                  </div>
                 </button>
               </nav>
             </div>
@@ -2183,7 +2841,7 @@ export default function Dashboard() {
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <MessageSquare className="w-4 h-4" />
+                <span className="text-sm">💬</span>
                 <span>Obrolan WhatsApp</span>
               </div>
               {conversations.length > 0 && (
@@ -2202,8 +2860,8 @@ export default function Dashboard() {
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <Sparkles className="w-4 h-4 text-purple-400" />
-                <span>AI Studio (Groq / Gemini)</span>
+                <span className="text-sm">✨</span>
+                <span>AI Studio</span>
               </div>
               <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
                 aiProvider === 'groq' ? 'bg-amber-500/30 text-amber-200' : 'bg-purple-500/30 text-purple-200'
@@ -2221,7 +2879,7 @@ export default function Dashboard() {
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <QrCode className="w-4 h-4" />
+                <span className="text-sm font-mono">▦</span>
                 <span>Koneksi WhatsApp</span>
               </div>
               <span
@@ -2232,7 +2890,7 @@ export default function Dashboard() {
             </button>
 
             <div className="pt-2 pb-1 px-3">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Informasi Toko Resmi</p>
+              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">INFORMASI TOKO</p>
             </div>
 
             <button
@@ -2243,7 +2901,7 @@ export default function Dashboard() {
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <Award className="w-4 h-4 text-emerald-400" />
+              <span className="text-sm">♙</span>
               <span>Profil & Pemilik Toko</span>
             </button>
 
@@ -2256,8 +2914,8 @@ export default function Dashboard() {
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <ShoppingBag className="w-4 h-4 text-emerald-400" />
-                <span>Katalog Karpet</span>
+                <span className="text-sm">🛍️</span>
+                <span>Katalog Produk</span>
               </div>
               <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 font-semibold">
                 {config?.catalog?.length || 5}
@@ -2272,7 +2930,7 @@ export default function Dashboard() {
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <Calendar className="w-4 h-4 text-sky-400" />
+              <span className="text-sm">🕐</span>
               <span>Jadwal & Jam Kerja</span>
             </button>
 
@@ -2284,7 +2942,7 @@ export default function Dashboard() {
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <MapPin className="w-4 h-4 text-amber-400" />
+              <span className="text-sm">📍</span>
               <span>Lokasi & Alamat</span>
             </button>
 
@@ -2296,7 +2954,7 @@ export default function Dashboard() {
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <ShieldCheck className="w-4 h-4 text-indigo-400" />
+              <span className="text-sm">🛡️</span>
               <span>Ketentuan Garansi</span>
             </button>
 
@@ -2308,7 +2966,7 @@ export default function Dashboard() {
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <Tag className="w-4 h-4 text-rose-400" />
+              <span className="text-sm">🏷️</span>
               <span>Promo & Diskon</span>
             </button>
 
@@ -2321,7 +2979,7 @@ export default function Dashboard() {
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <ShieldAlert className="w-4 h-4 text-purple-400" />
+                <span className="text-sm">⚙️</span>
                 <span>Pusat Komplain & CS</span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -2335,19 +2993,52 @@ export default function Dashboard() {
             </button>
 
             <div className="pt-2 pb-1 px-3">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Layanan & Sistem</p>
+              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">AI KNOWLEDGE</p>
             </div>
 
             <button
-              onClick={() => setActiveTab('settings')}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'settings'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+              onClick={() => setActiveTab('qna')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'qna'
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <Settings className="w-4 h-4" />
-              <span>Pengaturan Bisnis</span>
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🧠</span>
+                <span>Knowledge Base</span>
+              </div>
+              {faqs.length > 0 && (
+                <span className="text-[11px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
+                  {faqs.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('handoff')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'handoff'
+                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🎧</span>
+                <span>Hands-Off CS & AI</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {activeHandoffCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                )}
+                <span className={`text-[11px] px-2 py-0.2 rounded-full font-semibold ${
+                  activeHandoffCount > 0
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {activeHandoffCount}
+                </span>
+              </div>
             </button>
           </nav>
         </div>
@@ -2441,7 +3132,8 @@ export default function Dashboard() {
               {activeTab === 'location' && 'Alamat & Lokasi Showroom'}
               {activeTab === 'warranty' && 'Garansi & Kebijakan Klaim Karpet'}
               {activeTab === 'promo' && 'Promo & Penawaran Diskon Aktif'}
-              {activeTab === 'settings' && 'Pengaturan Bisnis'}
+              {activeTab === 'qna' && 'Basis Tanya Jawab AI (Knowledge Base)'}
+              {activeTab === 'handoff' && 'Hands-Off Customer Service & AI Takeover'}
             </h2>
           </div>
 
@@ -3753,34 +4445,6 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* CS Hotline & SLA Quick Info Bar */}
-                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-[#0f172a]/90 to-slate-900/80 border border-purple-500/30 backdrop-blur-md flex flex-wrap items-center gap-4 text-xs shadow-lg shadow-purple-950/20 text-slate-300">
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-purple-500/20 text-purple-300">
-                      <Phone className="w-3.5 h-3.5" />
-                    </span>
-                    <span>
-                      Hotline Manajer CS: <strong className="text-white font-mono">{complaintSettings?.contact_manager || '0811-2345-6789'}</strong>
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300">
-                      <Clock className="w-3.5 h-3.5" />
-                    </span>
-                    <span>
-                      Target Respon (SLA): <strong className="text-emerald-300 font-semibold">{complaintSettings?.sla || 'Maksimal 1x24 Jam Kerja'}</strong>
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-blue-500/20 text-blue-300">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                    </span>
-                    <span>
-                      Garansi Resmi: <strong className="text-blue-300 font-semibold">Tukar Baru 14 Hari & Obras 1 Tahun</strong>
-                    </span>
-                  </div>
-                </div>
-
                 {/* 2. Interactive Metrics / Statistics Row */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   {/* Total */}
@@ -4334,60 +4998,11 @@ export default function Dashboard() {
 
           {/* TAB 5: CATALOG */}
           {activeTab === 'catalog' && (() => {
-            const carpetCategoriesList = config?.carpet_categories || [
-              {
-                id: "kat-masjid",
-                slug: "karpet-masjid",
-                name: "Karpet Masjid & Musholla",
-                icon: "🕌",
-                description: "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi, empuk & nyaman untuk ibadah berjamaah."
-              },
-              {
-                id: "kat-persia",
-                slug: "karpet-persia",
-                name: "Karpet Klasik & Permadani Persia",
-                icon: "🏛️",
-                description: "Koleksi permadani rajutan tangan autentik Persia & oriental klasik bermutu seni tinggi, benang sutra & wol."
-              },
-              {
-                id: "kat-minimalis",
-                slug: "karpet-minimalis",
-                name: "Karpet Ruang Tamu Minimalis Modern",
-                icon: "🛋️",
-                description: "Karpet kontemporer konsep Skandinavia & modern aesthetic, anti-slip backing untuk ruang tamu & keluarga."
-              },
-              {
-                id: "kat-shaggy",
-                slug: "karpet-shaggy",
-                name: "Karpet Bulu & Shaggy Mewah",
-                icon: "☁️",
-                description: "Karpet bulu halus ekstra empuk dengan busa memory foam untuk kamar tidur dan ruang santai keluarga."
-              },
-              {
-                id: "kat-kantor",
-                slug: "karpet-kantor",
-                name: "Karpet Tile & Kantor Komersial",
-                icon: "🏢",
-                description: "Karpet modular tile 50x50cm heavy duty, tahan api & gesekan roda kursi untuk kantor, hotel, dan ballroom."
-              }
-            ];
-
-            const getCategoryIcon = (categoryName) => {
-              if (!categoryName) return '🏷️';
-              const cat = carpetCategoriesList.find(c => 
-                c.name.toLowerCase() === categoryName.toLowerCase() ||
-                categoryName.toLowerCase().includes(c.name.toLowerCase().slice(0, 8)) ||
-                c.name.toLowerCase().includes(categoryName.toLowerCase().slice(0, 8))
-              );
-              return cat ? cat.icon : '🏷️';
-            };
-
             const filteredCatalog = (config?.catalog || []).filter((item) => {
               if (selectedCatalogCategory !== 'Semua') {
-                const itemCat = (item.category || '').toLowerCase();
-                const targetCat = selectedCatalogCategory.toLowerCase();
-                const match = itemCat.includes(targetCat.slice(0, 8)) || targetCat.includes(itemCat.slice(0, 8));
-                if (!match) return false;
+                const itemCat = (item.category || '').trim().toLowerCase();
+                const targetCat = selectedCatalogCategory.trim().toLowerCase();
+                if (itemCat !== targetCat) return false;
               }
 
               if (!catalogSearch.trim()) return true;
@@ -4397,44 +5012,46 @@ export default function Dashboard() {
                 (item.code && item.code.toLowerCase().includes(q)) ||
                 (item.subtitle && item.subtitle.toLowerCase().includes(q)) ||
                 (item.footer && item.footer.toLowerCase().includes(q)) ||
-                (item.category && item.category.toLowerCase().includes(q))
+                (item.category && item.category.toLowerCase().includes(q)) ||
+                (item.price && item.price.toLowerCase().includes(q))
               );
             });
 
             return (
-              <div className="space-y-6">
+              <div className="space-y-5">
 
-                {/* Header with Title, Search, and Tambah Produk Button */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+                {/* Header with Title, Badges, and Primary Action Buttons */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
                   <div>
-                    <div className="flex items-center gap-2.5">
-                      <h3 className="text-lg font-bold text-white">Koleksi Karpet Eksklusif Sultan Carpet Gallery</h3>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h3 className="text-xl font-bold text-white tracking-tight">Katalog Produk Karpet</h3>
                       <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
-                        {config?.catalog?.length || 0} Produk
+                        {config?.catalog?.length || 0} Total Produk
                       </span>
                       <span className="px-2.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 font-semibold text-xs">
                         {carpetCategoriesList.length} Kategori
                       </span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Koleksi karpet masjid, permadani persia, karpet modern, bulu shaggy, dan karpet tile kantor yang terintegrasi otomatis dengan bot WhatsApp dan memori AI
+                    <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                      Kelola katalog karpet, harga, kategori produk, dan pemesanan WhatsApp otomatis Sultan Carpet.
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        value={catalogSearch}
-                        onChange={(e) => setCatalogSearch(e.target.value)}
-                        placeholder="Cari nama, warna, motif..."
-                        className="rounded-xl bg-slate-900 border border-slate-700/80 pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-48"
-                      />
-                    </div>
+                  {/* Primary Action Buttons */}
+                  <div className="flex items-center gap-2.5 self-start md:self-auto shrink-0">
                     <button
+                      type="button"
+                      onClick={handleOpenAddCategory}
+                      className="py-2 px-3.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 font-semibold text-xs border border-emerald-500/30 flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                      title="Tambah Kategori Baru"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Kategori</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleOpenAddProduct}
-                      className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 shrink-0"
+                      className="py-2 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/25 flex items-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-4 h-4" />
                       <span>Tambah Produk Baru</span>
@@ -4442,133 +5059,286 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Kategori Showcase Grid */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Tag className="w-4 h-4 text-emerald-400" />
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                        Pilihan Kategori Karpet Sultan
-                      </h4>
-                    </div>
-                    <span className="text-[11px] text-slate-500">
-                      Klik kategori untuk memfilter koleksi karpet
-                    </span>
+                {/* Control Toolbar: Search & View Options */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  {/* Search Input */}
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={catalogSearch}
+                      onChange={(e) => setCatalogSearch(e.target.value)}
+                      placeholder="Cari nama karpet, kode, warna, harga..."
+                      className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition shadow-inner"
+                    />
+                    {catalogSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setCatalogSearch('')}
+                        className="absolute right-2.5 top-2 text-slate-400 hover:text-white p-0.5 rounded transition cursor-pointer"
+                        title="Hapus pencarian"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-                    {carpetCategoriesList.map((cat) => {
-                      const isSelected = selectedCatalogCategory === cat.name;
-                      const count = (config?.catalog || []).filter(p => {
-                        const pCat = (p.category || '').toLowerCase();
-                        return pCat.includes(cat.name.toLowerCase().slice(0, 8)) || cat.name.toLowerCase().includes(pCat.slice(0, 8));
-                      }).length;
+                  {/* Right Toolbar Controls: Toggle Category Cards & Reset Filter */}
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowCategoryCards(!showCategoryCards)}
+                      className={`py-1.5 px-3 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer ${
+                        showCategoryCards
+                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                      }`}
+                      title="Tampilkan / Sembunyikan ringkasan kartu kategori"
+                    >
+                      <span>{showCategoryCards ? 'Sembunyikan Kartu' : 'Detail Kategori'}</span>
+                      {showCategoryCards ? (
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      )}
+                    </button>
 
-                      return (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          onClick={() => setSelectedCatalogCategory(isSelected ? 'Semua' : cat.name)}
-                          className={`p-3.5 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between group relative overflow-hidden ${
-                            isSelected
-                              ? 'bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/10'
-                              : 'bg-[#0f172a]/70 hover:bg-slate-900 border-slate-800 hover:border-slate-700'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-2xl p-2 rounded-xl bg-slate-900/90 border border-slate-800 shadow group-hover:scale-110 transition duration-300">
-                                {cat.icon}
-                              </span>
-                              <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
-                                isSelected 
-                                  ? 'bg-emerald-500 text-slate-950 font-bold' 
-                                  : 'bg-slate-800/80 text-slate-400 group-hover:text-slate-200'
-                              }`}>
-                                {count} Produk
-                              </span>
-                            </div>
-                            <h5 className={`font-bold text-xs line-clamp-1 mb-1 ${
-                              isSelected ? 'text-emerald-300' : 'text-white'
-                            }`}>
-                              {cat.name}
-                            </h5>
-                            <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed">
-                              {cat.description}
-                            </p>
-                          </div>
-
-                          <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[10px]">
-                            <span className={isSelected ? 'text-emerald-400 font-semibold' : 'text-slate-500'}>
-                              {isSelected ? '✓ Sedang Dilihat' : 'Lihat Produk'}
-                            </span>
-                            <ChevronRight className={`w-3 h-3 ${isSelected ? 'text-emerald-400' : 'text-slate-600 group-hover:text-slate-400'}`} />
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {(selectedCatalogCategory !== 'Semua' || catalogSearch) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCatalogCategory('Semua');
+                          setCatalogSearch('');
+                        }}
+                        className="py-1.5 px-3 rounded-xl bg-rose-950/30 hover:bg-rose-950/60 border border-rose-800/40 text-rose-300 hover:text-rose-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Reset Filter</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* Filter Pills & Reset */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full scrollbar-none">
-                    <button
-                      onClick={() => setSelectedCatalogCategory('Semua')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 ${
-                        selectedCatalogCategory === 'Semua'
-                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                          : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-                      }`}
-                    >
-                      <span>Semua Koleksi</span>
-                      <span className="px-1.5 py-0.2 rounded-md bg-black/30 text-[10px]">
-                        {config?.catalog?.length || 0}
-                      </span>
-                    </button>
+                {/* Category Pills Navigation with Inline Add */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full scrollbar-thin scrollbar-thumb-slate-800">
+                  {/* 'Semua Koleksi' Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCatalogCategory('Semua')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-2 cursor-pointer ${
+                      selectedCatalogCategory === 'Semua'
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400/40'
+                        : 'bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                    }`}
+                  >
+                    <span>Semua Koleksi</span>
+                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                      selectedCatalogCategory === 'Semua' ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {config?.catalog?.length || 0}
+                    </span>
+                  </button>
 
-                    {carpetCategoriesList.map((cat) => {
-                      const isSelected = selectedCatalogCategory === cat.name;
-                      const count = (config?.catalog || []).filter(p => {
-                        const pCat = (p.category || '').toLowerCase();
-                        return pCat.includes(cat.name.toLowerCase().slice(0, 8)) || cat.name.toLowerCase().includes(pCat.slice(0, 8));
-                      }).length;
+                  {/* Category Pills */}
+                  {carpetCategoriesList.map((cat) => {
+                    const isSelected = selectedCatalogCategory === cat.name;
+                    const count = (config?.catalog || []).filter(p => {
+                      const pCat = (p.category || '').trim().toLowerCase();
+                      return pCat === cat.name.trim().toLowerCase();
+                    }).length;
+                    const isCustomCat = cat.id && !['kat-masjid', 'kat-persia', 'kat-minimalis', 'kat-shaggy', 'kat-kantor'].includes(cat.id);
 
-                      return (
+                    return (
+                      <div key={cat.id || cat.name} className="relative group shrink-0">
                         <button
-                          key={cat.id}
-                          onClick={() => setSelectedCatalogCategory(cat.name)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 ${
+                          type="button"
+                          onClick={() => setSelectedCatalogCategory(isSelected ? 'Semua' : cat.name)}
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
                             isSelected
-                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-                          }`}
+                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400/40'
+                              : 'bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                          } ${isCustomCat ? 'pr-7' : ''}`}
                         >
-                          <span>{cat.icon}</span>
-                          <span>{cat.name.replace('Karpet ', '')}</span>
-                          <span className="px-1.5 py-0.2 rounded-md bg-black/30 text-[10px]">
+                          <span>{cat.name}</span>
+                          <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                            isSelected ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'
+                          }`}>
                             {count}
                           </span>
                         </button>
-                      );
-                    })}
+
+                        {/* Quick Delete icon for custom categories */}
+                        {isCustomCat && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteCategory(cat.id, cat.name);
+                            }}
+                            title={`Hapus kategori "${cat.name}"`}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-950/50 transition cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Quick Add Category Pill */}
+                  <button
+                    type="button"
+                    onClick={handleOpenAddCategory}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-emerald-400 hover:text-emerald-300 border border-dashed border-emerald-500/40 hover:border-emerald-500 bg-emerald-950/20 hover:bg-emerald-950/40 shrink-0 transition flex items-center gap-1.5 cursor-pointer"
+                    title="Tambah Kategori Baru"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Tambah Kategori</span>
+                  </button>
+                </div>
+
+                {/* Collapsible Category Overview Cards Shelf */}
+                {showCategoryCards && (
+                  <div className="p-4 sm:p-5 rounded-2xl border border-slate-800 bg-slate-900/40 space-y-3.5 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Tag className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                          Detail & Deskripsi Kategori Karpet ({carpetCategoriesList.length})
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowCategoryCards(false)}
+                        className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition cursor-pointer"
+                      >
+                        <span>Tutup</span>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+                      {carpetCategoriesList.map((cat) => {
+                        const isSelected = selectedCatalogCategory === cat.name;
+                        const count = (config?.catalog || []).filter(p => {
+                          const pCat = (p.category || '').trim().toLowerCase();
+                          return pCat === cat.name.trim().toLowerCase();
+                        }).length;
+                        const isCustom = cat.id && !['kat-masjid', 'kat-persia', 'kat-minimalis', 'kat-shaggy', 'kat-kantor'].includes(cat.id);
+
+                        return (
+                          <div
+                            key={cat.id || cat.name}
+                            onClick={() => setSelectedCatalogCategory(isSelected ? 'Semua' : cat.name)}
+                            className={`p-3.5 rounded-xl border text-left transition-all duration-200 flex flex-col justify-between group relative cursor-pointer ${
+                              isSelected
+                                ? 'bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/30 shadow-md shadow-emerald-500/10'
+                                : 'bg-[#0f172a]/70 hover:bg-slate-900 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <span className={`text-[10px] font-bold tracking-wide uppercase px-2 py-0.5 rounded-md border ${
+                                  isSelected 
+                                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                                    : 'bg-slate-800/80 border-slate-700/60 text-slate-400'
+                                }`}>
+                                  Kategori
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                    isSelected 
+                                      ? 'bg-emerald-500 text-slate-950' 
+                                      : 'bg-slate-800 text-slate-300'
+                                  }`}>
+                                    {count} Produk
+                                  </span>
+                                  {isCustom && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteCategory(cat.id, cat.name);
+                                      }}
+                                      title="Hapus Kategori"
+                                      className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 transition cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              <h5 className={`font-bold text-sm mb-1 leading-snug ${
+                                isSelected ? 'text-emerald-300' : 'text-white'
+                              }`}>
+                                {cat.name}
+                              </h5>
+                              <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                                {cat.description || `Koleksi karpet pilihan ${cat.name}.`}
+                              </p>
+                            </div>
+
+                            <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
+                              <span className={isSelected ? 'text-emerald-400 font-semibold' : 'text-slate-500 group-hover:text-slate-300'}>
+                                {isSelected ? '✓ Sedang Difilter' : 'Filter Kategori'}
+                              </span>
+                              <ChevronRight className={`w-3.5 h-3.5 ${isSelected ? 'text-emerald-400' : 'text-slate-600 group-hover:text-slate-400'}`} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Status Summary & Filter Indicator */}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 pt-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span>Menampilkan <strong className="text-white font-semibold">{filteredCatalog.length}</strong> produk</span>
+                    {selectedCatalogCategory !== 'Semua' && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px]">
+                        <span>Kategori: <strong>{selectedCatalogCategory}</strong></span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCatalogCategory('Semua')}
+                          className="hover:text-white p-0.5 rounded transition cursor-pointer"
+                          title="Hapus filter kategori"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                    {catalogSearch && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px]">
+                        <span>Pencarian: <strong>"{catalogSearch}"</strong></span>
+                        <button
+                          type="button"
+                          onClick={() => setCatalogSearch('')}
+                          className="hover:text-white p-0.5 rounded transition cursor-pointer"
+                          title="Hapus kata kunci pencarian"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
                   </div>
 
                   {(selectedCatalogCategory !== 'Semua' || catalogSearch) && (
                     <button
+                      type="button"
                       onClick={() => {
                         setSelectedCatalogCategory('Semua');
                         setCatalogSearch('');
                       }}
-                      className="text-xs text-rose-400 hover:text-rose-300 font-medium flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-lg hover:bg-rose-950/40 transition"
+                      className="text-xs text-rose-400 hover:text-rose-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer"
                     >
-                      <RotateCcw className="w-3 h-3" />
-                      <span>Reset Filter</span>
+                      <span>Reset Semua Filter</span>
                     </button>
                   )}
                 </div>
 
-                {/* Product Cards Grid */}
+                {/* Product Cards Responsive Grid */}
                 {filteredCatalog.length === 0 ? (
                   <div className="p-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/30">
                     <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto mb-3" />
@@ -4585,18 +5355,20 @@ export default function Dashboard() {
                     <div className="flex items-center justify-center gap-3">
                       {(selectedCatalogCategory !== 'Semua' || catalogSearch) && (
                         <button
+                          type="button"
                           onClick={() => {
                             setSelectedCatalogCategory('Semua');
                             setCatalogSearch('');
                           }}
-                          className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition"
+                          className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition cursor-pointer"
                         >
                           Tampilkan Semua Karpet
                         </button>
                       )}
                       <button
+                        type="button"
                         onClick={handleOpenAddProduct}
-                        className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs inline-flex items-center gap-1.5 transition"
+                        className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs inline-flex items-center gap-1.5 transition cursor-pointer"
                       >
                         <Plus className="w-4 h-4" />
                         <span>Tambah Produk Sekarang</span>
@@ -4604,7 +5376,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-5 sm:gap-6">
                     {filteredCatalog.map((item) => {
                       const cleanImg = (item.image || 'catalog/karpet-masjid-turki.jpg').replace(/^assets\//, '');
                       const imgSrc = cleanImg.startsWith('http') || cleanImg.startsWith('data:') ? cleanImg : `/${cleanImg}`;
@@ -4612,9 +5384,10 @@ export default function Dashboard() {
                       return (
                         <div
                           key={item.id}
-                          className="rounded-2xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl overflow-hidden shadow-xl flex flex-col group hover:border-slate-700 transition"
+                          className="rounded-2xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl overflow-hidden shadow-xl flex flex-col justify-between group hover:border-slate-700 hover:shadow-2xl hover:shadow-emerald-950/10 transition-all duration-300"
                         >
-                          <div className="h-48 bg-slate-900 relative overflow-hidden flex items-center justify-center">
+                          {/* Image Container */}
+                          <div className="h-48 sm:h-52 bg-slate-900 relative overflow-hidden flex items-center justify-center shrink-0">
                             <img
                               src={imgSrc}
                               alt={item.title}
@@ -4629,64 +5402,75 @@ export default function Dashboard() {
                             </span>
                             {/* Category Badge on Bottom Left of Image */}
                             <div className="absolute bottom-3 left-3">
-                              <span className="px-2.5 py-1 rounded-lg bg-slate-950/90 backdrop-blur-md text-emerald-300 font-semibold text-[11px] border border-emerald-500/30 shadow flex items-center gap-1.5">
-                                <span>{getCategoryIcon(item.category)}</span>
-                                <span className="truncate max-w-[170px]">{item.category || 'Karpet Masjid'}</span>
+                              <span className="px-2.5 py-1 rounded-lg bg-slate-950/90 backdrop-blur-md text-emerald-300 font-medium text-[11px] border border-emerald-500/30 shadow flex items-center">
+                                <span className="truncate max-w-[180px]">{item.category || 'Semua Kategori'}</span>
                               </span>
                             </div>
-                            {/* Actions on Card Image */}
+                            {/* Actions on Card Image (Edit & Delete) */}
                             <div className="absolute top-3 left-3 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
                               <button
+                                type="button"
                                 onClick={() => handleOpenEditProduct(item)}
                                 title="Edit Produk"
-                                className="p-1.5 rounded-lg bg-slate-900/80 backdrop-blur-md text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 transition"
+                                className="p-1.5 rounded-lg bg-slate-900/80 backdrop-blur-md text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 transition cursor-pointer"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
                               <button
+                                type="button"
                                 onClick={() => handleDeleteProduct(item.id, item.title)}
                                 disabled={deletingProductId === item.id}
                                 title="Hapus Produk"
-                                className="p-1.5 rounded-lg bg-slate-900/80 backdrop-blur-md text-rose-400 hover:text-rose-300 hover:bg-rose-950/80 border border-rose-900/50 transition"
+                                className="p-1.5 rounded-lg bg-slate-900/80 backdrop-blur-md text-rose-400 hover:text-rose-300 hover:bg-rose-950/80 border border-rose-900/50 transition cursor-pointer disabled:opacity-50"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
 
-                          <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
-                            <div>
-                              <div className="flex items-center justify-between gap-2 mb-1.5">
-                                <h4 className="font-bold text-white text-base truncate" title={item.title}>{item.title}</h4>
+                          {/* Content Container */}
+                          <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3.5">
+                            <div className="space-y-1.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <h4 className="font-bold text-white text-sm sm:text-base leading-snug line-clamp-1 group-hover:text-emerald-300 transition" title={item.title}>
+                                  {item.title}
+                                </h4>
                                 <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono shrink-0">
                                   #{item.id}
                                 </span>
                               </div>
-                              <p className="text-xs text-slate-400 mb-2 leading-relaxed line-clamp-2">{item.subtitle}</p>
+                              <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
+                                {item.subtitle}
+                              </p>
                               {item.footer && (
-                                <p className="text-[11px] text-purple-300 font-medium">🎨 {item.footer}</p>
+                                <p className="text-[11px] text-purple-300 font-medium line-clamp-1">
+                                  🎨 {item.footer}
+                                </p>
                               )}
                             </div>
 
-                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                              <span className="text-slate-500 font-mono text-[11px]">
+                            {/* Card Footer: SKU Code & Action Buttons */}
+                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs gap-2">
+                              <span className="text-slate-500 font-mono text-[11px] truncate max-w-[100px]" title={item.code || `PROD-${item.id}`}>
                                 {item.code || `PROD-${item.id}`}
                               </span>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 shrink-0">
                                 <button
+                                  type="button"
                                   onClick={() => handleOpenEditProduct(item)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
                                 >
                                   Edit
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     sendDirectWaMessage(
                                       ownerSettings?.phone || businessSettings?.phone,
                                       `Halo Sultan Carpet! Saya tertarik memesan produk: *${item.title}* (${item.price || ''})`
                                     );
                                   }}
-                                  className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-semibold border border-emerald-500/30 transition flex items-center gap-1"
+                                  className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-semibold border border-emerald-500/30 transition flex items-center gap-1 cursor-pointer"
                                 >
                                   <span>Pesan via WA</span>
                                   <ArrowRight className="w-3 h-3" />
@@ -4707,53 +5491,6 @@ export default function Dashboard() {
           {/* TAB: STORE PROFILE & OWNER */}
           {activeTab === 'store_profile' && (
             <div className="space-y-6">
-
-              {/* Hero Banner with Store Showroom Image */}
-              <div className="relative rounded-3xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
-                <div className="absolute inset-0 z-0">
-                  <img
-                    src="/images/toko-karpet-showroom.jpg"
-                    alt="Sultan Carpet Gallery Showroom"
-                    className="w-full h-full object-cover opacity-30 filter saturate-150"
-                    onError={(e) => { e.currentTarget.src = '/catalog/karpet-masjid-turki.jpg'; }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#090d16] via-[#090d16]/90 to-transparent"></div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#090d16] via-transparent to-transparent"></div>
-                </div>
-
-                <div className="relative z-10 p-6 sm:p-10 space-y-4 max-w-3xl">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold backdrop-blur-md">
-                    <Award className="w-3.5 h-3.5" />
-                    <span>GALERI KARPET PREMIUM SEJAK 2012</span>
-                  </div>
-                  <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
-                    Sultan Carpet Gallery
-                  </h2>
-                  <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-                    Pusat distribusi karpet masjid impor Turki & permadani klasik Persia nomor satu di Indonesia.
-                    Didirikan dan dipimpin langsung oleh <strong className="text-emerald-400 font-bold">{ownerSettings.owner_name}</strong> ({ownerSettings.role}).
-                  </p>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                    <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md">
-                      <p className="text-emerald-400 font-bold text-lg sm:text-xl font-mono">12+ Thn</p>
-                      <p className="text-slate-400 text-xs">Pengalaman Melayani</p>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md">
-                      <p className="text-emerald-400 font-bold text-lg sm:text-xl font-mono">1.500+</p>
-                      <p className="text-slate-400 text-xs">Masjid Terpasang</p>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md">
-                      <p className="text-emerald-400 font-bold text-lg sm:text-xl font-mono">10.000+</p>
-                      <p className="text-slate-400 text-xs">Pelanggan Puas</p>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md">
-                      <p className="text-emerald-400 font-bold text-lg sm:text-xl font-mono">100%</p>
-                      <p className="text-slate-400 text-xs">Benang Asli Grade A</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
               {/* 2-Column: Owner Story & Direct Live Editor Form */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -4938,191 +5675,84 @@ export default function Dashboard() {
           {/* TAB: SCHEDULE & WORKING HOURS */}
           {activeTab === 'schedule' && (
             <div className="space-y-6">
-
-              {/* Status Header */}
-              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-sky-500/20 text-sky-400 flex items-center justify-center">
-                    <Calendar className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-white text-lg">Jadwal & Jam Operasional Toko</h3>
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Showroom Buka Hari Ini
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Pelayanan konsultasi, survey pengukuran gratis, pengiriman kargo, dan pemasangan karpet 24 jam.
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => {
-                    sendDirectWaMessage(
-                      ownerSettings?.phone || businessSettings?.phone,
-                      'Halo Sultan Carpet Gallery, saya ingin membuat janji survey dan pengukuran karpet ke lokasi kami.'
-                    );
-                  }}
-                  className="py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs transition flex items-center gap-2 shrink-0 shadow-lg shadow-sky-600/20"
-                >
-                  <Clock className="w-4 h-4" />
-                  <span>Jadwalkan Survey Gratis</span>
-                </button>
-              </div>
-
-              {/* 4 Working Hours Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* 1. Jam Showroom */}
-                <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                      <ShoppingBag className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white text-sm">1. Jam Buka Showroom & Galeri</h4>
-                      <p className="text-xs text-slate-400">Kunjungan langsung, melihat motif, & cek ketebalan benang</p>
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Senin - Sabtu:</span>
-                      <span className="font-bold text-emerald-400 font-mono">08:30 - 20:00 WIB</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Minggu & Hari Libur:</span>
-                      <span className="font-bold text-emerald-400 font-mono">09:00 - 18:00 WIB</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Showroom kami siap menyambut Anda dengan ribuan gulungan sampel karpet fisik dan katalog motif terlengkap.
+              {/* Form Editor for Schedules */}
+              <div className="p-6 sm:p-8 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-6">
+                <div className="pb-4 border-b border-slate-800">
+                  <h3 className="font-bold text-white text-base flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-sky-400" />
+                    <span>Jadwal Operasional & Jam Kerja Toko</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Kelola jadwal operasional showroom, survey lokasi, teknisi pasang karpet, dan pengiriman kargo
                   </p>
                 </div>
 
-                {/* 2. Jam Survey */}
-                <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-                    <div className="w-10 h-10 rounded-2xl bg-sky-500/20 text-sky-400 flex items-center justify-center">
-                      <MapPin className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white text-sm">2. Jam Layanan Survey & Bawa Sampel</h4>
-                      <p className="text-xs text-slate-400">GRATIS area Jabodetabek tanpa dipungut biaya apapun</p>
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Setiap Hari (Senin - Minggu):</span>
-                      <span className="font-bold text-sky-400 font-mono">08:00 - 21:00 WIB</span>
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      Termasuk hari Minggu dan hari libur nasional (jadwal disesuaikan dengan janji temu).
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Konsultan teknis kami datang membawa meteran laser digital presisi dan contoh potongan bahan karpet grade A hingga premium.
-                  </p>
-                </div>
-
-                {/* 3. Jam Pasang & Obras 24 Jam */}
-                <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-                    <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
-                      <Zap className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white text-sm">3. Instalasi, Pasang & Obras 24 Jam</h4>
-                      <p className="text-xs text-slate-400">Jadwal fleksibel tanpa mengganggu jadwal ibadah / kerja</p>
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Layanan Teknisi:</span>
-                      <span className="font-bold text-purple-400 font-mono">24 Jam (By Appointment)</span>
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      Khusus masjid, pemasangan biasa dilakukan malam hari setelah salat Isya hingga menjelang Subuh.
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Menggunakan mesin obras portabel heavy duty untuk menjahit sambungan karpet dan lekukan tiang pilar secara presisi di tempat.
-                  </p>
-                </div>
-
-                {/* 4. Jadwal Pengiriman */}
-                <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-                    <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                      <Send className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white text-sm">4. Jadwal Ekspedisi & Pengiriman Kargo</h4>
-                      <p className="text-xs text-slate-400">Armada internal & ekspedisi kargo resmi ke seluruh Nusantara</p>
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Jabodetabek:</span>
-                      <span className="font-bold text-amber-400 font-mono">Setiap Hari Kerja</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Luar Kota / Pulau:</span>
-                      <span className="font-bold text-amber-400 font-mono">Indah, Dakota, Baraka</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Setiap gulungan karpet dipacking rapat 2 lapis plastik tebal tahan air dan karung pengaman untuk perlindungan maksimal selama perjalanan.
-                  </p>
-                </div>
-              </div>
-
-              {/* Live Form Editor for Schedules */}
-              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                  <Edit3 className="w-4 h-4 text-sky-400" />
-                  <span>Edit Data Jadwal & Jam Kerja</span>
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <label className="text-slate-400 block mb-1">Jam Operasional Showroom</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+                  <div className="space-y-1.5 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <label className="text-slate-300 font-semibold flex items-center gap-2">
+                      <ShoppingBag className="w-4 h-4 text-emerald-400" />
+                      <span>1. Jam Buka Showroom & Galeri</span>
+                    </label>
                     <textarea
-                      rows={2}
+                      rows={3}
                       value={scheduleSettings.store_hours}
                       onChange={(e) => setScheduleSettings((prev) => ({ ...prev, store_hours: e.target.value }))}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-sky-500 focus:outline-none"
+                      placeholder="Contoh: Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB"
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3 text-white text-xs focus:border-sky-500 focus:outline-none"
                     />
+                    <p className="text-[11px] text-slate-500">Waktu kunjungan langsung untuk memilih motif dan mengecek ketebalan benang.</p>
                   </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Jadwal Survey Lokasi</label>
+
+                  <div className="space-y-1.5 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <label className="text-slate-300 font-semibold flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-sky-400" />
+                      <span>2. Jam Layanan Survey & Bawa Sampel</span>
+                    </label>
                     <textarea
-                      rows={2}
+                      rows={3}
                       value={scheduleSettings.survey_hours}
                       onChange={(e) => setScheduleSettings((prev) => ({ ...prev, survey_hours: e.target.value }))}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-sky-500 focus:outline-none"
+                      placeholder="Contoh: Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB (Gratis Jabodetabek)"
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3 text-white text-xs focus:border-sky-500 focus:outline-none"
                     />
+                    <p className="text-[11px] text-slate-500">Jadwal konsultan teknis datang membawa meteran laser dan sampel bahan gratis.</p>
                   </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Jadwal Pasang & Obras</label>
+
+                  <div className="space-y-1.5 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <label className="text-slate-300 font-semibold flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-purple-400" />
+                      <span>3. Instalasi, Pasang & Obras 24 Jam</span>
+                    </label>
                     <textarea
-                      rows={2}
+                      rows={3}
                       value={scheduleSettings.installation_hours}
                       onChange={(e) => setScheduleSettings((prev) => ({ ...prev, installation_hours: e.target.value }))}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-sky-500 focus:outline-none"
+                      placeholder="Contoh: Layanan Teknisi 24 Jam (By Appointment), bisa malam hari setelah Isya."
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3 text-white text-xs focus:border-sky-500 focus:outline-none"
                     />
+                    <p className="text-[11px] text-slate-500">Jadwal pengerjaan obras portabel di tempat dan pasang presisi mengikuti kontur masjid.</p>
                   </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Jadwal Pengiriman Kargo</label>
+
+                  <div className="space-y-1.5 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <label className="text-slate-300 font-semibold flex items-center gap-2">
+                      <Send className="w-4 h-4 text-amber-400" />
+                      <span>4. Jadwal Ekspedisi & Pengiriman Kargo</span>
+                    </label>
                     <textarea
-                      rows={2}
+                      rows={3}
                       value={scheduleSettings.shipping_schedule}
                       onChange={(e) => setScheduleSettings((prev) => ({ ...prev, shipping_schedule: e.target.value }))}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-sky-500 focus:outline-none"
+                      placeholder="Contoh: Jabodetabek setiap hari kerja. Luar kota: Indah, Dakota, Baraka Kargo."
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3 text-white text-xs focus:border-sky-500 focus:outline-none"
                     />
+                    <p className="text-[11px] text-slate-500">Armada internal dan ekspedisi pengiriman resmi ke seluruh Nusantara.</p>
                   </div>
                 </div>
-                <div className="flex justify-end pt-2">
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                  <p className="text-[11px] text-slate-400">
+                    💡 Perubahan jadwal otomatis tersinkronisasi ke bot WhatsApp dan simulator AI.
+                  </p>
                   <button
                     onClick={() => handleSaveStoreSection('schedule_info', scheduleSettings, 'Jadwal operasional berhasil disimpan!')}
                     disabled={savingStoreInfo}
@@ -5325,105 +5955,35 @@ export default function Dashboard() {
 
           {activeTab === 'warranty' && (
             <div className="space-y-6">
-
-              {/* Certificate-Style Header */}
-              <div className="relative rounded-3xl overflow-hidden border border-indigo-500/30 bg-gradient-to-br from-indigo-950/60 via-[#0f172a] to-[#0f172a] p-6 sm:p-8 shadow-2xl space-y-3">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-xs font-semibold">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>GARANSI RESMI RESELLER UTAMA</span>
-                </div>
-                <h3 className="text-xl sm:text-3xl font-extrabold text-white">
-                  {warrantySettings.title || 'Jaminan Kualitas & Garansi Resmi Sultan Carpet'}
-                </h3>
-                <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
-                  {warrantySettings.summary}
-                </p>
-              </div>
-
-              {/* 4 Warranty Pillars Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {(warrantySettings.items || []).map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-3 hover:border-indigo-500/40 transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold font-mono">
-                        0{idx + 1}
-                      </div>
-                      <h4 className="font-bold text-white text-sm sm:text-base">{item.title}</h4>
-                    </div>
-                    <p className="text-xs text-slate-300 leading-relaxed pl-13">
-                      {item.desc}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Procedure & Quick Claim CTA */}
-              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-800">
-                  <div>
-                    <h4 className="font-bold text-white text-base">Tata Cara Klaim Garansi Cepat</h4>
-                    <p className="text-xs text-slate-400">Tim teknisi kami siap merespons laporan Anda dalam 1x24 jam</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowComplaintModal(true)}
-                      className="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
-                    >
-                      <ShieldCheck className="w-4 h-4" />
-                      <span>Ajukan Klaim Garansi</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        sendDirectWaMessage(
-                          ownerSettings?.phone || businessSettings?.phone,
-                          'Halo Tim Garansi Sultan Carpet, saya ingin berkonsultasi seputar klaim garansi untuk produk karpet kami.'
-                        );
-                      }}
-                      className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition flex items-center gap-1.5"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Konsultasi WA</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs pt-2">
-                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1">
-                    <p className="font-bold text-indigo-400">Langkah 1: Dokumentasi</p>
-                    <p className="text-slate-300">Ambil foto atau video bagian jahitan obras / benang yang ingin diklaim.</p>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1">
-                    <p className="font-bold text-indigo-400">Langkah 2: Lapor & Tiket</p>
-                    <p className="text-slate-300">Kirim laporan melalui formulir klaim atau WhatsApp. Nomor tiket resmi langsung terbit.</p>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1">
-                    <p className="font-bold text-indigo-400">Langkah 3: Perbaikan Teknisi</p>
-                    <p className="text-slate-300">Teknisi berkunjung ke lokasi untuk obras ulang atau proses tukar baru tanpa dipungut biaya.</p>
-                  </div>
-                </div>
-              </div>
-
               {/* Live Form Editor for Warranty */}
-              <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                  <Edit3 className="w-4 h-4 text-indigo-400" />
-                  <span>Edit Kebijakan Garansi</span>
-                </h3>
-                <div className="space-y-3 text-xs">
+              <div className="p-6 sm:p-8 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-6">
+                <div className="pb-4 border-b border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                      <span>{warrantySettings.title || 'Jaminan Kualitas & Garansi Resmi Sultan Carpet'}</span>
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-semibold text-xs">
+                      Resmi Reseller Utama
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+                    {warrantySettings.summary}
+                  </p>
+                </div>
+
+                <div className="space-y-4 text-xs">
                   <div>
-                    <label className="text-slate-400 block mb-1">Judul Dokumen Garansi</label>
+                    <label className="text-slate-300 font-semibold block mb-1.5">Judul Dokumen Garansi</label>
                     <input
                       type="text"
                       value={warrantySettings.title}
                       onChange={(e) => setWarrantySettings((prev) => ({ ...prev, title: e.target.value }))}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                      className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2.5 text-white text-xs focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="text-slate-400 block mb-1">Ringkasan Garansi</label>
+                    <label className="text-slate-300 font-semibold block mb-1.5">Ringkasan Garansi</label>
                     <textarea
                       rows={2}
                       value={warrantySettings.summary}
@@ -5432,7 +5992,7 @@ export default function Dashboard() {
                     />
                   </div>
                   <div>
-                    <label className="text-slate-400 block mb-1">Panduan Langkah Klaim</label>
+                    <label className="text-slate-300 font-semibold block mb-1.5">Panduan Langkah Klaim</label>
                     <textarea
                       rows={3}
                       value={warrantySettings.claim_steps}
@@ -5440,7 +6000,7 @@ export default function Dashboard() {
                       className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-indigo-500 focus:outline-none leading-relaxed"
                     />
                   </div>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end pt-2 border-t border-slate-800">
                     <button
                       onClick={() => handleSaveStoreSection('warranty_info', warrantySettings, 'Ketentuan garansi berhasil disimpan!')}
                       disabled={savingStoreInfo}
@@ -5577,90 +6137,1219 @@ export default function Dashboard() {
           )}
 
 
-          {/* TAB 7: BUSINESS SETTINGS */}
-          {activeTab === 'settings' && (
-            <div className="max-w-3xl mx-auto space-y-6">
-              <div className="p-8 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-2xl space-y-6">
-                <div>
-                  <h3 className="text-lg font-bold text-white">Profil Bisnis & Informasi Resmi</h3>
-                  <p className="text-xs text-slate-400">
-                    Informasi ini dijadikan sumber pengetahuan utama bagi AI Gemini dan bot WhatsApp
-                  </p>
+          {/* TAB: TANYA JAWAB AI (AI KNOWLEDGE) */}
+          {activeTab === 'qna' && (
+            <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200">
+              {/* Header Hero Banner */}
+              <div className="p-6 md:p-8 rounded-3xl border border-slate-800 bg-gradient-to-br from-[#0f172a] via-[#111c35] to-[#0a1224] backdrop-blur-xl shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
+                <div className="absolute bottom-0 right-1/3 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="space-y-2">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold tracking-wide">
+                      <Brain className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Basis Pengetahuan Tanya Jawab (AI Knowledge Base)</span>
+                    </div>
+                    <h2 className="text-xl md:text-2xl font-bold text-white tracking-tight">
+                      Daftar Pertanyaan & Jawaban AI
+                    </h2>
+                    <p className="text-xs md:text-sm text-slate-400 max-w-2xl leading-relaxed">
+                      Kelola pertanyaan dan jawaban resmi toko agar AI (Groq & Gemini) otomatis mempelajari dan menjawab pelanggan secara cepat, tepat, dan profesional.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                    <button
+                      onClick={() => handleOpenAddFaq()}
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/25 flex items-center gap-2 cursor-pointer active:scale-95"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Tanya Jawab</span>
+                    </button>
+
+                    <button
+                      onClick={() => fetchCustomerQuestions()}
+                      disabled={loadingCustomerQuestions}
+                      className="px-3.5 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-sky-300 font-medium text-xs transition border border-sky-500/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      title="Pindai pesan chat masuk yang berupa pertanyaan dari customer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingCustomerQuestions ? 'animate-spin' : ''}`} />
+                      <span>{loadingCustomerQuestions ? 'Memindai...' : 'Pindai Chat Nyata'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleSyncFaqsToAi}
+                      disabled={syncingFaqsToAi}
+                      className="px-3.5 py-2.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 font-medium text-xs transition border border-purple-500/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      title="Sinkronkan pembaruan ke AI Studio"
+                    >
+                      <Sparkles className={`w-3.5 h-3.5 text-purple-400 ${syncingFaqsToAi ? 'animate-spin' : ''}`} />
+                      <span>{syncingFaqsToAi ? 'Sinkron...' : 'Sinkron ke AI'}</span>
+                    </button>
+                  </div>
                 </div>
 
-                <form onSubmit={handleSaveBusiness} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-300">Nama Bisnis</label>
-                      <input
-                        type="text"
-                        value={businessSettings.name}
-                        onChange={(e) => setBusinessSettings({ ...businessSettings, name: e.target.value })}
-                        className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                      />
+                {/* Metrics Stats Row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mt-6 pt-6 border-t border-slate-800/80 relative z-10">
+                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
+                    <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
+                      <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Total Tanya-Jawab</span>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-300">Tagline / Slogan</label>
-                      <input
-                        type="text"
-                        value={businessSettings.tagline}
-                        onChange={(e) => setBusinessSettings({ ...businessSettings, tagline: e.target.value })}
-                        className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                      />
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xl font-bold text-white font-mono">{faqs.length}</span>
+                      <span className="text-[10px] text-emerald-400">Aktif Dipelajari</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-300">Nomor Telepon Resmi</label>
-                      <input
-                        type="text"
-                        value={businessSettings.phone}
-                        onChange={(e) => setBusinessSettings({ ...businessSettings, phone: e.target.value })}
-                        className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                      />
+                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
+                    <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
+                      <Tag className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Kategori Topik</span>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-300">Email Resmi</label>
-                      <input
-                        type="text"
-                        value={businessSettings.email}
-                        onChange={(e) => setBusinessSettings({ ...businessSettings, email: e.target.value })}
-                        className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                      />
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xl font-bold text-white font-mono">
+                        {new Set(faqs.map(f => f.category || 'Umum')).size}
+                      </span>
+                      <span className="text-[10px] text-amber-300">Kategori</span>
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300">Alamat Showroom Utama</label>
-                    <input
-                      type="text"
-                      value={businessSettings.address}
-                      onChange={(e) => setBusinessSettings({ ...businessSettings, address: e.target.value })}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                    />
+                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
+                    <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
+                      <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Pertanyaan Chat Asli</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xl font-bold text-white font-mono">{customerQuestions.length}</span>
+                      <span className="text-[10px] text-sky-300">Terdeteksi</span>
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300">Jam Operasional</label>
-                    <textarea
-                      rows={2}
-                      value={businessSettings.hours}
-                      onChange={(e) => setBusinessSettings({ ...businessSettings, hours: e.target.value })}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                    />
+                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
+                    <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Engine AI</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm font-bold text-white font-mono uppercase">
+                        {aiProvider === 'groq' ? 'Groq Llama' : 'Gemini'}
+                      </span>
+                      <span className="text-[10px] text-emerald-400">● Grounded</span>
+                    </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Sub-Tabs Switcher */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setFaqSubTab('qa_list')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                      faqSubTab === 'qa_list'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Daftar Tanya Jawab AI</span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] font-mono text-slate-300">
+                      {faqs.length}
+                    </span>
+                  </button>
 
                   <button
-                    type="submit"
-                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20"
+                    onClick={() => {
+                      setFaqSubTab('customer_insights');
+                      fetchCustomerQuestions();
+                    }}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                      faqSubTab === 'customer_insights'
+                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    }`}
                   >
-                    Simpan Perubahan Bisnis
+                    <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Pola Pertanyaan dari Chat Pelanggan</span>
+                    {customerQuestions.length > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-sky-500/20 text-[10px] font-mono text-sky-300">
+                        {customerQuestions.length}
+                      </span>
+                    )}
                   </button>
-                </form>
+                </div>
+
+                <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>AI otomatis mempelajari data ini</span>
+                </div>
               </div>
+
+              {/* TAB 1: QA LIST & KNOWLEDGE BASE */}
+              {faqSubTab === 'qa_list' && (
+                <div className="space-y-4">
+                  {/* Search & Filter Bar */}
+                  <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-3">
+                    <div className="flex flex-col md:flex-row md:items-center gap-3">
+                      <div className="relative flex-1">
+                        <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={faqSearchQuery}
+                          onChange={(e) => setFaqSearchQuery(e.target.value)}
+                          placeholder="Cari pertanyaan atau jawaban..."
+                          className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                        />
+                        {faqSearchQuery && (
+                          <button
+                            onClick={() => setFaqSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {faqCategoryFilter !== 'Semua' && (
+                        <button
+                          onClick={() => setFaqCategoryFilter('Semua')}
+                          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Reset Filter</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Category Filter Pills */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+                      {[
+                        'Semua',
+                        'Karpet Masjid & Musholla',
+                        'Pemasangan & Obras',
+                        'Survey & Sampel',
+                        'Promo & Diskon',
+                        'Garansi & Keaslian',
+                        'Nego & Pembayaran',
+                        'Ketersediaan Stok',
+                        'Komplain & Retur'
+                      ].map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setFaqCategoryFilter(cat)}
+                          className={`px-3 py-1.5 rounded-lg whitespace-nowrap text-xs font-medium transition cursor-pointer ${
+                            faqCategoryFilter === cat
+                              ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20'
+                              : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* FAQ Cards List */}
+                  {(() => {
+                    const filtered = faqs.filter((f) => {
+                      const matchCat =
+                        faqCategoryFilter === 'Semua' ||
+                        (f.category || 'Umum').toLowerCase().includes(faqCategoryFilter.toLowerCase());
+                      const qLower = faqSearchQuery.toLowerCase();
+                      const matchQuery =
+                        !qLower ||
+                        (f.q && f.q.toLowerCase().includes(qLower)) ||
+                        (f.a && f.a.toLowerCase().includes(qLower)) ||
+                        (f.category && f.category.toLowerCase().includes(qLower));
+                      return matchCat && matchQuery;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="p-12 rounded-3xl border border-slate-800 bg-slate-900/40 text-center space-y-3">
+                          <div className="w-12 h-12 rounded-2xl bg-slate-800 text-slate-400 mx-auto flex items-center justify-center text-xl">
+                            🔍
+                          </div>
+                          <h4 className="text-sm font-semibold text-white">Tidak ada Tanya-Jawab yang cocok</h4>
+                          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                            {faqSearchQuery || faqCategoryFilter !== 'Semua'
+                              ? 'Coba ganti kata kunci pencarian atau reset filter kategori di atas.'
+                              : 'Belum ada data tanya-jawab. Klik tombol di bawah untuk menambah pertanyaan pertama.'}
+                          </p>
+                          <button
+                            onClick={() => handleOpenAddFaq()}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Tambah Tanya Jawab Baru</span>
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 gap-4">
+                        {filtered.map((item, idx) => (
+                          <div
+                            key={item.id || idx}
+                            className="p-5 rounded-2xl border border-slate-800/90 bg-[#0f172a]/80 backdrop-blur-md hover:border-slate-700 transition space-y-3.5 shadow-lg relative group"
+                          >
+                            {/* Card Header */}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold">
+                                  🏷️ {item.category || 'Umum'}
+                                </span>
+                                {item.source && (
+                                  <span className="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-400 text-[10px] font-medium">
+                                    Sumber: {item.source}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => handleEditFaq(item)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-300 hover:bg-slate-800 transition cursor-pointer"
+                                  title="Edit Pertanyaan & Jawaban"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteFaq(item.id || idx)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
+                                  title="Hapus dari memori AI"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Question */}
+                            <div className="flex items-start gap-3">
+                              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                                Q
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-[11px] text-slate-400 font-medium">Pertanyaan Pelanggan:</p>
+                                <h3 className="text-sm font-semibold text-white leading-snug">
+                                  {item.q}
+                                </h3>
+                              </div>
+                            </div>
+
+                            {/* AI Official Answer */}
+                            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800/80 space-y-1.5">
+                              <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-semibold">
+                                <Bot className="w-3.5 h-3.5" />
+                                <span>Jawaban Resmi AI & CS:</span>
+                              </div>
+                              <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line pl-4 border-l-2 border-emerald-500/40">
+                                {item.a}
+                              </p>
+                            </div>
+
+                            {/* Footer Status */}
+                            <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                              <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                <span>Aktif diajarkan ke AI (Groq & Gemini)</span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setSimPrompt(item.q);
+                                  setActiveTab('gemini');
+                                }}
+                                className="text-slate-400 hover:text-purple-300 flex items-center gap-1 transition cursor-pointer"
+                              >
+                                <Sparkles className="w-3 h-3 text-purple-400" />
+                                <span>Uji di Simulator AI</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* TAB 2: REAL CUSTOMER QUESTIONS FROM WHATSAPP */}
+              {faqSubTab === 'customer_insights' && (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-semibold text-white flex items-center gap-2">
+                        <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Pertanyaan Nyata Terdeteksi dari Obrolan WhatsApp</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Sistem memindai pesan masuk dari riwayat WhatsApp untuk mendeteksi pertanyaan aktual. Anda bisa langsung mengajari AI jawaban idealnya.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => fetchCustomerQuestions()}
+                      disabled={loadingCustomerQuestions}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-medium border border-slate-700 flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingCustomerQuestions ? 'animate-spin' : ''}`} />
+                      <span>{loadingCustomerQuestions ? 'Memindai Ulang...' : 'Pindai Ulang'}</span>
+                    </button>
+                  </div>
+
+                  {customerQuestions.length === 0 ? (
+                    <div className="p-12 rounded-3xl border border-slate-800 bg-slate-900/40 text-center space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-800 text-slate-400 mx-auto flex items-center justify-center text-xl">
+                        💬
+                      </div>
+                      <h4 className="text-sm font-semibold text-white">Belum Ada Pertanyaan Terdeteksi</h4>
+                      <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                        Ketika pelanggan WhatsApp mengirim pesan yang mengandung pertanyaan (misal: "apakah ada karpet polos?", "berapa harga?"), pertanyaan tersebut akan otomatis muncul di sini.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {customerQuestions.map((cq, idx) => (
+                        <div
+                          key={cq.id || idx}
+                          className="p-4 rounded-2xl border border-slate-800 bg-[#0f172a]/70 hover:border-slate-700 transition space-y-3 shadow-md flex flex-col justify-between"
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <div className="flex items-center gap-1.5 text-slate-300 font-semibold">
+                                <User className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{cq.senderName || 'Pelanggan'}</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400">
+                                {cq.timestamp ? new Date(cq.timestamp).toLocaleDateString('id-ID', { hour: '2-digit', minute: '2-digit' }) : 'Baru saja'}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-white font-medium bg-slate-950/70 p-3 rounded-xl border border-slate-850 leading-relaxed">
+                              "{cq.text}"
+                            </p>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                            {cq.isLearned ? (
+                              <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                <span>Sudah Masuk Q&A</span>
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-amber-400 font-medium flex items-center gap-1">
+                                <AlertCircle className="w-3.5 h-3.5" />
+                                <span>Belum Masuk Q&A</span>
+                              </span>
+                            )}
+
+                            <button
+                              onClick={() => handleOpenAddFaq({
+                                text: cq.text,
+                                senderName: cq.senderName,
+                                category: 'Karpet Masjid & Musholla'
+                              })}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+                                cq.isLearned
+                                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20'
+                              }`}
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>{cq.isLearned ? 'Perbarui Jawaban' : 'Ajari AI Jawaban Ini'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
+
+          {/* TAB: HANDS-OFF CS & AI TAKEOVER */}
+          {activeTab === 'handoff' && (() => {
+            const activeHandoffs = (conversations || []).filter((c) => Boolean(c.isHumanHandoff));
+            const filteredConversations = (conversations || []).filter((c) => {
+              if (handoffFilter === 'handoff' && !c.isHumanHandoff) return false;
+              if (handoffFilter === 'ai' && c.isHumanHandoff) return false;
+              if (!handoffSearch.trim()) return true;
+              const q = handoffSearch.toLowerCase();
+              return (
+                (c.senderName && c.senderName.toLowerCase().includes(q)) ||
+                (c.phone && c.phone.includes(q)) ||
+                (c.formattedPhone && c.formattedPhone.includes(q)) ||
+                (c.lastMessage && c.lastMessage.toLowerCase().includes(q))
+              );
+            });
+
+            return (
+              <div className="space-y-6">
+                {/* Header Banner */}
+                <div className="p-6 sm:p-7 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+                  <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                    <div>
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold mb-3">
+                        <Headphones className="w-3.5 h-3.5" />
+                        <span>Sistem Alih Kendali AI ke CS Manusia</span>
+                      </div>
+                      <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                        Hands-Off Customer Service & AI Takeover
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1.5 max-w-2xl leading-relaxed">
+                        Kelola intervensi staf CS manusia saat pelanggan membutuhkan negosiasi harga, komplain mendesak, atau konsultasi khusus. Bot AI otomatis berhenti membalas pada kontak yang diambil alih.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Global Handoff Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newStatus = !handoffConfig.enabled;
+                          handleSaveHandoffConfig({ ...handoffConfig, enabled: newStatus });
+                        }}
+                        disabled={savingHandoffConfig}
+                        className={`py-2 px-4 rounded-xl font-semibold text-xs border flex items-center gap-2 transition cursor-pointer ${
+                          handoffConfig.enabled
+                            ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/60'
+                            : 'bg-rose-950/40 border-rose-500/40 text-rose-300 hover:bg-rose-950/60'
+                        }`}
+                        title="Klik untuk mengaktifkan atau menonaktifkan fitur hands-off otomatis"
+                      >
+                        <span className={`w-2 h-2 rounded-full ${handoffConfig.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                        <span>Hands-Off Otomatis: {handoffConfig.enabled ? 'AKTIF' : 'NONAKTIF'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('chats')}
+                        className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700/80 flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                      >
+                        <MessageSquare className="w-4 h-4 text-emerald-400" />
+                        <span>Buka Obrolan WA</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 4 KPI Metrics */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mt-6 pt-6 border-t border-slate-800/80">
+                    <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                      <div className="flex items-center justify-between text-slate-400 mb-1">
+                        <span className="text-xs font-medium">Sedang Hands-Off (CS)</span>
+                        <Headphones className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <div className="text-2xl font-bold text-white flex items-center gap-2">
+                        <span>{activeHandoffs.length}</span>
+                        {activeHandoffs.length > 0 && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                            Ditangani CS
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">Kontak dengan AI dimatikan</p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                      <div className="flex items-center justify-between text-slate-400 mb-1">
+                        <span className="text-xs font-medium">Mode Bot AI Aktif</span>
+                        <Bot className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div className="text-2xl font-bold text-white">
+                        {Math.max(0, (conversations?.length || 0) - activeHandoffs.length)}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">Dijawab otomatis oleh AI</p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                      <div className="flex items-center justify-between text-slate-400 mb-1">
+                        <span className="text-xs font-medium">Auto-Expire Sesi</span>
+                        <Clock className="w-4 h-4 text-blue-400" />
+                      </div>
+                      <div className="text-2xl font-bold text-white">
+                        {handoffConfig.auto_expire_hours || 2} <span className="text-sm font-normal text-slate-400">Jam</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">Otomatis kembali ke bot AI</p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                      <div className="flex items-center justify-between text-slate-400 mb-1">
+                        <span className="text-xs font-medium">Kata Kunci Pemicu</span>
+                        <Tag className="w-4 h-4 text-purple-400" />
+                      </div>
+                      <div className="text-2xl font-bold text-white">
+                        {handoffConfig.keywords?.length || 0} <span className="text-sm font-normal text-slate-400">Pemicu</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">Kata panggil CS manusia</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub-Tabs Navigation */}
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <button
+                    type="button"
+                    onClick={() => setHandoffSubTab('contacts')}
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
+                      handoffSubTab === 'contacts'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <Headphones className="w-4 h-4" />
+                    <span>Kontak & Live Takeover</span>
+                    <span className="px-1.5 py-0.2 rounded-md bg-black/40 text-[10px]">
+                      {conversations?.length || 0}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setHandoffSubTab('rules')}
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
+                      handoffSubTab === 'rules'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <Settings className="w-4 h-4" />
+                    <span>Aturan & Kata Kunci Pemicu</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setHandoffSubTab('tester')}
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
+                      handoffSubTab === 'tester'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <Zap className="w-4 h-4" />
+                    <span>Uji Pemicu Hands-Off</span>
+                  </button>
+                </div>
+
+                {/* SUBTAB 1: KONTAK & LIVE TAKEOVER */}
+                {handoffSubTab === 'contacts' && (
+                  <div className="space-y-4">
+                    {/* Manual Takeover Form Bar */}
+                    <div className="p-4 sm:p-5 rounded-2xl border border-slate-800 bg-[#0f172a]/70">
+                      <div className="flex items-center gap-2 mb-3">
+                        <UserCheck className="w-4 h-4 text-amber-400" />
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                          Ambil Alih Obrolan Manual (By Phone)
+                        </h4>
+                      </div>
+                      <form onSubmit={handleManualHandoffTakeover} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                        <input
+                          type="text"
+                          value={manualHandoffPhone}
+                          onChange={(e) => setManualHandoffPhone(e.target.value)}
+                          placeholder="Nomor WhatsApp (contoh: 08123456789 atau 62812...)"
+                          className="flex-1 rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                        />
+                        <input
+                          type="text"
+                          value={manualHandoffReason}
+                          onChange={(e) => setManualHandoffReason(e.target.value)}
+                          placeholder="Alasan takeover (contoh: Negosiasi Harga Khusus)"
+                          className="w-full sm:w-64 rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                        />
+                        <button
+                          type="submit"
+                          className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition shadow-md shadow-amber-600/20 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <Headphones className="w-4 h-4" />
+                          <span>Ambil Alih ke CS</span>
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Filter & Search Controls */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                        <button
+                          type="button"
+                          onClick={() => setHandoffFilter('all')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition cursor-pointer ${
+                            handoffFilter === 'all'
+                              ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Semua ({conversations?.length || 0})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHandoffFilter('handoff')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
+                            handoffFilter === 'handoff'
+                              ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <span>Sedang Hands-Off / CS</span>
+                          <span className="px-1.5 py-0.2 rounded-md bg-black/30 text-[10px]">
+                            {activeHandoffs.length}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHandoffFilter('ai')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
+                            handoffFilter === 'ai'
+                              ? 'bg-emerald-600 text-white shadow-sm'
+                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <span>Aktif Bot AI</span>
+                          <span className="px-1.5 py-0.2 rounded-md bg-black/30 text-[10px]">
+                            {Math.max(0, (conversations?.length || 0) - activeHandoffs.length)}
+                          </span>
+                        </button>
+                      </div>
+
+                      <div className="relative w-full sm:w-64">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={handoffSearch}
+                          onChange={(e) => setHandoffSearch(e.target.value)}
+                          placeholder="Cari nama, nomor, atau pesan..."
+                          className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                        />
+                        {handoffSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setHandoffSearch('')}
+                            className="absolute right-2.5 top-2 text-slate-400 hover:text-white p-0.5 rounded"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Contacts List */}
+                    {filteredConversations.length === 0 ? (
+                      <div className="p-12 text-center rounded-3xl border border-dashed border-slate-800 bg-slate-900/30 space-y-3">
+                        <Headphones className="w-12 h-12 text-slate-600 mx-auto" />
+                        <h4 className="font-semibold text-slate-300 text-sm">Tidak ada kontak yang cocok</h4>
+                        <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                          {handoffFilter === 'handoff'
+                            ? 'Saat ini belum ada kontak yang dalam mode CS Manusia (Hands-off). Semua obrolan dijawab otomatis oleh Bot AI.'
+                            : 'Belum ada data obrolan yang sesuai dengan filter pencarian.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        {filteredConversations.map((c) => {
+                          const isHandoff = Boolean(c.isHumanHandoff);
+                          const contactName = c.senderName && !/^\+?\d{10,}$/.test(c.senderName.trim()) ? c.senderName : (c.formattedPhone || c.phone || 'Pelanggan');
+
+                          return (
+                            <div
+                              key={c.jid || c.phone}
+                              className={`p-4 rounded-2xl border transition-all duration-200 flex flex-col justify-between space-y-3 ${
+                                isHandoff
+                                  ? 'bg-[#1a1505]/70 border-amber-500/40 ring-1 ring-amber-500/20 shadow-lg shadow-amber-950/20'
+                                  : 'bg-[#0f172a]/70 border-slate-800 hover:border-slate-700'
+                              }`}
+                            >
+                              <div className="space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
+                                      isHandoff ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    }`}>
+                                      {contactName.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <h5 className="font-bold text-white text-sm line-clamp-1">{contactName}</h5>
+                                      <p className="text-[11px] text-slate-400 font-mono">{c.formattedPhone || c.phone}</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Status Badge */}
+                                  <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border flex items-center gap-1.5 shrink-0 ${
+                                    isHandoff
+                                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                                      : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                                  }`}>
+                                    {isHandoff ? (
+                                      <>
+                                        <Headphones className="w-3 h-3 text-amber-400" />
+                                        <span>Mode CS Manusia</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Bot className="w-3 h-3 text-emerald-400" />
+                                        <span>Bot AI Aktif</span>
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+
+                                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-850 text-xs text-slate-300">
+                                  <p className="line-clamp-2 leading-relaxed">
+                                    {c.lastMessage || '(Belum ada pesan teks)'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Action Row */}
+                              <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                                <span className="text-[11px] text-slate-500">
+                                  {c.lastTimestamp ? new Date(c.lastTimestamp).toLocaleDateString('id-ID', { hour: '2-digit', minute: '2-digit' }) : 'Terbaru'}
+                                </span>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleContactAi(c)}
+                                    disabled={togglingAiJid === (c.jid || c.phone)}
+                                    className={`px-3 py-1.5 rounded-xl font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                                      isHandoff
+                                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20'
+                                        : 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30'
+                                    }`}
+                                  >
+                                    {isHandoff ? (
+                                      <>
+                                        <Bot className="w-3.5 h-3.5" />
+                                        <span>Kembalikan ke Bot</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Headphones className="w-3.5 h-3.5" />
+                                        <span>Ambil Alih CS</span>
+                                      </>
+                                    )}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedChatJid(c.jid || c.phone);
+                                      setActiveTab('chats');
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <span>Chat</span>
+                                    <ArrowRight className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SUBTAB 2: ATURAN & KATA KUNCI PEMICU */}
+                {handoffSubTab === 'rules' && (
+                  <div className="space-y-6">
+                    <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 space-y-6">
+                      {/* Section 1: Trigger Keywords */}
+                      <div className="space-y-3 pb-6 border-b border-slate-800">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                              <Tag className="w-4 h-4 text-amber-400" />
+                              <span>Kata Kunci Pemicu Alih ke CS (Trigger Keywords)</span>
+                            </h4>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              Jika pelanggan mengetik salah satu kata kunci di bawah, AI otomatis berhenti membalas dan mode CS Manusia aktif.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleLoadDefaultHandoffPresets('trigger')}
+                            className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-2 shrink-0 cursor-pointer"
+                          >
+                            + Muat Rekomendasi CS
+                          </button>
+                        </div>
+
+                        {/* Keyword Chips */}
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {(handoffConfig.keywords || []).map((kw) => (
+                            <span
+                              key={kw}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium"
+                            >
+                              <span>{kw}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveHandoffKeyword(kw)}
+                                className="text-amber-400 hover:text-rose-400 p-0.5 rounded transition cursor-pointer"
+                                title="Hapus kata kunci"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Add Keyword Input */}
+                        <div className="flex items-center gap-2 pt-2">
+                          <input
+                            type="text"
+                            value={newHandoffKeyword}
+                            onChange={(e) => setNewHandoffKeyword(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddHandoffKeyword();
+                              }
+                            }}
+                            placeholder="Ketik kata kunci baru (contoh: 'bicara orang', 'agen live')..."
+                            className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddHandoffKeyword}
+                            className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Tambah</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Section 2: Release Keywords */}
+                      <div className="space-y-3 pb-6 border-b border-slate-800">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                              <Bot className="w-4 h-4 text-emerald-400" />
+                              <span>Kata Kunci Pengembalian ke Bot AI (Release Keywords)</span>
+                            </h4>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              Kata kunci yang mengetikkan perintah untuk mengaktifkan kembali bot AI setelah sesi dengan CS manusia selesai.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleLoadDefaultHandoffPresets('release')}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 shrink-0 cursor-pointer"
+                          >
+                            + Muat Rekomendasi Bot
+                          </button>
+                        </div>
+
+                        {/* Release Chips */}
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {(handoffConfig.release_keywords || []).map((kw) => (
+                            <span
+                              key={kw}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium"
+                            >
+                              <span>{kw}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveReleaseKeyword(kw)}
+                                className="text-emerald-400 hover:text-rose-400 p-0.5 rounded transition cursor-pointer"
+                                title="Hapus kata kunci rilis"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Add Release Keyword Input */}
+                        <div className="flex items-center gap-2 pt-2">
+                          <input
+                            type="text"
+                            value={newReleaseKeyword}
+                            onChange={(e) => setNewReleaseKeyword(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddReleaseKeyword();
+                              }
+                            }}
+                            placeholder="Ketik kata rilis baru (contoh: '!bot', 'kembali ke bot')..."
+                            className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddReleaseKeyword}
+                            className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Tambah</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Section 3: Durations & Auto Messages */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pb-6 border-b border-slate-800">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-blue-400" />
+                            <span>Auto-Expire Sesi CS</span>
+                          </label>
+                          <select
+                            value={handoffConfig.auto_expire_hours || 2}
+                            onChange={(e) => setHandoffConfig((prev) => ({ ...prev, auto_expire_hours: Number(e.target.value) }))}
+                            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                          >
+                            <option value={1}>1 Jam (Cepat)</option>
+                            <option value={2}>2 Jam (Standar)</option>
+                            <option value={4}>4 Jam</option>
+                            <option value={8}>8 Jam</option>
+                            <option value={24}>24 Jam (1 Hari)</option>
+                          </select>
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            Jika CS tidak aktif merespons selama durasi ini, bot AI otomatis aktif kembali.
+                          </p>
+                        </div>
+
+                        <div className="space-y-1.5 md:col-span-2">
+                          <label className="text-xs font-semibold text-slate-300">
+                            Pesan Otomatis Saat Alih CS (Hand-off Notice)
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={handoffConfig.takeover_notice || ''}
+                            onChange={(e) => setHandoffConfig((prev) => ({ ...prev, takeover_notice: e.target.value }))}
+                            placeholder="Pesan yang dikirim ke pelanggan saat tangan dialihkan ke CS manusia..."
+                            className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-amber-500 leading-relaxed"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Save Button */}
+                      <div className="flex items-center justify-end gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveHandoffConfig()}
+                          disabled={savingHandoffConfig}
+                          className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-semibold text-xs transition shadow-lg shadow-amber-600/20 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                        >
+                          {savingHandoffConfig ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Settings className="w-4 h-4" />}
+                          <span>{savingHandoffConfig ? 'Menyimpan Pengaturan...' : 'Simpan Pengaturan Hands-Off'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 3: TESTER */}
+                {handoffSubTab === 'tester' && (
+                  <div className="space-y-4">
+                    <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 space-y-5">
+                      <div>
+                        <h4 className="text-base font-bold text-white flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-amber-400" />
+                          <span>Simulasi & Uji Kata Kunci Hands-Off</span>
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                          Uji bagaimana sistem merespons pesan teks dari pelanggan. Anda dapat memastikan kata kunci pemicu CS atau kata kunci rilis bot berfungsi sesuai ekspektasi.
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="relative">
+                          <textarea
+                            rows={3}
+                            value={testHandoffQuery}
+                            onChange={(e) => setTestHandoffQuery(e.target.value)}
+                            placeholder="Ketik contoh pesan pelanggan, misal: 'Halo saya ingin bicara dengan admin manusia mengenai karpet masjid 10 roll'..."
+                            className="w-full rounded-2xl bg-slate-900 border border-slate-700/80 p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 leading-relaxed"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <span>Contoh cepat:</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTestHandoffQuery('Bisa bicara dengan admin manusia?');
+                              }}
+                              className="text-amber-400 hover:underline"
+                            >
+                              "Bicara admin manusia"
+                            </button>
+                            <span>•</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTestHandoffQuery('Kembali ke bot asisten');
+                              }}
+                              className="text-emerald-400 hover:underline"
+                            >
+                              "Kembali ke bot"
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleTestHandoffMessage}
+                            className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition flex items-center gap-2 cursor-pointer shadow-md shadow-amber-600/20"
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                            <span>Uji Pesan Ini</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Test Result Display */}
+                      {testHandoffResult && (
+                        <div className={`p-4 rounded-2xl border transition-all animate-in fade-in duration-200 ${
+                          testHandoffResult.type === 'TRIGGER'
+                            ? 'bg-amber-950/40 border-amber-500/50 text-amber-200'
+                            : testHandoffResult.type === 'RELEASE'
+                            ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200'
+                            : 'bg-blue-950/40 border-blue-500/50 text-blue-200'
+                        }`}>
+                          <div className="flex items-center gap-2 font-bold text-sm mb-1.5">
+                            {testHandoffResult.type === 'TRIGGER' && <Headphones className="w-4 h-4 text-amber-400" />}
+                            {testHandoffResult.type === 'RELEASE' && <Bot className="w-4 h-4 text-emerald-400" />}
+                            {testHandoffResult.type === 'AI_REPLY' && <Sparkles className="w-4 h-4 text-blue-400" />}
+                            <span>{testHandoffResult.title}</span>
+                          </div>
+                          <p className="text-xs leading-relaxed opacity-90">
+                            {testHandoffResult.message}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+      {/* ADD / EDIT FAQ MODAL */}
+      {showFaqModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 max-w-xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                  <Brain className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">
+                    {editingFaq ? 'Edit Tanya Jawab AI' : 'Tambah Tanya Jawab AI'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Data ini akan langsung diserap ke dalam memori sistem AI Groq & Gemini
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowFaqModal(false);
+                  setEditingFaq(null);
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveFaq} className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-300 flex items-center gap-1.5">
+                  <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Pertanyaan dari Pelanggan (Question)</span>
+                  <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={faqForm.q}
+                  onChange={(e) => setFaqForm({ ...faqForm, q: e.target.value })}
+                  placeholder="Contoh: Apakah karpet polos ready stock dan bisa langsung dikirim?"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300">Kategori Topik</label>
+                  <select
+                    value={faqForm.category}
+                    onChange={(e) => setFaqForm({ ...faqForm, category: e.target.value })}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="Karpet Masjid & Musholla">🕌 Karpet Masjid & Musholla</option>
+                    <option value="Pemasangan & Obras">✂️ Pemasangan & Obras</option>
+                    <option value="Survey & Sampel">📏 Survey & Sampel</option>
+                    <option value="Promo & Diskon">🏷️ Promo & Diskon</option>
+                    <option value="Garansi & Keaslian">🛡️ Garansi & Keaslian</option>
+                    <option value="Nego & Pembayaran">💳 Nego & Pembayaran</option>
+                    <option value="Ketersediaan Stok">📦 Ketersediaan Stok</option>
+                    <option value="Komplain & Retur">⚠️ Komplain & Retur</option>
+                    <option value="Umum">📌 Pertanyaan Umum</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300">Sumber Informasi</label>
+                  <input
+                    type="text"
+                    value={faqForm.source}
+                    onChange={(e) => setFaqForm({ ...faqForm, source: e.target.value })}
+                    placeholder="Contoh: Input Admin / Chat WhatsApp Pelanggan"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Jawaban Rekomendasi Resmi AI & CS (Answer)</span>
+                  <span className="text-rose-400">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  value={faqForm.a}
+                  onChange={(e) => setFaqForm({ ...faqForm, a: e.target.value })}
+                  placeholder="Tuliskan jawaban yang ramah, sopan, jelas, dan solutif yang akan disampaikan AI kepada pelanggan..."
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFaqModal(false);
+                    setEditingFaq(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={faqSaving}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {faqSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+                  <span>{faqSaving ? 'Menyimpan...' : 'Simpan & Ajari AI'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
         </div>
 
         {/* MOBILE BOTTOM NAVIGATION BAR (md:hidden) */}
@@ -5721,13 +7410,13 @@ export default function Dashboard() {
             </button>
 
             <button
-              onClick={() => setActiveTab('settings')}
+              onClick={() => setActiveTab('qna')}
               className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${
-                activeTab === 'settings' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+                activeTab === 'qna' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Settings className="w-5 h-5" />
-              <span className="text-[10px]">Pengaturan</span>
+              <Brain className="w-5 h-5" />
+              <span className="text-[10px]">Q&A AI</span>
             </button>
           </nav>
         )}
@@ -6102,27 +7791,28 @@ export default function Dashboard() {
 
               {/* Category Selection */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                     <Tag className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Kategori Karpet *</span>
-                  </span>
-                  <span className="text-[11px] text-slate-500 font-normal">Pilih klasifikasi produk</span>
-                </label>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleOpenAddCategory}
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>+ Tambah Kategori Baru</span>
+                  </button>
+                </div>
                 <select
-                  value={productForm.category || 'Karpet Masjid & Musholla'}
+                  value={productForm.category || (carpetCategoriesList[0]?.name || 'Karpet Masjid & Musholla')}
                   onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))}
                   className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                 >
-                  {(config?.carpet_categories || [
-                    { name: 'Karpet Masjid & Musholla', icon: '🕌' },
-                    { name: 'Karpet Klasik & Permadani Persia', icon: '🏛️' },
-                    { name: 'Karpet Ruang Tamu Minimalis Modern', icon: '🛋️' },
-                    { name: 'Karpet Bulu & Shaggy Mewah', icon: '☁️' },
-                    { name: 'Karpet Tile & Kantor Komersial', icon: '🏢' }
-                  ]).map((c) => (
+                  {carpetCategoriesList.map((c) => (
                     <option key={c.name} value={c.name} className="bg-slate-900 text-white py-1">
-                      {c.icon || '🏷️'} {c.name}
+                      {c.name}
                     </option>
                   ))}
                 </select>
@@ -6225,6 +7915,85 @@ export default function Dashboard() {
                 >
                   {savingProduct ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   <span>{savingProduct ? 'Menyimpan...' : editingProduct ? 'Simpan Perubahan' : 'Simpan Produk Baru'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TAMBAH KATEGORI BARU */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-3xl bg-[#0f172a] border border-slate-700/80 p-6 shadow-2xl space-y-5 transform animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                  <Tag className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Tambah Kategori Baru</h3>
+                  <p className="text-xs text-slate-400">Klasifikasi produk karpet untuk katalog & bot AI</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCategory} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">Nama Kategori *</label>
+                <input
+                  type="text"
+                  required
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="Contoh: Karpet Hotel & Ballroom"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">Deskripsi Kategori</label>
+                <textarea
+                  rows={3}
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Tuliskan keterangan singkat mengenai jenis atau karakteristik karpet dalam kategori ini..."
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 leading-relaxed"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCategory}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
+                >
+                  {savingCategory ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Simpan Kategori</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

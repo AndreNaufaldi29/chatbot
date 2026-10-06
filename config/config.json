@@ -256,35 +256,30 @@
       "id": "kat-masjid",
       "slug": "karpet-masjid",
       "name": "Karpet Masjid & Musholla",
-      "icon": "🕌",
       "description": "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi, empuk & nyaman untuk ibadah berjamaah."
     },
     {
       "id": "kat-persia",
       "slug": "karpet-persia",
       "name": "Karpet Klasik & Permadani Persia",
-      "icon": "🏛️",
       "description": "Koleksi permadani rajutan tangan autentik Persia & oriental klasik bermutu seni tinggi, benang sutra & wol."
     },
     {
       "id": "kat-minimalis",
       "slug": "karpet-minimalis",
       "name": "Karpet Ruang Tamu Minimalis Modern",
-      "icon": "🛋️",
       "description": "Karpet kontemporer konsep Skandinavia & modern aesthetic, anti-slip backing untuk ruang tamu & keluarga."
     },
     {
       "id": "kat-shaggy",
       "slug": "karpet-shaggy",
       "name": "Karpet Bulu & Shaggy Mewah",
-      "icon": "☁️",
       "description": "Karpet bulu halus ekstra empuk dengan busa memory foam untuk kamar tidur dan ruang santai keluarga."
     },
     {
       "id": "kat-kantor",
       "slug": "karpet-kantor",
       "name": "Karpet Tile & Kantor Komersial",
-      "icon": "🏢",
       "description": "Karpet modular tile 50x50cm heavy duty, tahan api & gesekan roda kursi untuk kantor, hotel, dan ballroom."
     }
   ],
@@ -470,29 +465,58 @@
   ],
   "faqs": [
     {
+      "id": "faq-1",
+      "category": "Pemasangan & Obras",
       "q": "Apakah karpet masjid bisa dipotong dan diobras langsung di lokasi masjid?",
-      "a": "Ya, betul. Tim teknisi Sultan Carpet membawa mesin obras portable ke lokasi masjid Anda sehingga pemotongan dan obras dilakukan langsung mengikuti lekukan pilar dan arah shaf kiblat dengan sangat presisi."
+      "a": "Ya, betul. Tim teknisi Sultan Carpet membawa mesin obras portable langsung ke lokasi masjid Anda sehingga pemotongan dan obras dilakukan presisi mengikuti pilar dan arah shaf kiblat.",
+      "source": "Sistem Resmi"
     },
     {
+      "id": "faq-2",
+      "category": "Garansi & Keaslian",
       "q": "Bagaimana ketentuan garansi karpet di Sultan Carpet Gallery?",
-      "a": "Kami memberikan garansi 100% keaslian benang impor Turki dan Persia, garansi jahitan obras dan pemasangan selama 1 tahun, serta garansi tukar baru 14 hari bila ada cacat pabrik saat barang diterima."
+      "a": "Kami memberikan garansi 100% keaslian benang impor Turki dan Persia, garansi jahitan obras dan pemasangan selama 1 tahun, serta garansi tukar baru 14 hari bila ada cacat pabrik saat barang diterima.",
+      "source": "Sistem Resmi"
     },
     {
+      "id": "faq-3",
+      "category": "Promo & Diskon",
       "q": "Apakah ada promo untuk pemesanan karpet masjid?",
-      "a": "Ya! Saat ini tersedia Promo Berkah Masjid dengan diskon hingga 25%, gratis obras sambungan keliling, gratis parfum karpet masjid wangi tahan lama, dan subsidi ongkir se-Jawa."
+      "a": "Ya! Saat ini tersedia Promo Berkah Masjid dengan diskon hingga 25%, gratis obras sambungan keliling, gratis parfum karpet masjid wangi tahan lama, dan subsidi ongkir se-Jawa.",
+      "source": "Sistem Resmi"
     },
     {
+      "id": "faq-4",
+      "category": "Komplain & Retur",
       "q": "Bagaimana cara melakukan klaim garansi atau komplain jika ada kendala?",
-      "a": "Cukup sampaikan keluhan Anda ke bot ini atau WhatsApp kami dengan menyertakan foto/video kendala. Sistem kami akan membuat tiket layanan resmi dan tim kami akan merespons dalam 1x24 jam kerja."
+      "a": "Cukup sampaikan keluhan Anda ke bot ini atau WhatsApp kami dengan menyertakan foto/video kendala. Sistem kami akan membuat tiket layanan resmi dan tim kami akan merespons dalam 1x24 jam kerja.",
+      "source": "Sistem Resmi"
     },
     {
+      "id": "faq-5",
+      "category": "Survey & Sampel",
       "q": "Apakah bisa minta survey dan dibawakan contoh bahan karpet ke rumah atau masjid?",
-      "a": "Bisa sekali! Layanan survey dan pengukuran beserta bawakan sampel fisik karpet kami sediakan 100% GRATIS untuk wilayah Jabodetabek dan sekitarnya."
+      "a": "Bisa sekali! Layanan survey dan pengukuran beserta bawakan sampel fisik karpet kami sediakan 100% GRATIS untuk wilayah Jabodetabek dan sekitarnya.",
+      "source": "Sistem Resmi"
+    },
+    {
+      "id": "faq-6",
+      "category": "Ketersediaan Stok",
+      "q": "Apakah karpet polos ready stock dan bisa langsung dikirim?",
+      "a": "Tentu, kami memiliki ready stock karpet polos premium (Merah Marun, Hijau Lumut, Royal Blue) roll besar di gudang kami yang siap dikirim dan dipasang dalam 24 jam.",
+      "source": "Chat Pelanggan WhatsApp"
+    },
+    {
+      "id": "faq-7",
+      "category": "Nego & Pembayaran",
+      "q": "Apakah bisa nego harga dan bagaimana sistem pembayarannya?",
+      "a": "Bisa sekali Kak! Untuk pemesanan di atas 30 meter atau skala masjid/proyek, kami sediakan potongan harga khusus. Sistem pembayaran fleksibel dengan DP awal dan pelunasan setelah karpet terpasang rapi di lokasi.",
+      "source": "Chat Pelanggan WhatsApp"
     }
   ],
   "ai": {
     "enabled": true,
-    "provider": "groq",
+    "provider": "gemini",
     "groq_api_key": "",
     "groq_model": "openai/gpt-oss-20b",
     "gemini_api_key": "",

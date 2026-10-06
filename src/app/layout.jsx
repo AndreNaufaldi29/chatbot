@@ -1,5 +1,4 @@
 import './globals.css';
-
 export const metadata = {
   title: 'WA Support • AI Gemini Chatbot Dashboard',
   description: 'Enterprise WhatsApp Customer Service Chatbot with Google Gemini AI Integration & Real-time Analytics',

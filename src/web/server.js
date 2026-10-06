@@ -255,6 +255,40 @@ app.post('/api/chats/:jid/opt-in', (req, res) => {
   res.json({ success: true, jid, optedIn: optedIn !== false });
 });
 
+// Human Handoff List & Configuration Endpoints
+app.get('/api/handoffs', (req, res) => {
+  try {
+    const handoffs = protectionService.getAllHandoffs ? protectionService.getAllHandoffs() : [];
+    const config = protectionService.getConfig().human_handoff || {};
+    const stats = protectionService.getStats();
+    res.json({ success: true, handoffs, config, stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/handoffs/config', (req, res) => {
+  try {
+    const { enabled, keywords, release_keywords, auto_expire_hours, takeover_notice, release_notice } = req.body;
+    const config = menuHandler.getConfig();
+    if (!config.protections) config.protections = {};
+    if (!config.protections.human_handoff) config.protections.human_handoff = {};
+
+    if (enabled !== undefined) config.protections.human_handoff.enabled = Boolean(enabled);
+    if (Array.isArray(keywords)) config.protections.human_handoff.keywords = keywords;
+    if (Array.isArray(release_keywords)) config.protections.human_handoff.release_keywords = release_keywords;
+    if (auto_expire_hours !== undefined) config.protections.human_handoff.auto_expire_hours = Number(auto_expire_hours);
+    if (takeover_notice !== undefined) config.protections.human_handoff.takeover_notice = String(takeover_notice);
+    if (release_notice !== undefined) config.protections.human_handoff.release_notice = String(release_notice);
+
+    menuHandler.saveConfig(config);
+    broadcastSSE('protections_updated', config.protections);
+    res.json({ success: true, human_handoff: config.protections.human_handoff });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Prisma Database Management Endpoints
 app.get('/api/db/status', async (req, res) => {
   try {
@@ -367,7 +401,7 @@ app.get('/api/config', (req, res) => {
 
 app.post('/api/config', (req, res) => {
   const newConfig = req.body;
-  if (!newConfig || !newConfig.business) {
+  if (!newConfig || (!newConfig.business && !newConfig.faqs && !newConfig.catalog)) {
     return res.status(400).json({ error: 'Format konfigurasi tidak valid.' });
   }
   const saved = menuHandler.saveConfig(newConfig);
@@ -375,9 +409,150 @@ app.post('/api/config', (req, res) => {
     if (newConfig.ai) {
       aiService.syncConfig(newConfig.ai);
     }
+    if (newConfig.faqs) {
+      broadcastSSE('faqs_updated', newConfig.faqs);
+    }
     res.json({ success: true, message: 'Pengaturan berhasil disimpan!' });
   } else {
     res.status(500).json({ error: 'Gagal menyimpan pengaturan.' });
+  }
+});
+
+// =========================================================================
+// FAQ & Customer Behavior Knowledge Base Endpoints
+// =========================================================================
+app.get('/api/faqs', (req, res) => {
+  const config = menuHandler.getConfig();
+  res.json(config.faqs || []);
+});
+
+app.post('/api/faqs', (req, res) => {
+  try {
+    const { id, q, a, category, source } = req.body;
+    if (!q || !a) {
+      return res.status(400).json({ error: 'Pertanyaan (q) dan Jawaban (a) wajib diisi.' });
+    }
+    const config = menuHandler.getConfig();
+    if (!config.faqs) config.faqs = [];
+
+    const newId = id || `faq-${Date.now()}`;
+    const newFaq = {
+      id: newId,
+      q: q.trim(),
+      a: a.trim(),
+      category: category ? category.trim() : 'Umum',
+      source: source || 'Input Admin',
+      updatedAt: new Date().toISOString()
+    };
+
+    const existingIndex = config.faqs.findIndex(f => f.id === newId);
+    if (existingIndex !== -1) {
+      config.faqs[existingIndex] = { ...config.faqs[existingIndex], ...newFaq };
+    } else {
+      config.faqs.unshift(newFaq);
+    }
+
+    menuHandler.saveConfig(config);
+    broadcastSSE('faqs_updated', config.faqs);
+    res.json({ success: true, faq: newFaq, faqs: config.faqs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/faqs/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { q, a, category, source } = req.body;
+    const config = menuHandler.getConfig();
+    if (!config.faqs) config.faqs = [];
+
+    const index = config.faqs.findIndex(f => String(f.id) === String(id));
+    if (index === -1) {
+      return res.status(404).json({ error: 'Item Tanya-Jawab tidak ditemukan.' });
+    }
+
+    config.faqs[index] = {
+      ...config.faqs[index],
+      q: q !== undefined ? q.trim() : config.faqs[index].q,
+      a: a !== undefined ? a.trim() : config.faqs[index].a,
+      category: category !== undefined ? category.trim() : config.faqs[index].category,
+      source: source || config.faqs[index].source,
+      updatedAt: new Date().toISOString()
+    };
+
+    menuHandler.saveConfig(config);
+    broadcastSSE('faqs_updated', config.faqs);
+    res.json({ success: true, faq: config.faqs[index], faqs: config.faqs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/faqs/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const config = menuHandler.getConfig();
+    if (!config.faqs) config.faqs = [];
+
+    const beforeLen = config.faqs.length;
+    config.faqs = config.faqs.filter(f => String(f.id) !== String(id));
+
+    if (config.faqs.length === beforeLen) {
+      return res.status(404).json({ error: 'Item Tanya-Jawab tidak ditemukan.' });
+    }
+
+    menuHandler.saveConfig(config);
+    broadcastSSE('faqs_updated', config.faqs);
+    res.json({ success: true, faqs: config.faqs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint to discover and analyze customer question patterns from real chats
+app.get('/api/customer-questions', (req, res) => {
+  try {
+    const messages = chatService.getAllMessages();
+    const config = menuHandler.getConfig();
+    const existingFaqs = config.faqs || [];
+
+    const questionKeywords = ['?', 'apakah', 'berapa', 'bisa', 'ada', 'gimana', 'bagaimana', 'kenapa', 'kapan', 'dimana', 'harga', 'ongkir', 'ukuran', 'diskon', 'promo', 'warna', 'bahan', 'garansi', 'obras', 'pasang', 'survey', 'katalog', 'sample', 'contoh', 'tipe', 'roll', 'meter'];
+    
+    const detected = [];
+    const seenTexts = new Set();
+
+    messages
+      .filter(m => m.direction === 'in' && m.text && typeof m.text === 'string')
+      .reverse()
+      .forEach(m => {
+        const text = m.text.trim();
+        const lower = text.toLowerCase();
+        if (text.length < 4 || text.length > 250) return;
+        
+        const isQuestion = lower.includes('?') || questionKeywords.some(kw => lower.includes(kw));
+        if (isQuestion && !seenTexts.has(lower)) {
+          seenTexts.add(lower);
+          
+          const isLearned = existingFaqs.some(f => 
+            f.q.toLowerCase().includes(lower) || lower.includes(f.q.toLowerCase().slice(0, 15))
+          );
+
+          detected.push({
+            id: m.id || `cq-${Date.now()}-${Math.random()}`,
+            text: text,
+            senderName: m.senderName || 'Pelanggan',
+            phone: m.phone || '',
+            jid: m.jid,
+            timestamp: m.timestamp || new Date().toISOString(),
+            isLearned
+          });
+        }
+      });
+
+    res.json(detected.slice(0, 30));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

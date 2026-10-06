@@ -637,6 +637,19 @@ class ProtectionService extends EventEmitter {
     return this.setHumanHandoff(jid, !enabled, reason);
   }
 
+  getAllHandoffs() {
+    const list = [];
+    const seen = new Set();
+    for (const [jid, rec] of this.handoffRegistry.entries()) {
+      const cleanJid = jid.includes('@') ? jid : `${jid}@s.whatsapp.net`;
+      if (!seen.has(cleanJid)) {
+        seen.add(cleanJid);
+        list.push({ jid: cleanJid, ...rec });
+      }
+    }
+    return list;
+  }
+
   checkHandoffKeywords(text) {
     const config = this.getConfig().human_handoff || {};
     if (config.enabled === false || !text) return null;

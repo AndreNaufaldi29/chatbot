@@ -37,41 +37,5 @@
     "createdAt": "2026-09-27T18:55:36.644Z",
     "updatedAt": "2026-09-27T18:55:36.645Z",
     "notes": "Tiket aktif dibuat otomatis via WhatsApp (Klaim Garansi)."
-  },
-  {
-    "id": "TKT-1001",
-    "sender": "6281299990001",
-    "name": "Budi Santoso",
-    "contact": "budi@example.com",
-    "description": "Kendala integrasi API WhatsApp gagal menghubungkan webhook",
-    "status": "In Progress",
-    "priority": "Tinggi",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-27T08:15:00.000Z",
-    "notes": "Tim teknis sedang memeriksa konfigurasi SSL webhook."
-  },
-  {
-    "id": "TKT-1002",
-    "sender": "6285712345678",
-    "name": "Siti Rahma",
-    "contact": "siti.rahma@gmail.com",
-    "description": "Permintaan upgrade ke Paket Pro Priority",
-    "status": "Resolved",
-    "priority": "Sedang",
-    "createdAt": "2026-09-25T14:20:00.000Z",
-    "updatedAt": "2026-09-26T09:00:00.000Z",
-    "notes": "Upgrade akun berhasil diproses dan invoice lunas."
-  },
-  {
-    "id": "TKT-1003",
-    "sender": "6287811223344",
-    "name": "Ahmad Dani",
-    "contact": "dani@startup.id",
-    "description": "Pertanyaan mengenai SLA kustom untuk paket Enterprise",
-    "status": "Open",
-    "priority": "Normal",
-    "createdAt": "2026-09-27T09:00:00.000Z",
-    "updatedAt": "2026-09-27T09:00:00.000Z",
-    "notes": "Menunggu konfirmasi jadwal meeting bersama tim account manager."
   }
 ]

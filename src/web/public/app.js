@@ -22,14 +22,20 @@ const ticketCounter = document.getElementById('ticket-counter');
 const ticketsTbody = document.getElementById('tickets-tbody');
 const ticketModal = document.getElementById('ticket-modal');
 
-// Titles Map
+// Titles Map (All 11 Sidebar Items)
 const tabTitles = {
-  'tab-qr': { title: 'Koneksi & QR Code Login', subtitle: 'Scan QR code menggunakan aplikasi WhatsApp untuk menghubungkan bot' },
-  'tab-chats': { title: 'Live Chat Log Real-Time', subtitle: 'Memantau pesan masuk dari pelanggan dan balasan otomatis bot secara langsung' },
-  'tab-tickets': { title: 'Daftar Tiket & Pengaduan Pelanggan', subtitle: 'Kelola permohonan layanan dan komplain yang masuk melalui chatbot' },
-  'tab-catalog': { title: 'Katalog Produk & Kartu Interaktif', subtitle: 'Pratinjau kartu pesan WhatsApp dengan tombol View collection' },
-  'tab-sender': { title: 'Kirim Pesan WhatsApp Langsung', subtitle: 'Kirim pesan individual ke nomor pelanggan tertentu langsung dari dashboard' },
-  'tab-settings': { title: 'Pengaturan Bisnis & Chatbot', subtitle: 'Sesuaikan profil perusahaan, jam operasional, kontak resmi, dan layanan' }
+  'tab-chats': { title: '💬 Obrolan WhatsApp', subtitle: 'Memantau pesan masuk dari pelanggan dan balasan otomatis bot secara real-time' },
+  'tab-ai': { title: '✨ AI Studio & Simulator Respons', subtitle: 'Kelola penyedia AI (Groq / Gemini) dan uji coba simulasi percakapan sebelum melayani customer' },
+  'tab-qr': { title: '▦ Koneksi WhatsApp', subtitle: 'Scan QR code menggunakan aplikasi WhatsApp di smartphone untuk menghubungkan bot' },
+  'tab-store-profile': { title: '♙ Profil & Pemilik Toko', subtitle: 'Informasi kredibilitas, legalitas izin usaha NIB/SIUP, dan pendiri Sultan Carpet Gallery' },
+  'tab-catalog': { title: '🛍️ Katalog Produk', subtitle: 'Koleksi karpet masjid Turki Grade A, karpet klasik Persia, hunian & kantor komersial' },
+  'tab-schedule': { title: '🕐 Jadwal Operasional & Jam Kerja', subtitle: 'Waktu buka galeri, jadwal survey lapangan DKM masjid, dan teknisi pasang malam 20 jam' },
+  'tab-location': { title: '📍 Lokasi & Alamat Galeri', subtitle: 'Showroom utama Fatmawati Jakarta Selatan, gudang obras Narogong, dan galeri cabang' },
+  'tab-warranty': { title: '🛡️ Ketentuan Garansi Resmi', subtitle: 'Jaminan keaslian benang Turki 100%, garansi obras & pasang 1 tahun, dan garansi tukar baru 14 hari' },
+  'tab-promo': { title: '🏷️ Promo & Diskon Spesial', subtitle: 'Paket karpet masjid barakah, potongan khusus DKM pengurus, dan fasilitas survey gratis' },
+  'tab-tickets': { title: '⚙️ Pusat Komplain & Customer Service', subtitle: 'Kelola permohonan layanan, keluhan pelanggan, dan eskalasi penanganan tim CS' },
+  'tab-qna': { title: '🧠 Basis Tanya Jawab AI (Knowledge Base)', subtitle: 'Kelola basis pertanyaan dan jawaban resmi toko agar AI menjawab pertanyaan pelanggan secara konsisten dan akurat' },
+  'tab-sender': { title: 'Kirim Pesan WhatsApp Langsung', subtitle: 'Kirim pesan individual ke nomor pelanggan tertentu langsung dari dashboard' }
 };
 
 // Initialize Application
@@ -40,8 +46,12 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTickets();
   loadConfig();
   loadCatalog();
+  loadFaqs();
+  loadCustomerQuestions();
+  loadAiStudio();
+  initQnaModal();
   initSendForm();
-  initSettingsForm();
+  initAiStudioForm();
   initModal();
   initWaMenuModal();
   loadRecentChatLogs();
@@ -78,6 +88,13 @@ function switchTab(tabId) {
 
   if (tabId === 'tab-tickets') {
     loadTickets();
+  } else if (tabId === 'tab-catalog') {
+    loadCatalog();
+  } else if (tabId === 'tab-qna') {
+    loadFaqs();
+    loadCustomerQuestions();
+  } else if (tabId === 'tab-ai') {
+    loadAiStudio();
   }
 }
 
@@ -107,6 +124,11 @@ function initSSE() {
 
   eventSource.addEventListener('chats_updated', () => {
     loadRecentChatLogs();
+    loadCustomerQuestions();
+  });
+
+  eventSource.addEventListener('faqs_updated', () => {
+    loadFaqs();
   });
 
   eventSource.addEventListener('qr', (e) => {
@@ -144,6 +166,11 @@ function initSSE() {
 // Update UI based on WhatsApp Bot connection status
 function updateStatusUI(status, user, qrDataUrl) {
   sidebarStatusPill.className = 'connection-pill';
+
+  const navQrDot = document.getElementById('nav-qr-dot');
+  if (navQrDot) {
+    navQrDot.classList.toggle('online', status === 'connected');
+  }
 
   if (status === 'connected') {
     sidebarStatusPill.classList.add('status-connected');
@@ -201,7 +228,14 @@ function displayQR(dataUrl) {
 // Action Buttons (Restart & Logout)
 function initActionButtons() {
   document.getElementById('btn-restart').addEventListener('click', async () => {
-    if (!confirm('Apakah Anda yakin ingin memulai ulang (restart) koneksi bot?')) return;
+    const ok = await askConfirmDialog({
+      title: 'Mulai Ulang Koneksi WhatsApp?',
+      message: 'Sistem akan memuat ulang socket WhatsApp dan menyegarkan koneksi bot secara otomatis.',
+      confirmText: 'Mulai Ulang',
+      cancelText: 'Batal',
+      type: 'info'
+    });
+    if (!ok) return;
     try {
       showToast('Memulai ulang bot...', 'info');
       const res = await fetch('/api/restart', { method: 'POST' });
@@ -213,7 +247,14 @@ function initActionButtons() {
   });
 
   document.getElementById('btn-logout').addEventListener('click', async () => {
-    if (!confirm('Apakah Anda yakin ingin logout? Sesi WhatsApp akan dihapus dan Anda harus melakukan scan QR ulang.')) return;
+    const ok = await askConfirmDialog({
+      title: 'Logout Sesi WhatsApp?',
+      message: 'Sesi WhatsApp akan dihapus dan Anda harus melakukan scan QR ulang untuk menghubungkan kembali.',
+      confirmText: 'Ya, Logout',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
     try {
       showToast('Menghapus sesi & memuat QR baru...', 'info');
       const res = await fetch('/api/logout', { method: 'POST' });
@@ -458,67 +499,404 @@ function initSendForm() {
   });
 }
 
-// Bot & Business Settings
+// AI Studio Engine & Simulator
+let currentAiProvider = 'groq';
+
+async function loadAiStudio() {
+  try {
+    const res = await fetch('/api/ai/provider');
+    const data = await res.json();
+    if (data.provider) {
+      currentAiProvider = data.provider;
+      const radio = document.getElementById(`radio-${data.provider}`);
+      if (radio) radio.checked = true;
+
+      const tag = document.getElementById('ai-studio-active-tag');
+      if (tag) {
+        tag.textContent = data.provider === 'groq' 
+          ? 'Provider Aktif: ⚡ Groq (Llama 3.3 70B)' 
+          : 'Provider Aktif: 🔮 Google Gemini (Gemini 2.5 Flash)';
+      }
+
+      const badge = document.getElementById('ai-provider-badge');
+      if (badge) {
+        badge.textContent = data.provider === 'groq' ? '⚡ Groq' : '🔮 Gemini';
+      }
+    }
+  } catch (err) {
+    console.error('Gagal memuat info AI provider:', err);
+  }
+}
+
+function initAiStudioForm() {
+  const saveBtn = document.getElementById('btn-save-ai-provider');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      const selected = document.querySelector('input[name="ai-provider-select"]:checked')?.value || 'groq';
+      try {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Menyimpan...';
+        const res = await fetch('/api/ai/provider', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: selected })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Engine AI berhasil dialihkan ke ${selected.toUpperCase()}!`, 'success');
+          loadAiStudio();
+        } else {
+          showToast('Gagal mengubah engine AI: ' + (data.error || 'Unknown'), 'error');
+        }
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Terapkan Engine Pilihan';
+      }
+    });
+  }
+
+  const simForm = document.getElementById('form-simulate-ai');
+  if (simForm) {
+    simForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('sim-input-message');
+      const userText = input.value.trim();
+      if (!userText) return;
+
+      const chatBox = document.getElementById('simulator-chat-box');
+      // Append user bubble
+      const userBubble = document.createElement('div');
+      userBubble.className = 'sim-bubble sim-user';
+      userBubble.innerHTML = `<strong>Customer:</strong><p>${escapeHtml(userText)}</p>`;
+      chatBox.appendChild(userBubble);
+      input.value = '';
+
+      // Append thinking bubble
+      const thinkingBubble = document.createElement('div');
+      thinkingBubble.className = 'sim-bubble sim-bot';
+      thinkingBubble.innerHTML = `<strong>AI Customer Service (${currentAiProvider}):</strong><p><em>Sedang menganalisis Knowledge Base...</em></p>`;
+      chatBox.appendChild(thinkingBubble);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      try {
+        const sendBtn = document.getElementById('btn-sim-send');
+        if (sendBtn) sendBtn.disabled = true;
+
+        const res = await fetch('/api/ai/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: userText, senderName: 'Pengunjung Web' })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.reply) {
+          thinkingBubble.innerHTML = `<strong>AI Customer Service (${data.provider || currentAiProvider}):</strong><p>${formatWhatsAppText(data.reply)}</p>`;
+        } else {
+          thinkingBubble.innerHTML = `<strong>AI Error:</strong><p style="color:#fca5a5;">${escapeHtml(data.error || 'AI tidak menghasilkan balasan.')}</p>`;
+        }
+      } catch (err) {
+        thinkingBubble.innerHTML = `<strong>AI Error:</strong><p style="color:#fca5a5;">${escapeHtml(err.message)}</p>`;
+      } finally {
+        const sendBtn = document.getElementById('btn-sim-send');
+        if (sendBtn) sendBtn.disabled = false;
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+    });
+  }
+}
+
+window.quickSimulate = function(promptText) {
+  const input = document.getElementById('sim-input-message');
+  if (input) {
+    input.value = promptText;
+    const form = document.getElementById('form-simulate-ai');
+    if (form) form.dispatchEvent(new Event('submit'));
+  }
+};
+
+// ========================================================
+// AI Knowledge Base (Q&A & Customer Psychology) Management
+// ========================================================
+let allFaqs = [];
+let activeCategory = 'all';
+let searchQuery = '';
+
+async function loadFaqs() {
+  try {
+    const res = await fetch('/api/faqs');
+    const data = await res.json();
+    allFaqs = data.faqs || [];
+
+    // Update Stats
+    const totalEl = document.getElementById('stat-total-faqs');
+    const catEl = document.getElementById('stat-total-categories');
+    const ansEl = document.getElementById('stat-total-answers');
+    const badgeEl = document.getElementById('qna-counter');
+    const statFaqCount = document.getElementById('ai-stat-faq-count');
+
+    if (totalEl) totalEl.textContent = String(allFaqs.length);
+    if (badgeEl) badgeEl.textContent = String(allFaqs.length);
+    if (statFaqCount) statFaqCount.textContent = `${allFaqs.length} Terhubung`;
+
+    const categories = new Set(allFaqs.map(f => f.category).filter(Boolean));
+    if (catEl) catEl.textContent = String(categories.size);
+    if (ansEl) ansEl.textContent = '100%';
+
+    renderFaqs();
+  } catch (err) {
+    console.error('Gagal memuat faqs:', err);
+  }
+}
+
+function renderFaqs() {
+  const container = document.getElementById('faqs-list-container');
+  if (!container) return;
+
+  const filtered = allFaqs.filter(faq => {
+    const matchCategory = activeCategory === 'all' || (faq.category || '').toLowerCase() === activeCategory.toLowerCase();
+    const query = searchQuery.toLowerCase();
+    const matchSearch = !query || 
+      (faq.question || '').toLowerCase().includes(query) ||
+      (faq.answer || '').toLowerCase().includes(query) ||
+      (faq.category || '').toLowerCase().includes(query);
+    return matchCategory && matchSearch;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <p>Tidak ada tanya-jawab yang cocok dengan filter atau pencarian Anda.</p>
+        <button class="btn btn-primary btn-sm" onclick="openAddFaqModal()" style="margin-top: 10px;">
+          + Tambah Q&A Baru
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = filtered.map(faq => `
+    <div class="faq-card" data-id="${escapeHtml(faq.id)}">
+      <div class="faq-card-header">
+        <span class="faq-category-badge">${escapeHtml(faq.category || 'Umum')}</span>
+        <div class="faq-card-actions">
+          <button class="btn-icon-sm" onclick="editFaq('${escapeHtml(faq.id)}')">✏️ Edit</button>
+          <button class="btn-icon-sm danger" onclick="deleteFaq('${escapeHtml(faq.id)}')">🗑️ Hapus</button>
+        </div>
+      </div>
+      <div class="faq-question">❓ ${escapeHtml(faq.question)}</div>
+      <div class="faq-answer">
+        <strong>Jawaban Resmi AI:</strong>
+        <p style="margin-top: 4px;">${formatWhatsAppText(faq.answer)}</p>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadCustomerQuestions() {
+  try {
+    const res = await fetch('/api/customer-questions');
+    const data = await res.json();
+    const questions = data.questions || [];
+
+    const box = document.getElementById('detected-questions-box');
+    const list = document.getElementById('detected-questions-list');
+    const counter = document.getElementById('detected-counter');
+
+    if (!box || !list) return;
+
+    if (questions.length === 0) {
+      box.style.display = 'none';
+      return;
+    }
+
+    box.style.display = 'block';
+    if (counter) counter.textContent = `${questions.length} Baru`;
+
+    list.innerHTML = questions.slice(0, 5).map(q => `
+      <div class="dq-item">
+        <div class="dq-info">
+          <span class="dq-question">"${escapeHtml(q.question)}"</span>
+          <span class="dq-sender">${escapeHtml(q.senderName || 'Pelanggan')} (+${escapeHtml(q.phone || '')}) &bull; ${new Date(q.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="teachFromQuestion('${escapeHtml(q.question)}')">
+          Ajari AI Jawaban Ini
+        </button>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Gagal memuat customer questions:', err);
+  }
+}
+
+function initQnaModal() {
+  const addBtn = document.getElementById('btn-add-faq');
+  if (addBtn) addBtn.onclick = openAddFaqModal;
+
+  const modal = document.getElementById('qna-modal');
+  const closeBtn = document.getElementById('modal-qna-close-btn');
+  const cancelBtn = document.getElementById('modal-qna-cancel-btn');
+  const saveBtn = document.getElementById('modal-qna-save-btn');
+
+  if (closeBtn) closeBtn.onclick = closeQnaModal;
+  if (cancelBtn) cancelBtn.onclick = closeQnaModal;
+
+  if (saveBtn) {
+    saveBtn.onclick = saveQnaItem;
+  }
+
+  // Search input filter
+  const searchInput = document.getElementById('qna-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      renderFaqs();
+    });
+  }
+
+  // Category pills filter
+  const pills = document.querySelectorAll('#qna-category-pills .pill-btn');
+  pills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      pills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      activeCategory = pill.getAttribute('data-cat') || 'all';
+      renderFaqs();
+    });
+  });
+}
+
+window.openAddFaqModal = function() {
+  const modal = document.getElementById('qna-modal');
+  if (!modal) return;
+  document.getElementById('modal-qna-title').textContent = 'Ajari AI: Tambah Tanya-Jawab Baru';
+  document.getElementById('modal-qna-id').value = '';
+  document.getElementById('modal-qna-category').value = 'Pemasangan & Obras';
+  document.getElementById('modal-qna-question').value = '';
+  document.getElementById('modal-qna-answer').value = '';
+  modal.classList.add('active');
+};
+
+window.teachFromQuestion = function(questionText) {
+  openAddFaqModal();
+  document.getElementById('modal-qna-question').value = questionText;
+  document.getElementById('modal-qna-answer').focus();
+};
+
+window.editFaq = function(faqId) {
+  const faq = allFaqs.find(f => f.id === faqId);
+  if (!faq) return;
+
+  const modal = document.getElementById('qna-modal');
+  if (!modal) return;
+
+  document.getElementById('modal-qna-title').textContent = 'Edit Knowledge Base AI';
+  document.getElementById('modal-qna-id').value = faq.id;
+  document.getElementById('modal-qna-category').value = faq.category || 'Pemasangan & Obras';
+  document.getElementById('modal-qna-question').value = faq.question || '';
+  document.getElementById('modal-qna-answer').value = faq.answer || '';
+  modal.classList.add('active');
+};
+
+window.deleteFaq = async function(faqId) {
+  const ok = await askConfirmDialog({
+    title: 'Hapus Tanya-Jawab AI?',
+    message: 'Apakah Anda yakin ingin menghapus tanya-jawab ini dari Knowledge Base AI?',
+    confirmText: 'Hapus',
+    cancelText: 'Batal',
+    type: 'danger'
+  });
+  if (!ok) return;
+  try {
+    const res = await fetch(`/api/faqs/${faqId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Tanya-jawab berhasil dihapus!', 'success');
+      loadFaqs();
+    } else {
+      showToast('Gagal menghapus: ' + (data.error || 'Unknown error'), 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+};
+
+window.closeQnaModal = function() {
+  const modal = document.getElementById('qna-modal');
+  if (modal) modal.classList.remove('active');
+};
+
+async function saveQnaItem() {
+  const id = document.getElementById('modal-qna-id').value;
+  const category = document.getElementById('modal-qna-category').value;
+  const question = document.getElementById('modal-qna-question').value.trim();
+  const answer = document.getElementById('modal-qna-answer').value.trim();
+
+  if (!question || !answer) {
+    showToast('Pertanyaan dan jawaban wajib diisi!', 'error');
+    return;
+  }
+
+  const payload = { category, question, answer };
+  const saveBtn = document.getElementById('modal-qna-save-btn');
+
+  try {
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Menyimpan...';
+    }
+
+    const url = id ? `/api/faqs/${id}` : '/api/faqs';
+    const method = id ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast(id ? 'Knowledge Base berhasil diperbarui!' : 'Tanya-jawab baru berhasil diajarkan ke AI!', 'success');
+      closeQnaModal();
+      loadFaqs();
+    } else {
+      showToast('Gagal menyimpan: ' + (data.error || 'Unknown error'), 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Simpan ke Knowledge Base';
+    }
+  }
+}
+
+// Bot & Business Settings (Safe fallback)
 async function loadConfig() {
   try {
     const res = await fetch('/api/config');
     const config = await res.json();
 
-    if (config.business) {
+    if (config.business && document.getElementById('cfg-biz-name')) {
       document.getElementById('cfg-biz-name').value = config.business.name || '';
-      document.getElementById('cfg-biz-tagline').value = config.business.tagline || '';
-      document.getElementById('cfg-biz-phone').value = config.business.phone || '';
-      document.getElementById('cfg-biz-email').value = config.business.email || '';
-      document.getElementById('cfg-biz-website').value = config.business.website || '';
-      document.getElementById('cfg-biz-address').value = config.business.address || '';
-      document.getElementById('cfg-biz-maps').value = config.business.maps_url || '';
-      document.getElementById('cfg-biz-hours').value = config.business.hours || '';
+      if (document.getElementById('cfg-biz-tagline')) document.getElementById('cfg-biz-tagline').value = config.business.tagline || '';
+      if (document.getElementById('cfg-biz-phone')) document.getElementById('cfg-biz-phone').value = config.business.phone || '';
+      if (document.getElementById('cfg-biz-email')) document.getElementById('cfg-biz-email').value = config.business.email || '';
+      if (document.getElementById('cfg-biz-website')) document.getElementById('cfg-biz-website').value = config.business.website || '';
+      if (document.getElementById('cfg-biz-address')) document.getElementById('cfg-biz-address').value = config.business.address || '';
+      if (document.getElementById('cfg-biz-maps')) document.getElementById('cfg-biz-maps').value = config.business.maps_url || '';
+      if (document.getElementById('cfg-biz-hours')) document.getElementById('cfg-biz-hours').value = config.business.hours || '';
     }
 
-    if (config.bot) {
+    if (config.bot && document.getElementById('cfg-bot-ignore-groups')) {
       document.getElementById('cfg-bot-ignore-groups').checked = !!config.bot.ignore_groups;
     }
   } catch (err) {
     console.error('Gagal memuat konfigurasi:', err);
   }
-}
-
-function initSettingsForm() {
-  document.getElementById('btn-save-settings').addEventListener('click', async () => {
-    try {
-      const currentConfigRes = await fetch('/api/config');
-      const config = await currentConfigRes.json();
-
-      config.business = {
-        name: document.getElementById('cfg-biz-name').value.trim(),
-        tagline: document.getElementById('cfg-biz-tagline').value.trim(),
-        phone: document.getElementById('cfg-biz-phone').value.trim(),
-        email: document.getElementById('cfg-biz-email').value.trim(),
-        website: document.getElementById('cfg-biz-website').value.trim(),
-        address: document.getElementById('cfg-biz-address').value.trim(),
-        maps_url: document.getElementById('cfg-biz-maps').value.trim(),
-        hours: document.getElementById('cfg-biz-hours').value.trim()
-      };
-
-      config.bot = config.bot || {};
-      config.bot.ignore_groups = document.getElementById('cfg-bot-ignore-groups').checked;
-
-      const saveRes = await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
-      });
-
-      if (saveRes.ok) {
-        showToast('Pengaturan bisnis & bot berhasil disimpan!', 'success');
-      } else {
-        const err = await saveRes.json();
-        showToast('Gagal menyimpan: ' + err.error, 'error');
-      }
-    } catch (err) {
-      showToast('Error: ' + err.message, 'error');
-    }
-  });
 }
 
 // Toast Notifications Helper
@@ -536,6 +914,52 @@ function showToast(message, type = 'info') {
     toast.style.transition = 'all 0.3s ease';
     setTimeout(() => toast.remove(), 300);
   }, 4000);
+}
+
+// Custom In-App Confirmation Pop-up (Replaces native browser confirm)
+function askConfirmDialog({ title = 'Konfirmasi Tindakan', message = '', confirmText = 'Ya, Lanjutkan', cancelText = 'Batal', type = 'warning' } = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirm-modal');
+    if (!modal) {
+      resolve(true);
+      return;
+    }
+    const titleEl = document.getElementById('confirm-modal-title-text');
+    const msgEl = document.getElementById('confirm-modal-message');
+    const iconEl = document.getElementById('confirm-modal-icon');
+    const okBtn = document.getElementById('confirm-modal-ok-btn');
+    const cancelBtn = document.getElementById('confirm-modal-cancel-btn');
+    const closeBtn = document.getElementById('confirm-modal-close-btn');
+
+    if (titleEl) titleEl.textContent = title;
+    if (msgEl) msgEl.textContent = message;
+    if (iconEl) iconEl.textContent = type === 'danger' ? '🗑️' : type === 'info' ? '🔄' : '⚠️';
+    if (okBtn) {
+      okBtn.textContent = confirmText;
+      okBtn.className = type === 'danger' ? 'btn btn-danger' : 'btn btn-primary';
+    }
+    if (cancelBtn) cancelBtn.textContent = cancelText;
+
+    let resolved = false;
+    const cleanup = (result) => {
+      if (resolved) return;
+      resolved = true;
+      modal.classList.remove('active');
+      okBtn?.removeEventListener('click', onOk);
+      cancelBtn?.removeEventListener('click', onCancel);
+      closeBtn?.removeEventListener('click', onCancel);
+      resolve(result);
+    };
+
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+
+    okBtn?.addEventListener('click', onOk);
+    cancelBtn?.addEventListener('click', onCancel);
+    closeBtn?.addEventListener('click', onCancel);
+
+    modal.classList.add('active');
+  });
 }
 
 // Helper: Escape HTML strings

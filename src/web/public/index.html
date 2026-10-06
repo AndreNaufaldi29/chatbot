@@ -26,32 +26,65 @@
       </div>
 
       <nav class="nav-menu">
-        <button class="nav-item active" data-tab="tab-qr" id="nav-btn-qr">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-          <span>Koneksi & QR Code</span>
-        </button>
-        <button class="nav-item" data-tab="tab-chats" id="nav-btn-chats">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-          <span>Live Chat Log</span>
+        <button class="nav-item active" data-tab="tab-chats" id="nav-btn-chats">
+          <span class="nav-icon">💬</span>
+          <span class="nav-text">Obrolan WhatsApp</span>
           <span class="badge-counter" id="chat-counter">0</span>
         </button>
-        <button class="nav-item" data-tab="tab-tickets" id="nav-btn-tickets">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-          <span>Tiket Layanan</span>
-          <span class="badge-counter" id="ticket-counter">0</span>
+        <button class="nav-item" data-tab="tab-ai" id="nav-btn-ai">
+          <span class="nav-icon">✨</span>
+          <span class="nav-text">AI Studio</span>
+          <span class="nav-provider-pill" id="ai-provider-badge">⚡ Groq</span>
+        </button>
+        <button class="nav-item" data-tab="tab-qr" id="nav-btn-qr">
+          <span class="nav-icon nav-mono">▦</span>
+          <span class="nav-text">Koneksi WhatsApp</span>
+          <span class="status-indicator-dot" id="nav-qr-dot"></span>
+        </button>
+
+        <div class="nav-section-header">
+          <span>INFORMASI TOKO</span>
+        </div>
+
+        <button class="nav-item" data-tab="tab-store-profile" id="nav-btn-store-profile">
+          <span class="nav-icon">♙</span>
+          <span class="nav-text">Profil & Pemilik Toko</span>
         </button>
         <button class="nav-item" data-tab="tab-catalog" id="nav-btn-catalog">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
-          <span>Katalog Produk</span>
-          <span class="badge-counter" id="catalog-counter">2</span>
+          <span class="nav-icon">🛍️</span>
+          <span class="nav-text">Katalog Produk</span>
+          <span class="badge-counter" id="catalog-counter">5</span>
         </button>
-        <button class="nav-item" data-tab="tab-sender" id="nav-btn-sender">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-          <span>Kirim Pesan Manual</span>
+        <button class="nav-item" data-tab="tab-schedule" id="nav-btn-schedule">
+          <span class="nav-icon">🕐</span>
+          <span class="nav-text">Jadwal & Jam Kerja</span>
         </button>
-        <button class="nav-item" data-tab="tab-settings" id="nav-btn-settings">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-          <span>Pengaturan Bot</span>
+        <button class="nav-item" data-tab="tab-location" id="nav-btn-location">
+          <span class="nav-icon">📍</span>
+          <span class="nav-text">Lokasi & Alamat</span>
+        </button>
+        <button class="nav-item" data-tab="tab-warranty" id="nav-btn-warranty">
+          <span class="nav-icon">🛡️</span>
+          <span class="nav-text">Ketentuan Garansi</span>
+        </button>
+        <button class="nav-item" data-tab="tab-promo" id="nav-btn-promo">
+          <span class="nav-icon">🏷️</span>
+          <span class="nav-text">Promo & Diskon</span>
+        </button>
+        <button class="nav-item" data-tab="tab-tickets" id="nav-btn-tickets">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-text">Pusat Komplain & CS</span>
+          <span class="badge-counter" id="ticket-counter">0</span>
+        </button>
+
+        <div class="nav-section-header">
+          <span>AI KNOWLEDGE</span>
+        </div>
+
+        <button class="nav-item" data-tab="tab-qna" id="nav-btn-qna">
+          <span class="nav-icon">🧠</span>
+          <span class="nav-text">Knowledge Base</span>
+          <span class="badge-counter" id="qna-counter">0</span>
         </button>
       </nav>
 
@@ -316,69 +349,481 @@
           </div>
         </section>
 
-        <!-- TAB 5: BOT & BUSINESS SETTINGS -->
-        <section class="tab-panel" id="tab-settings">
+        <!-- TAB: AI STUDIO -->
+        <section class="tab-panel" id="tab-ai">
           <div class="card">
             <div class="card-header">
               <div>
-                <h3>Pengaturan Informasi Bisnis & Chatbot</h3>
-                <p>Ubah detail kontak, alamat, jam operasional, dan daftar layanan chatbot</p>
+                <h3>✨ AI Studio & Simulator Respons</h3>
+                <p>Kelola kecerdasan buatan, ganti engine AI, dan uji coba balasan sebelum melayani customer live</p>
               </div>
-              <button class="btn btn-primary" id="btn-save-settings">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                <span>Simpan Perubahan</span>
-              </button>
+              <div class="ai-header-controls">
+                <span class="ai-provider-indicator" id="ai-studio-active-tag">Provider Aktif: Groq (Llama 3 70B)</span>
+              </div>
             </div>
 
-            <div class="settings-grid">
-              <div class="settings-col">
-                <h4 class="settings-section-title">Profil Bisnis / Instansi</h4>
-                <div class="form-group">
-                  <label for="cfg-biz-name">Nama Perusahaan / Layanan</label>
-                  <input type="text" id="cfg-biz-name">
+            <div class="ai-studio-grid">
+              <!-- Left Column: Engine Switcher & Status -->
+              <div class="ai-studio-config-col">
+                <div class="ai-model-card">
+                  <h4>Pilih Engine AI Utama</h4>
+                  <p class="text-sm-muted">Pilih penyedia LLM untuk membalas obrolan customer WhatsApp secara otomatis:</p>
+                  <div class="provider-switch-options">
+                    <label class="provider-radio-card" id="provider-groq-card">
+                      <input type="radio" name="ai-provider-select" value="groq" id="radio-groq" checked>
+                      <div class="provider-radio-info">
+                        <strong>⚡ Groq (Llama 3.3 70B Versatile)</strong>
+                        <span>Respons instan (&lt;1 detik), akurat untuk FAQ & penawaran karpet</span>
+                      </div>
+                    </label>
+                    <label class="provider-radio-card" id="provider-gemini-card">
+                      <input type="radio" name="ai-provider-select" value="gemini" id="radio-gemini">
+                      <div class="provider-radio-info">
+                        <strong>🔮 Google Gemini (Gemini 2.5 Flash)</strong>
+                        <span>Penalaran multimodal cerdas, pemahaman konteks mendalam</span>
+                      </div>
+                    </label>
+                  </div>
+                  <button class="btn btn-primary btn-sm" id="btn-save-ai-provider" style="margin-top: 14px;">
+                    Terapkan Engine Pilihan
+                  </button>
                 </div>
-                <div class="form-group">
-                  <label for="cfg-biz-tagline">Tagline Slogan</label>
-                  <input type="text" id="cfg-biz-tagline">
-                </div>
-                <div class="form-group">
-                  <label for="cfg-biz-phone">Nomor Telepon CS Resmi</label>
-                  <input type="text" id="cfg-biz-phone">
-                </div>
-                <div class="form-group">
-                  <label for="cfg-biz-email">Alamat Email Resmi</label>
-                  <input type="email" id="cfg-biz-email">
-                </div>
-                <div class="form-group">
-                  <label for="cfg-biz-website">Alamat Website</label>
-                  <input type="text" id="cfg-biz-website">
+
+                <div class="ai-feature-card">
+                  <h4>🧠 Knowledge Base Injected</h4>
+                  <p class="text-sm-muted">AI secara otomatis membaca data toko, ketentuan garansi, katalog produk, dan seluruh tanya-jawab di tab <strong>Knowledge Base</strong> untuk memandu jawaban yang sopan dan persuasif.</p>
+                  <div class="ai-stats-mini">
+                    <div><span>Database Q&A:</span> <strong id="ai-stat-faq-count">8 Terhubung</strong></div>
+                    <div><span>Tone Suara:</span> <strong>Sopan, Ramah, Islami & Profesional</strong></div>
+                    <div><span>Status Grounding:</span> <strong>100% Tersinkron ke LLM</strong></div>
+                  </div>
                 </div>
               </div>
 
-              <div class="settings-col">
-                <h4 class="settings-section-title">Lokasi & Jam Kerja</h4>
-                <div class="form-group">
-                  <label for="cfg-biz-address">Alamat Kantor Fisik</label>
-                  <textarea id="cfg-biz-address" rows="3"></textarea>
+              <!-- Right Column: Live Chat Simulator -->
+              <div class="ai-studio-test-col">
+                <div class="simulator-card">
+                  <h4>🧪 Uji Coba Chat Simulator AI</h4>
+                  <p class="text-sm-muted">Ketik pertanyaan layaknya customer WhatsApp dan amati bagaimana AI menjawab berdasarkan Knowledge Base:</p>
+
+                  <div class="simulator-chat-box" id="simulator-chat-box">
+                    <div class="sim-bubble sim-bot">
+                      <strong>AI Customer Service:</strong>
+                      <p>Assalamu'alaikum! Selamat datang di Sultan Carpet Gallery. Ada yang bisa kami bantu mengenai karpet masjid Turki, karpet klasik, atau konsultasi survey ukuran?</p>
+                    </div>
+                  </div>
+
+                  <form id="form-simulate-ai" class="simulator-form">
+                    <div class="sim-input-row">
+                      <input type="text" id="sim-input-message" placeholder="Contoh: Apakah bisa survey langsung ke masjid kami di Bogor?" required>
+                      <button type="submit" class="btn btn-primary" id="btn-sim-send">
+                        <span>Kirim Uji Coba</span>
+                      </button>
+                    </div>
+                    <div class="sim-quick-prompts">
+                      <span>Coba pertanyaan cepat:</span>
+                      <button type="button" class="btn-quick-chip" onclick="quickSimulate('Apakah ada garansi jika karpet luntur atau obras lepas?')">🛡️ Garansi</button>
+                      <button type="button" class="btn-quick-chip" onclick="quickSimulate('Berapa diskon untuk pemesanan masjid 10 roll?')">🏷️ Promo Diskon</button>
+                      <button type="button" class="btn-quick-chip" onclick="quickSimulate('Bisa pasang malam hari setelah sholat Isya?')">🕐 Jam Pasang</button>
+                    </div>
+                  </form>
                 </div>
-                <div class="form-group">
-                  <label for="cfg-biz-maps">Link Google Maps</label>
-                  <input type="text" id="cfg-biz-maps">
-                </div>
-                <div class="form-group">
-                  <label>Cabang Showroom Aktif (Menu 2)</label>
-                  <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.825rem; color: var(--text-secondary); background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);">
-                    <div>📍 <strong>Jakarta:</strong> Senopati (09:00 - 21:00 WIB)</div>
-                    <div>📍 <strong>Bandung:</strong> Riau (08:00 - 20:00 WIB)</div>
-                    <div>📍 <strong>Bali:</strong> Canggu Batu Bolong (08:00 - 22:00 WITA)</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: PROFIL & PEMILIK TOKO -->
+        <section class="tab-panel" id="tab-store-profile">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>♙ Profil Perusahaan & Pemilik Toko</h3>
+                <p>Kredibilitas, legalitas izin usaha, dan sejarah perjalanan Sultan Carpet Gallery</p>
+              </div>
+            </div>
+
+            <div class="store-profile-layout">
+              <!-- Founder Story & Contacts -->
+              <div class="profile-details-grid">
+                <div class="profile-card">
+                  <div class="pcard-icon">👑</div>
+                  <h4>Profil Pendiri / Pemilik</h4>
+                  <div class="pcard-field">
+                    <label>Nama Pemilik:</label>
+                    <p><strong>H. Ahmad Fauzi & Hj. Maryam</strong></p>
+                  </div>
+                  <div class="pcard-field">
+                    <label>Jabatan:</label>
+                    <p>Founder & Managing Director</p>
+                  </div>
+                  <div class="pcard-field">
+                    <label>Kisah Singkat:</label>
+                    <p>Berawal dari kecintaan terhadap keindahan seni rajut karpet Turki dan Persia pada tahun 2012. Kini telah melayani ribuan DKM masjid di seluruh penjuru Indonesia dan dipercaya instansi pemerintah maupun swasta.</p>
+                  </div>
+                  <div class="pcard-field">
+                    <label>Kontak Pemilik & CS:</label>
+                    <p>📞 0812-9876-5432 / 0811-2345-6789<br>✉️ owner@sultancarpet.co.id</p>
                   </div>
                 </div>
-                <div class="form-group">
-                  <label class="checkbox-label">
-                    <input type="checkbox" id="cfg-bot-ignore-groups">
-                    <span>Abaikan pesan dari WhatsApp Group (hanya layani chat pribadi)</span>
-                  </label>
+
+                <div class="profile-card">
+                  <div class="pcard-icon">📜</div>
+                  <h4>Legalitas & Kepatuhan Usaha</h4>
+                  <div class="pcard-field">
+                    <label>Nomor Induk Berusaha (NIB):</label>
+                    <p><code>9120003481923</code> (Terdaftar Resmi OSS RBA)</p>
+                  </div>
+                  <div class="pcard-field">
+                    <label>Surat Izin Usaha Perdagangan (SIUP):</label>
+                    <p><code>510/089/PK/X/2012</code></p>
+                  </div>
+                  <div class="pcard-field">
+                    <label>Faktur Pajak & Kwitansi DKM:</label>
+                    <p>Menyediakan invoice resmi berstempel dan faktur pajak untuk keperluan LPJ kas masjid / yayasan.</p>
+                  </div>
+                  <div class="pcard-field">
+                    <label>Komitmen Pelayanan:</label>
+                    <p>Transparan dalam spek kerapatan rajut (points/m²), ketebalan mm riil tanpa rekayasa, serta garansi obras seumur hidup pemakaian normal.</p>
+                  </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: JADWAL & JAM KERJA -->
+        <section class="tab-panel" id="tab-schedule">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>🕐 Jadwal Operasional & Jam Kerja</h3>
+                <p>Ketentuan waktu kunjungan galeri, survey lapangan masjid, dan teknisi pasang malam</p>
+              </div>
+            </div>
+
+            <div class="schedule-grid">
+              <div class="schedule-card">
+                <div class="scard-header">
+                  <span class="scard-icon">🏬</span>
+                  <h4>Jam Buka Galeri & Showroom</h4>
+                </div>
+                <div class="scard-body">
+                  <div class="time-row">
+                    <span class="day-lbl">Senin - Sabtu:</span>
+                    <span class="time-val">08:30 - 20:00 WIB</span>
+                  </div>
+                  <div class="time-row">
+                    <span class="day-lbl">Minggu & Libur Nasional:</span>
+                    <span class="time-val">09:00 - 18:00 WIB</span>
+                  </div>
+                  <p class="scard-note">Tamu dapat datang langsung untuk melihat ratusan sampel motif karpet dan merasakan ketebalan bahan.</p>
+                </div>
+              </div>
+
+              <div class="schedule-card highlight-card">
+                <div class="scard-header">
+                  <span class="scard-icon">📐</span>
+                  <h4>Layanan Survey & Ukur Masjid</h4>
+                </div>
+                <div class="scard-body">
+                  <div class="time-row">
+                    <span class="day-lbl">Jadwal Survey:</span>
+                    <span class="time-val">08:00 - 21:00 WIB (Setiap Hari)</span>
+                  </div>
+                  <div class="time-row">
+                    <span class="day-lbl">Area Bebas Biaya:</span>
+                    <span class="time-val">Jabodetabek, Bandung, Surabaya Raya</span>
+                  </div>
+                  <p class="scard-note">Teknisi membawa sampel roll langsung ke masjid. Waktu dapat dijadwalkan malam hari saat pengurus DKM berkumpul.</p>
+                </div>
+              </div>
+
+              <div class="schedule-card">
+                <div class="scard-header">
+                  <span class="scard-icon">🌙</span>
+                  <h4>Teknisi Pasang Malam Hari (20 Jam)</h4>
+                </div>
+                <div class="scard-body">
+                  <div class="time-row">
+                    <span class="day-lbl">Waktu Pasang Khusus:</span>
+                    <span class="time-val">Ba'da Isya s/d Subuh (By Request)</span>
+                  </div>
+                  <p class="scard-note">Pemasangan dan obras karpet masjid di tempat dapat dikerjakan malam hari agar tidak mengganggu sholat berjamaah.</p>
+                </div>
+              </div>
+
+              <div class="schedule-card">
+                <div class="scard-header">
+                  <span class="scard-icon">🚚</span>
+                  <h4>Jadwal Ekspedisi & Pengiriman</h4>
+                </div>
+                <div class="scard-body">
+                  <div class="time-row">
+                    <span class="day-lbl">Jabodetabek:</span>
+                    <span class="time-val">Setiap Hari (Armada Mobil Sultan)</span>
+                  </div>
+                  <div class="time-row">
+                    <span class="day-lbl">Luar Pulau / Daerah:</span>
+                    <span class="time-val">Kargo Terpercaya (Indah, Baraka, Dakota)</span>
+                  </div>
+                  <p class="scard-note">Disediakan resi pelacak real-time dan asuransi pengiriman penuh sampai di depan pintu masjid.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: LOKASI & ALAMAT -->
+        <section class="tab-panel" id="tab-location">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>📍 Lokasi & Alamat Galeri</h3>
+                <p>Kunjungi galeri utama atau workshop terdekat untuk melihat koleksi karpet secara langsung</p>
+              </div>
+            </div>
+
+            <div class="location-grid">
+              <div class="location-card main-loc">
+                <div class="loc-badge">Showroom Utama & Gallery</div>
+                <h4>Showroom Fatmawati (Jakarta Selatan)</h4>
+                <p class="loc-address">Jl. Fatmawati Raya No. 45, RT.04/RW.02, Cilandak Barat, Cilandak, Jakarta Selatan 12430</p>
+                <div class="loc-meta">
+                  <span>📍 Patokan: 500m dari MRT Cipete Raya, seberang SPBU Shell</span>
+                  <span>🕒 Buka: 08:30 - 20:00 WIB</span>
+                  <span>📞 0812-9876-5432</span>
+                </div>
+                <a href="https://maps.google.com/?q=Fatmawati+Jakarta+Selatan" target="_blank" class="btn btn-secondary btn-sm loc-btn">
+                  <span>Buka di Google Maps</span> &rarr;
+                </a>
+              </div>
+
+              <div class="location-card">
+                <div class="loc-badge">Gudang Pusat & Workshop</div>
+                <h4>Gudang & Workshop Obras Bekasi</h4>
+                <p class="loc-address">Kawasan Industri Bizpark No. 18, Jl. Raya Narogong KM 7, Bekasi</p>
+                <div class="loc-meta">
+                  <span>📍 Patokan: Kawasan Bizpark Blok B-18, akses kontainer</span>
+                  <span>🕒 Buka: 08:00 - 17:00 WIB</span>
+                  <span>📞 0813-8899-7766</span>
+                </div>
+                <a href="https://maps.google.com/?q=Bekasi+Narogong" target="_blank" class="btn btn-secondary btn-sm loc-btn">
+                  <span>Buka di Google Maps</span> &rarr;
+                </a>
+              </div>
+
+              <div class="location-card">
+                <div class="loc-badge">Cabang Jawa Barat</div>
+                <h4>Galeri Cabang Bandung</h4>
+                <p class="loc-address">Jl. L.L.R.E. Martadinata (Riau) No. 82, Citarum, Bandung 40115</p>
+                <div class="loc-meta">
+                  <span>📍 Patokan: Samping Heritage Outlet, seberang Bank Mandiri</span>
+                  <span>🕒 Buka: 09:00 - 20:00 WIB</span>
+                  <span>📞 0813-2233-4455</span>
+                </div>
+                <a href="https://maps.google.com/?q=Bandung+Riau" target="_blank" class="btn btn-secondary btn-sm loc-btn">
+                  <span>Buka di Google Maps</span> &rarr;
+                </a>
+              </div>
+
+              <div class="location-card">
+                <div class="loc-badge">Cabang Jawa Timur</div>
+                <h4>Galeri Cabang Surabaya</h4>
+                <p class="loc-address">Jl. Mayjen HR. Muhammad No. 102, Pradahkalikendal, Dukuhpakis, Surabaya 60226</p>
+                <div class="loc-meta">
+                  <span>📍 Patokan: Dekat bundaran HR Muhammad, seberang Mayapada</span>
+                  <span>🕒 Buka: 09:00 - 20:00 WIB</span>
+                  <span>📞 0821-3344-5566</span>
+                </div>
+                <a href="https://maps.google.com/?q=Surabaya+HR+Muhammad" target="_blank" class="btn btn-secondary btn-sm loc-btn">
+                  <span>Buka di Google Maps</span> &rarr;
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: KETENTUAN GARANSI -->
+        <section class="tab-panel" id="tab-warranty">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>🛡️ Ketentuan Garansi Resmi Sultan Carpet</h3>
+                <p>Jaminan kualitas benang, keawetan rajutan, serta kepuasan para pengurus masjid dan pembeli</p>
+              </div>
+            </div>
+
+            <div class="warranty-layout">
+              <div class="warranty-cards-grid">
+                <div class="wcard">
+                  <div class="wcard-icon">💎</div>
+                  <h4>1. Garansi 100% Benang Asli Impor</h4>
+                  <p>Seluruh karpet Turki dan Persia kami disertai sertifikat asal (COO). Dijamin benang Polypropylene Heatset & wol sutra murni, tahan rontok dan tidak berbau apek.</p>
+                  <span class="wcard-pill">Jaminan Uang Kembali</span>
+                </div>
+
+                <div class="wcard">
+                  <div class="wcard-icon">🧵</div>
+                  <h4>2. Garansi Obras & Pemasangan 1 Tahun</h4>
+                  <p>Jika tepian obras lepas atau sambungan karpet renggang dalam 12 bulan, tim teknisi kami akan datang memperbaikinya tanpa dipungut biaya apapun.</p>
+                  <span class="wcard-pill">Gratis Biaya Teknisi</span>
+                </div>
+
+                <div class="wcard">
+                  <div class="wcard-icon">🔄</div>
+                  <h4>3. Garansi Tukar Baru 14 Hari</h4>
+                  <p>Apabila ditemukan cacat tenun dari pabrik atau cacat saat pengiriman, karpet akan langsung diganti baru tanpa perdebatan.</p>
+                  <span class="wcard-pill">Tukar Baru Cepat</span>
+                </div>
+              </div>
+
+              <div class="warranty-procedure-card">
+                <h4>Prosedur Klaim Garansi Sangat Mudah:</h4>
+                <ol class="w-steps">
+                  <li>Kirim foto atau video kendala ke WhatsApp CS (0811-2345-6789) atau ketik <strong>KOMPLAIN</strong> di chat.</li>
+                  <li>Sebutkan nama masjid / pembeli dan tanggal pemasangan.</li>
+                  <li>Tim teknisi akan segera menghubungi Anda dalam kurun waktu 1x24 jam untuk jadwal servis perbaikan di lokasi.</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: PROMO & DISKON -->
+        <section class="tab-panel" id="tab-promo">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>🏷️ Promo & Diskon Spesial Karpet</h3>
+                <p>Paket hemat shaf masjid, potongan harga DKM, dan voucher survey cuma-cuma</p>
+              </div>
+            </div>
+
+            <div class="promo-grid">
+              <div class="promo-card feat-promo">
+                <div class="p-ribbon">Paling Populer</div>
+                <div class="p-header">
+                  <span class="p-badge">Paket Masjid Akbar</span>
+                  <h3>Paket Karpet Masjid Barakah</h3>
+                  <p class="p-desc">Pemasangan shaf masjid komplit dengan karpet Turki Grade A Tebal 14-16mm.</p>
+                </div>
+                <div class="p-perks">
+                  <div>✅ Diskon hingga 15% untuk pemesanan &gt;10 Roll (60 meter)</div>
+                  <div>✅ Gratis Obras Tepian Benang Ganda Turki di Tempat</div>
+                  <div>✅ Gratis Sambung Sudut & Potong Tiang Lengkung Presisi</div>
+                  <div>✅ Gratis Biaya Survey & Bawa Contoh Sampel Karpet ke Masjid</div>
+                </div>
+                <div class="p-footer">
+                  <span class="p-code">Kode Voucher: <strong>MASJIDBARAKAH2026</strong></span>
+                </div>
+              </div>
+
+              <div class="promo-card">
+                <div class="p-header">
+                  <span class="p-badge">Khusus Pengurus</span>
+                  <h3>Diskon Khusus Pengurus DKM</h3>
+                  <p class="p-desc">Dukungan khusus untuk renovasi dan pengadaan karpet sholat berjamaah.</p>
+                </div>
+                <div class="p-perks">
+                  <div>✅ Subsidi ongkir hingga Rp 1.000.000 untuk luar Jabodetabek</div>
+                  <div>✅ Konsultasi arah kiblat & penyesuaian shaf serong gratis</div>
+                  <div>✅ Pembayaran fleksibel dengan sistem termin yayasan masjid</div>
+                </div>
+                <div class="p-footer">
+                  <span class="p-code">Kode Voucher: <strong>DKMPEDULI</strong></span>
+                </div>
+              </div>
+
+              <div class="promo-card">
+                <div class="p-header">
+                  <span class="p-badge">Hunian & Kantor</span>
+                  <h3>Promo Ruang Tamu & Karpet Tile</h3>
+                  <p class="p-desc">Karpet klasik sutra dan karpet tile lantai kantor minimalis modern.</p>
+                </div>
+                <div class="p-perks">
+                  <div>✅ Potongan langsung Rp 500.000 untuk karpet Persia sutra</div>
+                  <div>✅ Gratis underlayer busa peredam untuk karpet kantor</div>
+                  <div>✅ Layanan kirim instant Sameday area DKI Jakarta</div>
+                </div>
+                <div class="p-footer">
+                  <span class="p-code">Kode Voucher: <strong>SULTANHOME</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: AI KNOWLEDGE BASE (Q&A) -->
+        <section class="tab-panel" id="tab-qna">
+          <div class="card">
+            <div class="card-header qna-header">
+              <div>
+                <h3>🧠 Basis Tanya Jawab AI (Knowledge Base)</h3>
+                <p>Ajari AI pertanyaan dan jawaban resmi agar bot WhatsApp dapat menjawab pertanyaan customer secara akurat dan profesional</p>
+              </div>
+              <div class="qna-header-actions">
+                <button class="btn btn-primary" id="btn-add-faq">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  <span>Tambah Tanya-Jawab Baru</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="qna-stats-bar">
+              <div class="qstat-box">
+                <span class="qstat-val" id="stat-total-faqs">0</span>
+                <span class="qstat-lbl">Pertanyaan AI Aktif</span>
+              </div>
+              <div class="qstat-box">
+                <span class="qstat-val" id="stat-total-categories">0</span>
+                <span class="qstat-lbl">Kategori Topik</span>
+              </div>
+              <div class="qstat-box">
+                <span class="qstat-val" id="stat-total-answers">100%</span>
+                <span class="qstat-lbl">Status Pembelajaran</span>
+              </div>
+              <div class="qstat-box highlight-qstat">
+                <span class="qstat-val">100%</span>
+                <span class="qstat-lbl">Grounded di System Prompt</span>
+              </div>
+            </div>
+
+            <!-- Real-time Detected Customer Questions (Pattern Scanner) -->
+            <div class="detected-questions-card" id="detected-questions-box" style="display: none;">
+              <div class="dq-header">
+                <div>
+                  <h4>🔍 Pertanyaan Terdeteksi dari Chat Pelanggan WhatsApp</h4>
+                  <p class="text-sm-muted">Customer menanyakan hal ini di chat. Klik <strong>Ajari AI</strong> untuk menambahkan jawaban ke otak bot!</p>
+                </div>
+                <span class="badge-counter" id="detected-counter">0 Baru</span>
+              </div>
+              <div class="dq-list" id="detected-questions-list"></div>
+            </div>
+
+            <!-- Search & Filter Controls -->
+            <div class="qna-controls-row">
+              <div class="search-input-wrapper">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" id="qna-search-input" placeholder="Cari pertanyaan atau jawaban...">
+              </div>
+              <div class="category-pills" id="qna-category-pills">
+                <button class="pill-btn active" data-cat="all">Semua Kategori</button>
+                <button class="pill-btn" data-cat="Pemasangan & Obras">Pemasangan & Obras</button>
+                <button class="pill-btn" data-cat="Garansi & Keaslian">Garansi & Keaslian</button>
+                <button class="pill-btn" data-cat="Promo & Diskon">Promo & Diskon</button>
+                <button class="pill-btn" data-cat="Jadwal & Survey">Jadwal & Survey</button>
+                <button class="pill-btn" data-cat="Bahan & Spesifikasi">Bahan & Spesifikasi</button>
+                <button class="pill-btn" data-cat="Pembayaran & Legalitas">Pembayaran & Legalitas</button>
+              </div>
+            </div>
+
+            <!-- FAQs List Container -->
+            <div class="faqs-grid" id="faqs-list-container">
+              <div class="empty-state">
+                <div class="spinner"></div>
+                <p>Memuat database pertanyaan dan jawaban AI...</p>
               </div>
             </div>
           </div>
@@ -432,6 +877,71 @@
       </div>
       <div class="wa-popup-footer-hint">
         <span>Ketuk salah satu pilihan untuk memilih layanan</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Q&A Knowledge Base Add/Edit Modal -->
+  <div class="modal" id="qna-modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h3 id="modal-qna-title">Ajari AI: Tambah Tanya-Jawab Baru</h3>
+        <button class="modal-close" id="modal-qna-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Pertanyaan dan jawaban resmi ini akan langsung diinjeksikan ke dalam system prompt AI (Groq & Gemini) secara otomatis.</p>
+        <form id="form-qna-edit">
+          <input type="hidden" id="modal-qna-id">
+          
+          <div class="form-group">
+            <label for="modal-qna-category">Kategori Pertanyaan</label>
+            <select id="modal-qna-category" required>
+              <option value="Pemasangan & Obras">Pemasangan & Obras</option>
+              <option value="Garansi & Keaslian">Garansi & Keaslian</option>
+              <option value="Promo & Diskon">Promo & Diskon</option>
+              <option value="Jadwal & Survey">Jadwal & Survey</option>
+              <option value="Bahan & Spesifikasi">Bahan & Spesifikasi</option>
+              <option value="Pembayaran & Legalitas">Pembayaran & Legalitas</option>
+              <option value="Umum & Konsultasi">Umum & Konsultasi</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="modal-qna-question">Pertanyaan / Kata Kunci Pelanggan</label>
+            <input type="text" id="modal-qna-question" placeholder="Contoh: Apakah bisa survey langsung ke masjid bawa sampel roll karpet?" required>
+            <small class="helper-text">Pertanyaan spesifik atau kalimat yang sering dilontarkan customer di WhatsApp.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="modal-qna-answer">Jawaban Resmi AI / Bot WhatsApp</label>
+            <textarea id="modal-qna-answer" rows="4" placeholder="Tuliskan jawaban yang sopan, solutif, dan ramah yang harus disampaikan AI..." required></textarea>
+            <small class="helper-text">Gunakan sapaan hangat Islami/profesional dan informasi akurat.</small>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-qna-cancel-btn">Batal</button>
+        <button class="btn btn-primary" id="modal-qna-save-btn">Simpan ke Knowledge Base</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Confirmation Dialog Pop-up -->
+  <div class="modal" id="confirm-modal">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 id="confirm-modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <span id="confirm-modal-icon">⚠️</span>
+          <span id="confirm-modal-title-text">Konfirmasi</span>
+        </h3>
+        <button class="modal-close" id="confirm-modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-modal-message" class="modal-desc" style="font-size: 14px; line-height: 1.6; color: #cbd5e1; margin-bottom: 0;"></p>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn btn-secondary" id="confirm-modal-cancel-btn">Batal</button>
+        <button class="btn btn-primary" id="confirm-modal-ok-btn">Lanjutkan</button>
       </div>
     </div>
   </div>

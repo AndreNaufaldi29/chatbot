@@ -129,7 +129,9 @@ class GeminiService {
       `${idx + 1}. [${pr.badge || 'PROMO'}] ${pr.title}: ${pr.discount} (${pr.desc}) - Periode: ${pr.valid_until}`
     ).join('\n');
 
-    let faqSummary = faqs.map(f => `Tanya: ${f.q}\nJawab: ${f.a}`).join('\n');
+    let faqSummary = faqs.map((f, idx) => 
+      `${idx + 1}. [${f.category || 'Umum'}] Tanya: ${f.q}\n   Jawab: ${f.a}`
+    ).join('\n\n');
 
     const customPrompt = config.ai?.system_instructions || '';
 
@@ -168,7 +170,8 @@ ${catalogSummary}
 === DAFTAR CABANG & SHOWROOM FISIK ===
 ${branchSummary}
 
-=== PERTANYAAN UMUM (FAQ) ===
+=== BASIS PENGETAHUAN TANYA-JAWAB (KNOWLEDGE BASE) ===
+Gunakan referensi tanya-jawab resmi berikut untuk menjawab pertanyaan pelanggan secara akurat dan konsisten:
 ${faqSummary}
 
 === ATURAN MUTLAK FORMAT DAN GAYA BAHASA ===
