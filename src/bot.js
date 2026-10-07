@@ -380,7 +380,18 @@ class WhatsAppBot extends EventEmitter {
     const isFromMe = Boolean(msg.key.fromMe);
     const info = messageHandler.extractMessageInfo(msg.message);
     const text = (info.text || '').trim();
-    if (!text && info.mediaType === 'unknown') return null;
+    if (!text && (info.mediaType === 'unknown' || info.mediaType === 'text')) return null;
+    if (text === '[text]' || text === '') return null;
+
+    let cleanText = text;
+    if (!cleanText) {
+      if (info.mediaType === 'image') cleanText = info.caption ? `[Foto: ${info.caption}]` : '[Foto pelanggan]';
+      else if (info.mediaType === 'video') cleanText = info.caption ? `[Video: ${info.caption}]` : '[Video pelanggan]';
+      else if (info.mediaType === 'audio') cleanText = '[Pesan Suara]';
+      else if (info.mediaType === 'sticker') cleanText = '[Stiker WhatsApp]';
+      else if (info.mediaType === 'document') cleanText = `[Dokumen: ${info.fileName || 'File'}]`;
+      else return null;
+    }
 
     let timestampIso = new Date().toISOString();
     if (msg.messageTimestamp) {
@@ -438,6 +449,11 @@ class WhatsAppBot extends EventEmitter {
       }
     }
 
+    // If still missing phone and jid is LID, attempt asynchronous resolution
+    if (!realPhone && phoneService.isLid(jid)) {
+      this.resolveLidPhone(jid, senderName).catch(() => {});
+    }
+
     return {
       id: msg.key.id || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       direction: isFromMe ? 'out' : 'in',
@@ -445,7 +461,7 @@ class WhatsAppBot extends EventEmitter {
       phone: realPhone || null,
       formattedPhone: phoneService.formatPhone(realPhone, jid),
       senderName,
-      text: text || `[${info.mediaType || 'Pesan'}]`,
+      text: cleanText,
       mediaType: info.mediaType || 'text',
       image: null,
       isAi: false,
@@ -511,9 +527,27 @@ class WhatsAppBot extends EventEmitter {
           messagePayload = { image: { url: options.image }, caption: text || '', mimetype: 'image/jpeg' };
           hasImage = true;
           imageLog = options.image;
-        } else if (fs.existsSync(options.image)) {
-          imageBuffer = fs.readFileSync(options.image);
-          imageLog = options.image;
+        } else {
+          let resolvedPath = options.image;
+          if (!fs.existsSync(resolvedPath)) {
+            const cleanRel = String(options.image).replace(/^[/\\]+/, '').replace(/^assets[/\\]+/, '');
+            const candidates = [
+              path.join(process.cwd(), 'public', cleanRel),
+              path.join(process.cwd(), 'assets', cleanRel),
+              path.join(__dirname, '../public', cleanRel),
+              path.join(__dirname, '../assets', cleanRel)
+            ];
+            for (const cand of candidates) {
+              if (fs.existsSync(cand)) {
+                resolvedPath = cand;
+                break;
+              }
+            }
+          }
+          if (fs.existsSync(resolvedPath)) {
+            imageBuffer = fs.readFileSync(resolvedPath);
+            imageLog = options.image;
+          }
         }
       }
 
@@ -555,6 +589,34 @@ class WhatsAppBot extends EventEmitter {
     dbService.saveChatMessage(logData).catch(() => {});
 
     return { success: true, jid, phone: resolvedPhone, message: logData };
+  }
+
+  async resolveLidPhone(lid, senderName = null) {
+    if (!lid || !phoneService.isLid(lid) || !this.sock) return null;
+    const cleanLid = lid.includes('@') ? lid : `${lid}@lid`;
+    try {
+      const { USyncQuery, USyncUser } = require('@whiskeysockets/baileys');
+      const usyncQuery = new USyncQuery().withContactProtocol();
+      usyncQuery.withUser(new USyncUser().withId(cleanLid));
+      const result = await this.sock.executeUSyncQuery(usyncQuery);
+      if (result && Array.isArray(result.list)) {
+        for (const item of result.list) {
+          const itemJid = item.id;
+          if (itemJid && itemJid.endsWith('@s.whatsapp.net')) {
+            const cleanPn = itemJid.split('@')[0].replace(/\D/g, '');
+            if (phoneService.isRealPhone(cleanPn)) {
+              console.log(`[WhatsAppBot] 🔍 Berhasil menyelesaikan LID ${lid} -> ${cleanPn}`);
+              phoneService.setMapping(cleanLid, cleanPn, senderName);
+              this.emit('chats_updated', { source: 'lid_resolved', lid: cleanLid, phone: cleanPn });
+              return cleanPn;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // USync query fallback
+    }
+    return null;
   }
 
   cleanCorruptedRatchetSessions() {

@@ -6,48 +6,7 @@ const protectionService = require('./protectionService');
 const CHATS_FILE = path.join(__dirname, '../../data/chats.json');
 const SYNCED_CHATS_FILE = path.join(__dirname, '../../data/synced_chats.json');
 
-const INITIAL_SEED_CHATS = [
-  {
-    id: 'seed_1_in',
-    direction: 'in',
-    jid: '92011503861900@lid',
-    phone: '6282115038619',
-    senderName: 'Andre N',
-    text: 'Halo',
-    isAi: false,
-    timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString()
-  },
-  {
-    id: 'seed_1_out',
-    direction: 'out',
-    jid: '92011503861900@lid',
-    phone: '6282115038619',
-    senderName: 'Harbor AI (Gemini)',
-    text: 'Halo Kak *Andre!* ✨ Selamat datang di *Harbor (Stoneware & Mindful Living)*. 🌿\n\nSaya Harbor Assistant, siap membantu Kakak menemukan keindahan dalam keseharian melalui koleksi keramik artisanal kami yang dibuat dengan penuh rasa. 🏺\n\nUntuk memulai perjalanan *mindful* Kakak bersama kami, silakan ketik pilihan di bawah ini:\n• Ketik *MENU* untuk melihat seluruh katalog produk & info showroom kami.\n• Ketik *ORDER [nomor]* jika ingin langsung memesan (misal: *ORDER 1*).\n• Ketik *CS* jika ingin terhubung langsung dengan tim kami.\n\nAda yang bisa kami bantu hari ini, Kak? ☕',
-    isAi: true,
-    timestamp: new Date(Date.now() - 1000 * 60 * 11).toISOString()
-  },
-  {
-    id: 'seed_2_in',
-    direction: 'in',
-    jid: '21453546229779@lid',
-    phone: '6282333893488',
-    senderName: 'Kharisma Alung P',
-    text: 'Halo, apakah keramiknya aman dimasukkan ke microwave?',
-    isAi: false,
-    timestamp: new Date(Date.now() - 1000 * 60 * 8).toISOString()
-  },
-  {
-    id: 'seed_2_out',
-    direction: 'out',
-    jid: '21453546229779@lid',
-    phone: '6282333893488',
-    senderName: 'Harbor AI (Gemini)',
-    text: '👋 *Halo Kak Kharisma!* Ya, tentu saja! Seluruh produk keramik artisanal dari *Harbor* 100% food-safe, microwave safe, dan dishwasher safe 🌿.\n\nApakah ada produk tertentu yang sedang Kakak cari seperti *The Everyday Set*?',
-    isAi: true,
-    timestamp: new Date(Date.now() - 1000 * 60 * 7).toISOString()
-  }
-];
+const INITIAL_SEED_CHATS = [];
 
 class ChatService {
   constructor() {
@@ -62,7 +21,7 @@ class ChatService {
       fs.mkdirSync(dir, { recursive: true });
     }
     if (!fs.existsSync(CHATS_FILE)) {
-      fs.writeFileSync(CHATS_FILE, JSON.stringify(INITIAL_SEED_CHATS, null, 2), 'utf8');
+      fs.writeFileSync(CHATS_FILE, JSON.stringify([], null, 2), 'utf8');
     }
   }
 
@@ -119,7 +78,9 @@ class ChatService {
       this.ensureFileExists();
       const raw = fs.readFileSync(CHATS_FILE, 'utf8');
       const messages = JSON.parse(raw || '[]');
-      return Array.isArray(messages) ? messages : [];
+      if (!Array.isArray(messages)) return [];
+      // Sanitize: filter out corrupt [text] or empty messages
+      return messages.filter(m => m && m.text && typeof m.text === 'string' && m.text.trim() && m.text.trim() !== '[text]');
     } catch (err) {
       console.error('[ChatService] Gagal membaca chats.json:', err.message);
       return [];
@@ -129,8 +90,11 @@ class ChatService {
   saveMessages(messages) {
     try {
       this.ensureFileExists();
+      const valid = (Array.isArray(messages) ? messages : []).filter(
+        m => m && m.text && typeof m.text === 'string' && m.text.trim() && m.text.trim() !== '[text]'
+      );
       // Keep at most 1000 messages to prevent unbounded growth
-      const trimmed = messages.slice(-1000);
+      const trimmed = valid.slice(-1000);
       fs.writeFileSync(CHATS_FILE, JSON.stringify(trimmed, null, 2), 'utf8');
       return true;
     } catch (err) {
@@ -140,7 +104,7 @@ class ChatService {
   }
 
   addMessage(msg) {
-    if (!msg || !msg.text) return null;
+    if (!msg || !msg.text || typeof msg.text !== 'string' || !msg.text.trim() || msg.text.trim() === '[text]') return null;
     const messages = this.getAllMessages();
 
     // Determine target JID and real phone
@@ -164,6 +128,12 @@ class ChatService {
     let realPhone = phoneService.getPhone(jid, senderName);
     if (!realPhone && phoneService.isRealPhone(msg.phone)) {
       realPhone = String(msg.phone).replace(/\D/g, '');
+    }
+    if (!realPhone) {
+      const extracted = phoneService.extractPhoneFromText(msg.text);
+      if (extracted && phoneService.isRealPhone(extracted)) {
+        realPhone = extracted;
+      }
     }
 
     if (jid && realPhone && phoneService.isRealPhone(realPhone)) {
@@ -203,7 +173,7 @@ class ChatService {
       phone: realPhone || null,
       formattedPhone: phoneService.formatPhone(realPhone, jid),
       senderName,
-      text: String(msg.text),
+      text: messageText,
       isAi: !!msg.isAi,
       timestamp: messageTimestamp
     };
@@ -220,7 +190,7 @@ class ChatService {
     const added = [];
 
     for (const msg of msgList) {
-      if (!msg || !msg.text) continue;
+      if (!msg || !msg.text || typeof msg.text !== 'string' || !msg.text.trim() || msg.text.trim() === '[text]') continue;
       const jid = msg.jid || (msg.phone ? `${String(msg.phone).replace(/\D/g, '')}@s.whatsapp.net` : 'unknown@s.whatsapp.net');
       if (jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
 
@@ -240,6 +210,12 @@ class ChatService {
       let realPhone = phoneService.getPhone(jid, senderName);
       if (!realPhone && phoneService.isRealPhone(msg.phone)) {
         realPhone = String(msg.phone).replace(/\D/g, '');
+      }
+      if (!realPhone) {
+        const extracted = phoneService.extractPhoneFromText(msg.text);
+        if (extracted && phoneService.isRealPhone(extracted)) {
+          realPhone = extracted;
+        }
       }
 
       if (jid && realPhone && phoneService.isRealPhone(realPhone)) {
@@ -299,7 +275,8 @@ class ChatService {
 
     // 1. Populate and merge actual message history FIRST
     for (const msg of messages) {
-      if (!msg) continue;
+      if (!msg || !msg.text || !msg.text.trim() || msg.text.trim() === '[text]') continue;
+
       let realPhone = phoneService.getPhone(msg.jid, msg.senderName);
       if (!realPhone && phoneService.isRealPhone(msg.phone)) {
         realPhone = String(msg.phone).replace(/\D/g, '');
@@ -307,6 +284,10 @@ class ChatService {
       if (!realPhone && msg.jid && msg.jid.endsWith('@s.whatsapp.net')) {
         const clean = msg.jid.split('@')[0].replace(/\D/g, '');
         if (phoneService.isRealPhone(clean)) realPhone = clean;
+      }
+      if (!realPhone && msg.text) {
+        const ext = phoneService.extractPhoneFromText(msg.text);
+        if (ext && phoneService.isRealPhone(ext)) realPhone = ext;
       }
 
       // Canonical groupKey: prioritize real phone JID or remote JID
@@ -392,7 +373,7 @@ class ChatService {
       }
     }
 
-    // 2. Enrich with syncedChats metadata or add valid named/phone contacts
+    // 2. Enrich EXISTING conversations with syncedChats metadata only (NO ghost contacts without messages!)
     for (const [jid, c] of this.syncedChats.entries()) {
       if (!jid || jid === '0@s.whatsapp.net' || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
       
@@ -416,59 +397,48 @@ class ChatService {
       }
 
       if (conv) {
-        // Enrich existing conversation
+        // Enrich existing conversation only!
         if (c.unreadCount !== undefined && c.unreadCount > 0) {
           conv.unreadCount = Math.max(conv.unreadCount || 0, c.unreadCount);
         }
         if (contactName && (!conv.senderName || conv.senderName === 'Pelanggan')) {
           conv.senderName = contactName;
+          phoneService.setName(conv.jid, contactName);
+          if (conv.phone) phoneService.setName(conv.phone, contactName);
         }
         if (realPhone && !conv.phone) {
           conv.phone = realPhone;
           conv.formattedPhone = phoneService.formatPhone(realPhone, conv.jid);
+          phoneService.setMapping(conv.jid, realPhone, conv.senderName);
         }
-      } else {
-        // Chat has NO messages in chats.json!
-        // FILTER: Only add if it has a valid contact name or real phone number!
-        const hasValidName = Boolean(contactName && !phoneService.isLid(contactName) && !/^\+?\d+$/.test(contactName.trim()) && contactName !== 'Pelanggan');
-        const hasValidPhone = Boolean(realPhone && phoneService.isRealPhone(realPhone));
-
-        // Skip ghost chats without messages, name, or phone!
-        if (!hasValidName && !hasValidPhone) {
-          continue;
-        }
-
-        const displayName = hasValidName ? contactName : phoneService.formatPhone(realPhone);
-        convMap.set(canonicalKey, {
-          jid,
-          phone: realPhone || null,
-          formattedPhone: phoneService.formatPhone(realPhone, jid),
-          senderName: displayName,
-          lastMessage: {
-            id: `last_${jid}`,
-            direction: 'in',
-            jid,
-            phone: realPhone || null,
-            senderName: displayName,
-            text: 'Belum ada riwayat pesan',
-            timestamp: c.updatedAt || new Date().toISOString()
-          },
-          unreadCount: c.unreadCount || 0,
-          messages: [],
-          updatedAt: c.updatedAt || new Date().toISOString()
-        });
       }
+      // Note: Never add ghost contacts with 0 messages!
     }
 
-    // Secondary pass: ensure phoneService mappings apply to each conversation
+    // 3. Secondary pass: ensure phoneService mappings and message-extracted phones apply
     for (const conv of convMap.values()) {
-      const mapped = phoneService.getPhone(conv.jid, conv.senderName);
-      if (mapped && phoneService.isRealPhone(mapped)) {
-        conv.phone = mapped;
-        conv.formattedPhone = phoneService.formatPhone(mapped, conv.jid);
-      } else if (phoneService.isLid(conv.phone)) {
-        conv.phone = null;
-        conv.formattedPhone = phoneService.formatPhone(null, conv.jid);
+      if (!conv.phone || phoneService.isLid(conv.phone)) {
+        let mapped = phoneService.getPhone(conv.jid, conv.senderName);
+        if (!mapped) {
+          for (const m of conv.messages) {
+            if (m.text) {
+              const ext = phoneService.extractPhoneFromText(m.text);
+              if (ext && phoneService.isRealPhone(ext)) {
+                mapped = ext;
+                break;
+              }
+            }
+          }
+        }
+
+        if (mapped && phoneService.isRealPhone(mapped)) {
+          conv.phone = mapped;
+          conv.formattedPhone = phoneService.formatPhone(mapped, conv.jid);
+          phoneService.setMapping(conv.jid, mapped, conv.senderName);
+        } else {
+          conv.phone = null;
+          conv.formattedPhone = phoneService.formatPhone(null, conv.jid);
+        }
       }
 
       const storedName = phoneService.getName(conv.jid) || (conv.phone ? phoneService.getName(conv.phone) : null);
@@ -477,9 +447,12 @@ class ChatService {
       }
     }
 
-    // Deduplicate by canonical key (conv.jid or conv.phone) to guarantee 1 User = 1 Chat
+    // 4. Deduplicate by canonical key (conv.jid or conv.phone) and exclude empty conversations
     const uniqueMap = new Map();
     for (const conv of convMap.values()) {
+      // Exclude conversations that have no messages or only empty messages
+      if (!conv.messages || conv.messages.length === 0) continue;
+
       const canonicalKey = conv.phone ? `${conv.phone}@s.whatsapp.net` : (conv.jid || conv.phone);
       if (!canonicalKey) continue;
 
@@ -487,16 +460,13 @@ class ChatService {
         uniqueMap.set(canonicalKey, conv);
       } else {
         const existing = uniqueMap.get(canonicalKey);
-        // If conv has a real name and existing has fallback, take conv's real name!
         if (conv.senderName && conv.senderName !== 'Pelanggan' && (!existing.senderName || existing.senderName === 'Pelanggan')) {
           existing.senderName = conv.senderName;
         }
-        // If conv has real phone and existing doesn't, take conv's phone!
         if (conv.phone && !existing.phone) {
           existing.phone = conv.phone;
           existing.formattedPhone = conv.formattedPhone;
         }
-        // Merge messages and preserve order
         for (const m of conv.messages) {
           if (!existing.messages.some((em) => em.id === m.id)) {
             existing.messages.push(m);
@@ -509,12 +479,12 @@ class ChatService {
       }
     }
 
-    // Convert map to array and sort by most recent message descending
+    // 5. Convert map to array and sort by most recent message descending
     const conversations = Array.from(uniqueMap.values()).sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
 
-    // Final hygiene pass: guarantee no raw LIDs in names or phones, and format real phone as name if name missing
+    // 6. Final hygiene pass
     for (const conv of conversations) {
       if (!conv.senderName || phoneService.isLid(conv.senderName) || /^\+?\d+$/.test(conv.senderName.trim())) {
         const stored = phoneService.getName(conv.jid) || (conv.phone ? phoneService.getName(conv.phone) : null);
@@ -524,7 +494,6 @@ class ChatService {
         conv.phone = null;
         conv.formattedPhone = phoneService.formatPhone(null, conv.jid);
       }
-      // If still Pelanggan but phone is known, use formatted phone as title
       if (conv.senderName === 'Pelanggan' && conv.phone && phoneService.isRealPhone(conv.phone)) {
         conv.senderName = phoneService.formatPhone(conv.phone);
       }

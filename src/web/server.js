@@ -15,6 +15,7 @@ const protectionService = require('../services/protectionService');
 const sessionManager = require('../services/sessionManager');
 const ragService = require('../services/ragService');
 const crawlerService = require('../services/crawlerService');
+const phoneService = require('../services/phoneService');
 
 const app = express();
 app.use(cors());
@@ -90,6 +91,13 @@ app.get('/api/status', (req, res) => {
 // Chat History & Conversations Endpoints (1 User 1 Chat WhatsApp Layout)
 app.get('/api/chats', (req, res) => {
   const conversations = chatService.getConversations();
+  if (bot && typeof bot.resolveLidPhone === 'function') {
+    for (const c of conversations) {
+      if (c.jid && phoneService.isLid(c.jid) && !c.phone) {
+        bot.resolveLidPhone(c.jid, c.senderName).catch(() => {});
+      }
+    }
+  }
   res.json(conversations);
 });
 

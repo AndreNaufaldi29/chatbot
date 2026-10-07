@@ -111,6 +111,34 @@ class PhoneService {
     }
   }
 
+  normalizeName(name) {
+    if (!name || typeof name !== 'string') return '';
+    let n = name.trim().toLowerCase();
+    // Strip common Indonesian honorifics
+    n = n.replace(/^(?:kak|pak|bu|mbak|mas|bang|om|tante|bapak|ibu|juragan|tuan|nyonya)\s+/i, '');
+    // Strip emojis & special symbols
+    n = n.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+    return n;
+  }
+
+  extractPhoneFromText(text) {
+    if (!text || typeof text !== 'string') return null;
+    // Match Indonesian numbers starting with +628, 628, or 08 with 9-13 digits
+    const matches = text.match(/(?:^|[^\d+])(?:\+?62|0)(8\d{8,11})(?:[^\d]|$)/g);
+    if (matches && matches.length > 0) {
+      for (const m of matches) {
+        const digits = m.replace(/\D/g, '');
+        let clean = digits;
+        if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+        if (clean.startsWith('8')) clean = '62' + clean;
+        if (this.isRealPhone(clean)) {
+          return clean;
+        }
+      }
+    }
+    return null;
+  }
+
   setName(key, name) {
     if (!key || !name || typeof name !== 'string') return;
     const cleanName = name.trim();
@@ -127,6 +155,8 @@ class PhoneService {
     this.mapping.contactNames[rawKey] = cleanName;
     this.mapping.contactNames[shortKey] = cleanName;
 
+    const base = this.normalizeName(cleanName);
+
     // If key is mapped to a real phone, link name to real phone as well
     const mappedPhone = this.mapping[rawKey] || this.mapping[shortKey];
     if (mappedPhone && this.isRealPhone(mappedPhone)) {
@@ -134,6 +164,24 @@ class PhoneService {
       this.mapping.contactNames[`${mappedPhone}@s.whatsapp.net`] = cleanName;
       if (!this.mapping.names) this.mapping.names = {};
       this.mapping.names[lower] = mappedPhone;
+      if (base) this.mapping.names[base] = mappedPhone;
+
+      // Cross-link any other unmapped LID in contactNames that shares this name
+      for (const [cKey, cName] of Object.entries(this.mapping.contactNames)) {
+        if (this.isLid(cKey) && cName && typeof cName === 'string') {
+          if (cName.trim().toLowerCase() === lower || this.normalizeName(cName) === base) {
+            this.mapping[cKey] = mappedPhone;
+            this.mapping[cKey.split('@')[0]] = mappedPhone;
+          }
+        }
+      }
+    } else {
+      // If this is an LID without phone, check if this name already belongs to a known phone!
+      const existingPhone = this.getPhone(null, cleanName);
+      if (existingPhone && this.isRealPhone(existingPhone)) {
+        this.mapping[rawKey] = existingPhone;
+        this.mapping[shortKey] = existingPhone;
+      }
     }
 
     this.saveMapping();
@@ -184,12 +232,29 @@ class PhoneService {
     this.mapping[shortKey] = cleanPhone;
 
     if (senderName && typeof senderName === 'string') {
-      this.setName(rawKey, senderName);
-      this.setName(cleanPhone, senderName);
-      const lowerName = senderName.trim().toLowerCase();
-      if (!SYSTEM_NAMES.some(s => lowerName.includes(s)) && !/^\d+$/.test(lowerName) && lowerName.length > 2) {
+      const cleanName = senderName.trim();
+      const lowerName = cleanName.toLowerCase();
+      if (!SYSTEM_NAMES.some(s => lowerName.includes(s)) && !/^\d+$/.test(lowerName) && lowerName.length >= 2) {
         if (!this.mapping.names) this.mapping.names = {};
         this.mapping.names[lowerName] = cleanPhone;
+        const base = this.normalizeName(cleanName);
+        if (base) this.mapping.names[base] = cleanPhone;
+
+        if (!this.mapping.contactNames) this.mapping.contactNames = {};
+        this.mapping.contactNames[rawKey] = cleanName;
+        this.mapping.contactNames[shortKey] = cleanName;
+        this.mapping.contactNames[cleanPhone] = cleanName;
+        this.mapping.contactNames[`${cleanPhone}@s.whatsapp.net`] = cleanName;
+
+        // Cross-link any other unmapped LID in contactNames that shares this name
+        for (const [cKey, cName] of Object.entries(this.mapping.contactNames)) {
+          if (this.isLid(cKey) && cName && typeof cName === 'string') {
+            if (cName.trim().toLowerCase() === lowerName || (base && this.normalizeName(cName) === base)) {
+              this.mapping[cKey] = cleanPhone;
+              this.mapping[cKey.split('@')[0]] = cleanPhone;
+            }
+          }
+        }
       }
     }
 
@@ -198,8 +263,8 @@ class PhoneService {
   }
 
   getPhone(key, senderName = null) {
-    if (!key) return null;
-    const rawKey = String(key).trim();
+    if (!key && !senderName) return null;
+    const rawKey = key ? String(key).trim() : '';
 
     // If it's already a standard phone JID (@s.whatsapp.net)
     if (rawKey.endsWith('@s.whatsapp.net')) {
@@ -209,42 +274,103 @@ class PhoneService {
       }
     }
 
-    // Check direct key in mapping
-    const mapped = this.mapping[rawKey] || this.mapping[rawKey.split('@')[0]];
-    if (mapped && this.isRealPhone(mapped)) {
-      return mapped;
+    // 1. Check direct key in mapping
+    if (rawKey) {
+      const mapped = this.mapping[rawKey] || this.mapping[rawKey.split('@')[0]];
+      if (mapped && this.isRealPhone(mapped)) {
+        return mapped;
+      }
     }
 
-    // Check by sender name (ONLY exact match on verified real phone)
-    if (senderName && typeof senderName === 'string' && this.mapping.names) {
-      const nameKey = senderName.trim().toLowerCase();
-      if (!SYSTEM_NAMES.some(s => nameKey.includes(s)) && !/^\d+$/.test(nameKey)) {
-        if (this.mapping.names[nameKey] && this.isRealPhone(this.mapping.names[nameKey])) {
-          return this.mapping.names[nameKey];
+    // 2. Candidate names to search across database
+    const candidates = [];
+    if (senderName && typeof senderName === 'string') candidates.push(senderName);
+    if (rawKey) {
+      const stored = this.getName(rawKey);
+      if (stored && typeof stored === 'string') candidates.push(stored);
+    }
+
+    for (const cand of candidates) {
+      const clean = cand.trim().toLowerCase();
+      if (!clean || SYSTEM_NAMES.some(s => clean.includes(s)) || /^\+?\d+$/.test(clean)) continue;
+
+      // 2a. Check this.mapping.names (exact match)
+      if (this.mapping.names && this.mapping.names[clean] && this.isRealPhone(this.mapping.names[clean])) {
+        const found = this.mapping.names[clean];
+        if (rawKey) this.setMapping(rawKey, found, cand);
+        return found;
+      }
+
+      // 2b. Check this.mapping.names by normalized base name
+      const base = this.normalizeName(cand);
+      if (base && this.mapping.names) {
+        if (this.mapping.names[base] && this.isRealPhone(this.mapping.names[base])) {
+          const found = this.mapping.names[base];
+          if (rawKey) this.setMapping(rawKey, found, cand);
+          return found;
+        }
+        for (const [nKey, pVal] of Object.entries(this.mapping.names)) {
+          if (this.isRealPhone(pVal)) {
+            const nBase = this.normalizeName(nKey);
+            if (nBase === base || (base.length >= 3 && (nBase.includes(base) || base.includes(nBase)))) {
+              if (rawKey) this.setMapping(rawKey, pVal, cand);
+              return pVal;
+            }
+          }
+        }
+      }
+
+      // 2c. Check this.mapping.contactNames (where key is a verified real phone)
+      if (this.mapping.contactNames) {
+        for (const [cKey, cName] of Object.entries(this.mapping.contactNames)) {
+          const cleanPhone = cKey.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+          if (this.isRealPhone(cleanPhone) && cName && typeof cName === 'string') {
+            const cClean = cName.trim().toLowerCase();
+            const cBase = this.normalizeName(cName);
+            if (
+              cClean === clean ||
+              (base && cBase && cBase === base) ||
+              (base && cBase && base.length >= 3 && (cBase.includes(base) || base.includes(cBase)))
+            ) {
+              if (rawKey) this.setMapping(rawKey, cleanPhone, cand);
+              return cleanPhone;
+            }
+          }
         }
       }
     }
 
-    const shortKey = rawKey.split('@')[0].replace(/\D/g, '');
-    if (this.isRealPhone(shortKey)) {
-      return shortKey;
+    // 3. Fallback: If key itself is purely digits and valid phone
+    if (rawKey) {
+      const shortKey = rawKey.split('@')[0].replace(/\D/g, '');
+      if (this.isRealPhone(shortKey)) {
+        return shortKey;
+      }
     }
 
-    // If it's an unmapped LID, return null. NEVER return raw LID as phone number!
     return null;
   }
 
   formatPhone(phone, jid = null) {
-    if (!phone) {
-      if (jid && this.isLid(jid)) {
-        return 'WhatsApp ID (LID)';
+    let targetPhone = phone;
+
+    // If phone is missing or LID, try resolving via jid mapping
+    if (!targetPhone || this.isLid(targetPhone)) {
+      if (jid) {
+        const mapped = this.getPhone(jid);
+        if (mapped && this.isRealPhone(mapped)) {
+          targetPhone = mapped;
+        }
       }
+    }
+
+    if (!targetPhone || this.isLid(targetPhone)) {
       return '-';
     }
 
-    const clean = String(phone).replace(/\D/g, '');
-    if (this.isLid(clean) || this.isLid(phone)) {
-      return 'WhatsApp ID (LID)';
+    const clean = String(targetPhone).replace(/\D/g, '');
+    if (this.isLid(clean)) {
+      return '-';
     }
 
     // Format Indonesian mobile numbers (628...)

@@ -429,6 +429,16 @@ export default function Dashboard() {
   const [catalogSearch, setCatalogSearch] = useState('');
   const fileInputRef = useRef(null);
 
+  // Send Product to WhatsApp Chat State & Modal
+  const [showSendProductModal, setShowSendProductModal] = useState(false);
+  const [selectedProductToSend, setSelectedProductToSend] = useState(null);
+  const [selectedChatRecipient, setSelectedChatRecipient] = useState(null);
+  const [sendProductMessageText, setSendProductMessageText] = useState('');
+  const [sendProductChatSearch, setSendProductChatSearch] = useState('');
+  const [manualPhoneInput, setManualPhoneInput] = useState('');
+  const [includeProductImage, setIncludeProductImage] = useState(true);
+  const [isSendingProductMessage, setIsSendingProductMessage] = useState(false);
+
   // Conversations State (1 User 1 Chat WhatsApp Layout)
   const [conversations, setConversations] = useState([]);
   const [selectedChatJid, setSelectedChatJid] = useState(null);
@@ -1833,6 +1843,132 @@ export default function Dashboard() {
     }
   };
 
+  const handleOpenSendProductModal = (product) => {
+    if (!product) return;
+    setSelectedProductToSend(product);
+
+    const storeName = businessSettings?.name || ownerSettings?.business_name || 'Sultan Carpet';
+    const lines = [
+      `Halo! Berikut informasi detail produk karpet dari *${storeName}*:`,
+      '',
+      `🕌 *${product.title || 'Produk Karpet'}*`,
+      product.price ? `💰 *Harga:* ${product.price}` : '',
+      product.code ? `📌 *Kode SKU:* ${product.code}` : '',
+      product.category ? `✨ *Kategori:* ${product.category}` : '',
+      product.subtitle ? `📝 *Deskripsi:* ${product.subtitle}` : '',
+      product.footer ? `🎨 *Keunggulan / Motif:* ${product.footer}` : '',
+      product.url ? `🔗 *Link Katalog:* ${product.url}` : '',
+      '',
+      `Bila Anda berminat atau ingin konsultasi ukuran, survei motif, dan jadwal pemasangan, silakan balas pesan ini ya! Terima kasih. 🙏`
+    ].filter((line) => line !== null && line !== undefined && line !== '').join('\n');
+
+    setSendProductMessageText(lines);
+    setIncludeProductImage(Boolean(product.image));
+    setSendProductChatSearch('');
+    setManualPhoneInput('');
+
+    // Preselect current active chat conversation if any, else first in history
+    const activeConv = conversations.find(
+      (c) => (c.jid && c.jid === selectedChatJid) || c.phone === selectedChatJid
+    );
+    setSelectedChatRecipient(activeConv || (conversations.length > 0 ? conversations[0] : null));
+
+    setShowSendProductModal(true);
+  };
+
+  const handleSendProductToChat = async () => {
+    let recipientJid = selectedChatRecipient?.jid;
+    let recipientPhone = selectedChatRecipient?.phone;
+
+    // Handle manual phone number if typed
+    if (!recipientJid && !recipientPhone && manualPhoneInput.trim()) {
+      let clean = manualPhoneInput.replace(/\D/g, '');
+      if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+      recipientPhone = clean;
+      recipientJid = `${clean}@s.whatsapp.net`;
+    }
+
+    if (!recipientJid && !recipientPhone) {
+      showToastMsg('Silakan pilih salah satu riwayat chat pelanggan atau masukkan nomor telepon tujuan.', 'warning');
+      return;
+    }
+
+    if (!sendProductMessageText.trim()) {
+      showToastMsg('Pesan tidak boleh kosong.', 'warning');
+      return;
+    }
+
+    const rawName = selectedChatRecipient?.senderName && !/^\+?\d{10,}$/.test(selectedChatRecipient.senderName.trim())
+      ? selectedChatRecipient.senderName.trim()
+      : null;
+    const targetRecipientName = rawName || selectedChatRecipient?.formattedPhone || recipientPhone || 'Pelanggan';
+
+    // If bot is offline, fallback gracefully to direct wa.me link
+    if (!isConnected) {
+      showToastMsg('WhatsApp bot offline. Membuka pengiriman langsung melalui WhatsApp Web...', 'info');
+      sendDirectWaMessage(recipientPhone, sendProductMessageText);
+      setShowSendProductModal(false);
+      return;
+    }
+
+    setIsSendingProductMessage(true);
+    const clientMsgId = `prod_${Date.now()}`;
+    const targetKey = recipientJid || recipientPhone;
+
+    // Optimistically update conversation in local state
+    const optimisticMsg = {
+      id: clientMsgId,
+      text: sendProductMessageText,
+      sender: 'Admin (Katalog)',
+      senderName: 'Admin (Katalog Produk)',
+      direction: 'out',
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      mediaType: (includeProductImage && selectedProductToSend?.image) ? 'image' : 'text'
+    };
+
+    setConversations((prev) =>
+      prev.map((c) => {
+        if ((c.jid && c.jid === recipientJid) || (c.phone && c.phone === recipientPhone) || (c.jid || c.phone) === targetKey) {
+          return {
+            ...c,
+            lastMessage: optimisticMsg,
+            messages: [...(c.messages || []), optimisticMsg],
+            updatedAt: optimisticMsg.timestamp
+          };
+        }
+        return c;
+      })
+    );
+
+    try {
+      const res = await fetch('/api/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jid: recipientJid,
+          phone: recipientPhone,
+          message: sendProductMessageText,
+          senderName: 'Admin (Katalog Produk)',
+          clientMessageId: clientMsgId,
+          image: (includeProductImage && selectedProductToSend?.image) ? selectedProductToSend.image : null
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToastMsg('Gagal mengirim ke WhatsApp: ' + (data.error || 'Terjadi kesalahan'), 'error');
+      } else {
+        showToastMsg(`Pesan produk berhasil dikirim ke ${targetRecipientName}!`, 'success');
+        setShowSendProductModal(false);
+      }
+    } catch (err) {
+      showToastMsg('Error saat mengirim pesan: ' + err.message, 'error');
+    } finally {
+      setIsSendingProductMessage(false);
+    }
+  };
+
   const handleSendDirectReply = async (e) => {
     if (e) e.preventDefault();
     if (isSendingDirectReplyRef.current) return;
@@ -2522,6 +2658,27 @@ export default function Dashboard() {
   };
 
   const isConnected = botStatus.status === 'connected';
+  const activeSavedAiProvider = config?.ai?.provider || aiProvider || 'gemini';
+  const isAiActive = config?.ai ? Boolean(config.ai.enabled) : geminiEnabled;
+  const activeSavedModel = activeSavedAiProvider === 'groq'
+    ? (config?.ai?.groq_model || groqModel || 'openai/gpt-oss-120b')
+    : (config?.ai?.model || geminiModel || 'gemini-3.5-flash-lite');
+
+  const getModelDisplayName = (provider, modelKey) => {
+    if (provider === 'gemini') {
+      if (modelKey?.includes('3.5-flash-lite')) return 'Gemini 3.5 Flash Lite';
+      if (modelKey?.includes('3.1-flash-lite')) return 'Gemini 3.1 Flash Lite';
+      if (modelKey?.includes('3.5-flash')) return 'Gemini 3.5 Flash';
+      if (modelKey?.includes('flash-latest')) return 'Gemini Flash Latest';
+      return modelKey || 'Gemini 3.5 Flash';
+    } else {
+      if (modelKey?.includes('gpt-oss-120b')) return 'GPT-OSS 120B';
+      if (modelKey?.includes('qwen3.8-27b')) return 'Qwen 3.8 27B';
+      if (modelKey?.includes('gpt-oss-20b')) return 'GPT-OSS 20B';
+      if (modelKey?.includes('allam-2-7b')) return 'Allam 2 7B';
+      return modelKey || 'Groq LPU Fast';
+    }
+  };
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0b1120] text-slate-100">
@@ -2611,12 +2768,12 @@ export default function Dashboard() {
               {/* Drawer Header */}
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold text-lg">
-                    🕌
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 text-white font-bold text-lg">
+                    <Bot className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <h1 className="font-bold text-base text-white">Sultan Carpet</h1>
-                    <p className="text-[11px] text-slate-400">Pusat Karpet Masjid & Mewah</p>
+                    <h1 className="font-bold text-base text-white">Dashboard Chatbot</h1>
+                    <p className="text-[11px] text-slate-400">WhatsApp AI & Customer Service</p>
                   </div>
                 </div>
                 <button
@@ -2667,9 +2824,9 @@ export default function Dashboard() {
                     <span>AI Studio</span>
                   </div>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                    aiProvider === 'groq' ? 'bg-amber-500/30 text-amber-200' : 'bg-purple-500/30 text-purple-200'
+                    activeSavedAiProvider === 'groq' ? 'bg-amber-500/30 text-amber-200' : 'bg-purple-500/30 text-purple-200'
                   }`}>
-                    {aiProvider === 'groq' ? '⚡ Groq' : '🔮 Gemini'}
+                    {activeSavedAiProvider === 'groq' ? '⚡ Groq' : '🔮 Gemini'}
                   </span>
                 </button>
 
@@ -2877,7 +3034,92 @@ export default function Dashboard() {
             </div>
 
             {/* Mobile Drawer Footer */}
-            <div className="pt-4 border-t border-slate-800 space-y-3">
+            <div className="pt-4 border-t border-slate-800 space-y-2.5">
+              {/* Active AI Engine Indicator Card (Mobile) */}
+              <div
+                onClick={() => {
+                  setActiveTab('gemini');
+                  setMobileDrawerOpen(false);
+                }}
+                className={`p-2.5 rounded-xl border transition-all cursor-pointer group select-none ${
+                  !isAiActive
+                    ? 'bg-slate-900/60 border-slate-800'
+                    : activeSavedAiProvider === 'gemini'
+                      ? 'bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-slate-900/90 border-purple-500/40 shadow-sm shadow-purple-900/20'
+                      : 'bg-gradient-to-r from-amber-950/70 via-orange-950/50 to-slate-900/90 border-amber-500/40 shadow-sm shadow-amber-900/20'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2 w-2">
+                      {isAiActive && (
+                        <span
+                          className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                            activeSavedAiProvider === 'gemini' ? 'bg-purple-400' : 'bg-amber-400'
+                          }`}
+                        />
+                      )}
+                      <span
+                        className={`relative inline-flex rounded-full h-2 w-2 ${
+                          !isAiActive
+                            ? 'bg-slate-500'
+                            : activeSavedAiProvider === 'gemini'
+                              ? 'bg-purple-400'
+                              : 'bg-amber-400'
+                        }`}
+                      />
+                    </span>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                      Mesin AI Chatbot
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase font-mono ${
+                      !isAiActive
+                        ? 'bg-slate-800 text-slate-400 border-slate-700'
+                        : activeSavedAiProvider === 'gemini'
+                          ? 'bg-purple-500/25 text-purple-200 border-purple-500/40'
+                          : 'bg-amber-500/25 text-amber-200 border-amber-500/40'
+                    }`}
+                  >
+                    {!isAiActive ? 'OFF' : activeSavedAiProvider === 'gemini' ? '🔮 GEMINI' : '⚡ GROQ LPU'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
+                      !isAiActive
+                        ? 'bg-slate-800 border-slate-700 text-slate-400'
+                        : activeSavedAiProvider === 'gemini'
+                          ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
+                          : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                    }`}
+                  >
+                    {!isAiActive ? (
+                      <Bot className="w-3.5 h-3.5" />
+                    ) : activeSavedAiProvider === 'gemini' ? (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    ) : (
+                      <Zap className="w-3.5 h-3.5" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-slate-200 truncate">
+                      {!isAiActive
+                        ? 'AI Dinonaktifkan'
+                        : activeSavedAiProvider === 'gemini'
+                          ? 'Google Gemini AI'
+                          : 'Groq LPU Engine'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-mono truncate">
+                      {!isAiActive
+                        ? 'Mode Manual'
+                        : getModelDisplayName(activeSavedAiProvider, activeSavedModel)}
+                    </p>
+                  </div>
+                </div>
+              </div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
                 <div className="flex items-center gap-2">
                   <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
@@ -2922,18 +3164,15 @@ export default function Dashboard() {
       <aside className="hidden md:flex md:w-72 shrink-0 border-r border-slate-800/80 bg-[#0f172a]/70 backdrop-blur-xl flex-col justify-between p-4">
         <div className="flex flex-col h-[calc(100vh-130px)]">
           {/* Logo & Brand */}
-          <div className="flex items-center gap-3.5 px-3 py-3 mb-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-amber-500/5 to-transparent border border-emerald-500/20 shrink-0">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold text-lg">
-              🕌
+          <div className="flex items-center gap-3.5 px-3 py-3 mb-4 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-transparent border border-emerald-500/30 shrink-0 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 text-white font-bold text-lg">
+              <Bot className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h1 className="font-bold text-base tracking-wide text-white">Sultan Carpet</h1>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Gallery
-                </span>
+                <h1 className="font-bold text-base tracking-wide text-white">Dashboard Chatbot</h1>
               </div>
-              <p className="text-xs text-slate-400">Pusat Karpet Masjid & Mewah</p>
+              <p className="text-xs text-slate-400">WhatsApp AI & Customer Service</p>
             </div>
           </div>
 
@@ -2971,9 +3210,9 @@ export default function Dashboard() {
                 <span>AI Studio</span>
               </div>
               <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                aiProvider === 'groq' ? 'bg-amber-500/30 text-amber-200' : 'bg-purple-500/30 text-purple-200'
+                activeSavedAiProvider === 'groq' ? 'bg-amber-500/30 text-amber-200' : 'bg-purple-500/30 text-purple-200'
               }`}>
-                {aiProvider === 'groq' ? '⚡ Groq' : '🔮 Gemini'}
+                {activeSavedAiProvider === 'groq' ? '⚡ Groq' : '🔮 Gemini'}
               </span>
             </button>
 
@@ -3151,7 +3390,90 @@ export default function Dashboard() {
         </div>
 
         {/* Status Pill in Footer */}
-        <div className="pt-4 border-t border-slate-800/80 space-y-2">
+        <div className="pt-4 border-t border-slate-800/80 space-y-2.5">
+          {/* Active AI Engine Indicator Card (Desktop) */}
+          <div
+            onClick={() => setActiveTab('gemini')}
+            title="Klik untuk membuka AI Studio & ganti mesin AI"
+            className={`p-2.5 rounded-xl border transition-all cursor-pointer group select-none ${
+              !isAiActive
+                ? 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                : activeSavedAiProvider === 'gemini'
+                  ? 'bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-slate-900/90 border-purple-500/40 hover:border-purple-400/80 shadow-sm shadow-purple-900/20'
+                  : 'bg-gradient-to-r from-amber-950/70 via-orange-950/50 to-slate-900/90 border-amber-500/40 hover:border-amber-400/80 shadow-sm shadow-amber-900/20'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  {isAiActive && (
+                    <span
+                      className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                        activeSavedAiProvider === 'gemini' ? 'bg-purple-400' : 'bg-amber-400'
+                      }`}
+                    />
+                  )}
+                  <span
+                    className={`relative inline-flex rounded-full h-2 w-2 ${
+                      !isAiActive
+                        ? 'bg-slate-500'
+                        : activeSavedAiProvider === 'gemini'
+                          ? 'bg-purple-400'
+                          : 'bg-amber-400'
+                    }`}
+                  />
+                </span>
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Mesin AI Chatbot
+                </span>
+              </div>
+              <span
+                className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase font-mono ${
+                  !isAiActive
+                    ? 'bg-slate-800 text-slate-400 border-slate-700'
+                    : activeSavedAiProvider === 'gemini'
+                      ? 'bg-purple-500/25 text-purple-200 border-purple-500/40'
+                      : 'bg-amber-500/25 text-amber-200 border-amber-500/40'
+                }`}
+              >
+                {!isAiActive ? 'OFF' : activeSavedAiProvider === 'gemini' ? '🔮 GEMINI' : '⚡ GROQ LPU'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border transition-transform group-hover:scale-105 ${
+                  !isAiActive
+                    ? 'bg-slate-800 border-slate-700 text-slate-400'
+                    : activeSavedAiProvider === 'gemini'
+                      ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
+                      : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                }`}
+              >
+                {!isAiActive ? (
+                  <Bot className="w-3.5 h-3.5" />
+                ) : activeSavedAiProvider === 'gemini' ? (
+                  <Sparkles className="w-3.5 h-3.5" />
+                ) : (
+                  <Zap className="w-3.5 h-3.5" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition">
+                  {!isAiActive
+                    ? 'AI Dinonaktifkan'
+                    : activeSavedAiProvider === 'gemini'
+                      ? 'Google Gemini AI'
+                      : 'Groq LPU Engine'}
+                </p>
+                <p className="text-[10px] text-slate-400 font-mono truncate">
+                  {!isAiActive
+                    ? 'Mode Manual'
+                    : getModelDisplayName(activeSavedAiProvider, activeSavedModel)}
+                </p>
+              </div>
+            </div>
+          </div>
           <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
             <div className="flex items-center gap-2.5">
               <span
@@ -3199,8 +3521,8 @@ export default function Dashboard() {
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2">
-              <span className="text-lg">👑</span>
-              <h1 className="font-bold text-sm text-white">Sultan Carpet CS</h1>
+              <Bot className="w-4 h-4 text-emerald-400" />
+              <h1 className="font-bold text-sm text-white">Dashboard Chatbot</h1>
             </div>
           </div>
 
@@ -3461,17 +3783,9 @@ export default function Dashboard() {
                           }`}
                         >
                           {/* Avatar with initials & online dot */}
-                          <div
-                            className="relative shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedChatJid(conv.jid || conv.phone);
-                              handleOpenProfileModal(conv);
-                            }}
-                            title="Klik untuk melihat profil pelanggan"
-                          >
+                          <div className="relative shrink-0">
                             <div
-                              className={`w-11 h-11 rounded-full bg-gradient-to-br ${avatarBg} flex items-center justify-center text-white font-bold text-xs shadow hover:scale-105 transition cursor-pointer`}
+                              className={`w-11 h-11 rounded-full bg-gradient-to-br ${avatarBg} flex items-center justify-center text-white font-bold text-xs shadow hover:scale-105 transition`}
                             >
                               {initials}
                             </div>
@@ -3490,7 +3804,9 @@ export default function Dashboard() {
                             </div>
 
                             <p className="text-[11px] text-slate-400 font-mono mb-1 truncate">
-                              {conv.formattedPhone || (conv.phone ? `+${conv.phone}` : 'WhatsApp ID')}
+                              {conv.formattedPhone && !conv.formattedPhone.includes('LID') && conv.formattedPhone !== '-'
+                                ? conv.formattedPhone
+                                : (conv.phone && !conv.phone.includes('@lid') ? `+${conv.phone}` : '-')}
                             </p>
 
                             <div className="flex items-center justify-between gap-1">
@@ -3516,18 +3832,8 @@ export default function Dashboard() {
                             </div>
                           </div>
 
-                          {/* Actions: Profile & Delete Chat */}
+                          {/* Actions: Delete Chat */}
                           <div className="flex items-center gap-0.5 shrink-0">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenProfileModal(conv);
-                              }}
-                              title="Lihat & ubah profil pelanggan"
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800/80 transition"
-                            >
-                              <User className="w-3.5 h-3.5" />
-                            </button>
                             <button
                               onClick={(e) => handleDeleteConversation(e, conv)}
                               title={`Hapus obrolan dengan ${displayName}`}
@@ -3578,7 +3884,9 @@ export default function Dashboard() {
                   .join('')
                   .slice(0, 2)
                   .toUpperCase() || 'PL';
-                const activeSubtitle = activeFormattedPhone || 'WhatsApp ID (LID)';
+                const activeSubtitle = (activeFormattedPhone && !activeFormattedPhone.includes('LID') && activeFormattedPhone !== '-')
+                  ? activeFormattedPhone
+                  : (activeConversation.phone && !activeConversation.phone.includes('@lid') ? `+${activeConversation.phone}` : '-');
 
                 return (
                   <div className={`flex-1 flex flex-col bg-[#0b101b] min-w-0 h-full relative ${
@@ -3659,15 +3967,6 @@ export default function Dashboard() {
                           }`}>
                             <div className="w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-200" />
                           </div>
-                        </button>
-
-                        <button
-                          onClick={() => handleOpenProfileModal(activeConversation)}
-                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition flex items-center gap-1.5"
-                          title="Lihat & ubah nomor kontak atau profil pelanggan"
-                        >
-                          <User className="w-3.5 h-3.5 text-sky-400" />
-                          <span className="hidden sm:inline">Profil</span>
                         </button>
 
                         <button
@@ -3877,24 +4176,25 @@ export default function Dashboard() {
           )}
 
           {/* TAB 2: AI STUDIO (GROQ & GEMINI) */}
+          {/* TAB 2: AI STUDIO (GROQ & GEMINI ENGINE + SIMULATOR) */}
           {activeTab === 'gemini' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full min-h-0">
-              {/* Left Column: AI Configuration */}
-              <div className="lg:col-span-5 flex flex-col h-full min-h-0 rounded-2xl border border-slate-800 bg-[#0f172a]/80 backdrop-blur-xl shadow-2xl overflow-hidden">
+              {/* Left Column: AI Configuration Control Center */}
+              <div className="lg:col-span-5 xl:col-span-5 flex flex-col h-full min-h-0 rounded-3xl border border-slate-800 bg-[#0f172a]/85 backdrop-blur-xl shadow-2xl overflow-hidden">
                 {/* Panel Header */}
-                <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                      <Sparkles className="w-4 h-4" />
+                <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-purple-500/20 to-indigo-500/20 text-purple-400 border border-purple-500/30">
+                      <Sparkles className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-white text-sm">Konfigurasi AI Layanan</h3>
-                      <p className="text-[11px] text-slate-400">Pilih penyedia & model AI untuk balasan otomatis</p>
+                      <h3 className="font-bold text-white text-sm sm:text-base">Konfigurasi AI Layanan</h3>
+                      <p className="text-xs text-slate-400">Pilih mesin kecerdasan & persona respons bot</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[11px] font-semibold ${geminiEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
-                      {geminiEnabled ? 'Aktif' : 'Nonaktif'}
+                  <div className="flex items-center gap-2 bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800">
+                    <span className={`text-xs font-semibold ${geminiEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      {geminiEnabled ? 'AI Aktif' : 'Nonaktif'}
                     </span>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
@@ -3903,264 +4203,153 @@ export default function Dashboard() {
                         onChange={(e) => setGeminiEnabled(e.target.checked)}
                         className="sr-only peer"
                       />
-                      <div className="w-10 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                      <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
                     </label>
                   </div>
                 </div>
 
                 {/* Panel Scrollable Content */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-0">
-                  {/* RAG Engine Status Banner */}
-                  <div className="p-3 rounded-xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-purple-950/40 border border-purple-500/30">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-purple-500/20 text-purple-400">
-                          <Brain className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-xs font-bold text-purple-200">RAG Knowledge Engine</span>
-                      </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-medium flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        <span>11 Halaman Aktif</span>
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-300 leading-relaxed">
-                      AI secara otomatis mengambil konteks relevan dari seluruh data proyek (Profil, Katalog & Tag Foto, Kategori, Layanan, Jadwal, Lokasi Showroom, Garansi, Promo, Komplain/Tiket, Hands-Off CS, & FAQ) saat merespons pelanggan.
-                    </p>
-                  </div>
-
-                  {/* Provider Selector Tabs */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-300">Penyedia AI Utama (Primary Engine)</label>
-                      <span className="text-[10px] text-slate-400">Pilih mesin kecerdasan</span>
-                    </div>
-                    <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setAiProvider('groq')}
-                        className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                          aiProvider === 'groq'
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/20'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                        }`}
-                      >
-                        <Zap className="w-3.5 h-3.5" />
-                        <span>⚡ Groq LPU</span>
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-black/20 text-white/90 font-mono font-normal">~300ms</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAiProvider('gemini')}
-                        className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                          aiProvider === 'gemini'
-                            ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/20'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                        }`}
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>🔮 Gemini AI</span>
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-black/20 text-white/90 font-mono font-normal">Flash</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Groq Settings Section (NO API Key input!) */}
-                  {aiProvider === 'groq' && (
-                    <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-3">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 min-h-0 custom-scrollbar">
+                  {/* Card 1: Engine & Model Selection */}
+                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3.5 shadow-sm">
+                    {/* Provider Toggle Tabs */}
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-amber-300 font-semibold text-xs">
+                        <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                           <Zap className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Pengaturan Mesin Groq AI (LPU Engine)</span>
-                        </div>
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                          Kredensial Server Aktif
+                          <span>Penyedia AI Utama (Primary Engine)</span>
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-mono">Pilih Mesin</span>
+                      </div>
+                      <div className="grid grid-cols-2 p-1 bg-slate-950/80 rounded-xl border border-slate-800 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setAiProvider('groq')}
+                          className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            aiProvider === 'groq'
+                              ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/25 border border-amber-400/30'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                          }`}
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>Groq LPU</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/25 text-white/95 font-mono">~300ms</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAiProvider('gemini')}
+                          className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            aiProvider === 'gemini'
+                              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/25 border border-purple-400/30'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                          }`}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Gemini AI</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/25 text-white/95 font-mono">Flash</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Model Dropdown */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-slate-300">
+                          {aiProvider === 'groq' ? 'Model Groq LPU' : 'Model Google Gemini'}
+                        </label>
+                        <span className="text-[10px] text-slate-400">
+                          {aiProvider === 'groq' ? '⚡ LPU Ultra-Speed' : '🔮 Google DeepMind'}
                         </span>
                       </div>
-
-                      {/* Groq Model Selector */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
-                          <span>Pilihan Model Groq</span>
-                          <span className="text-[10px] text-amber-400/80">Kecepatan Tinggi</span>
-                        </label>
+                      {aiProvider === 'groq' ? (
                         <select
                           value={groqModel}
                           onChange={(e) => setGroqModel(e.target.value)}
-                          className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-medium"
+                          className="w-full rounded-xl bg-slate-950 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500 font-medium cursor-pointer"
                         >
-                          <option value="openai/gpt-oss-120b">OpenAI GPT-OSS 120B (Sangat Cerdas ~750ms - Rekomendasi Utama)</option>
+                          <option value="openai/gpt-oss-120b">OpenAI GPT-OSS 120B (Sangat Cerdas ~750ms - Rekomendasi)</option>
                           <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Ultra Cepat ~500ms)</option>
                           <option value="openai/gpt-oss-20b">OpenAI GPT-OSS 20B (Ringan & Cepat ~580ms)</option>
                           <option value="allam-2-7b">Allam 2 7B</option>
                         </select>
-                      </div>
-
-                      <div className="p-2.5 rounded-lg bg-slate-900/70 border border-slate-800 text-[11px] text-amber-300/90 flex items-start gap-2">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                        <p className="leading-relaxed">
-                          ⚡ Model OpenAI GPT-OSS 120B & Qwen 27B di Groq LPU merespon dalam waktu &lt; 1 detik dengan pemahaman katalog karpet yang sangat luwes.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Gemini Settings Section (NO API Key input!) */}
-                  {aiProvider === 'gemini' && (
-                    <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-purple-300 font-semibold text-xs">
-                          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                          <span>Pengaturan Mesin Google Gemini</span>
-                        </div>
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                          Kredensial Server Aktif
-                        </span>
-                      </div>
-
-                      {/* Gemini Model Selector */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
-                          <span>Pilihan Model Gemini</span>
-                          <span className="text-[10px] text-purple-400/80">Google DeepMind</span>
-                        </label>
+                      ) : (
                         <select
                           value={geminiModel}
                           onChange={(e) => setGeminiModel(e.target.value)}
-                          className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
+                          className="w-full rounded-xl bg-slate-950 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-purple-500 font-medium cursor-pointer"
                         >
-                          <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Super Cepat ~1.8s - Rekomendasi Utama)</option>
+                          <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Super Cepat ~1.8s - Rekomendasi)</option>
                           <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Sangat Ringan & Cepat)</option>
                           <option value="gemini-3.5-flash">Gemini 3.5 Flash (Stabil)</option>
                           <option value="gemini-flash-latest">Gemini Flash Latest</option>
                         </select>
-                      </div>
-
-                      <div className="p-2.5 rounded-lg bg-slate-900/70 border border-slate-800 text-[11px] text-purple-300/90 flex items-start gap-2">
-                        <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0 mt-0.5" />
-                        <p className="leading-relaxed">
-                          🔮 Gemini Flash Lite memberikan penalaran mendalam dengan pemahaman katalog, spek rajutan karpet, dan alur komplain yang sangat akurat.
-                        </p>
-                      </div>
+                      )}
                     </div>
-                  )}
 
-                  {/* Failover Info Banner */}
-                  <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 flex items-start gap-2">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <div className="leading-relaxed">
-                      <strong className="text-white">Auto-Failover 24/7 Aktif:</strong> Jika penyedia utama ({aiProvider === 'groq' ? 'Groq' : 'Gemini'}) mengalami kendala atau habis kuota, bot otomatis mengalihkan balasan ke penyedia cadangan tanpa jeda.
-                    </div>
                   </div>
 
-                  {/* System Instruction / Persona */}
-                  <div className="space-y-1.5">
+                  {/* Card 2: System Instruction / Persona Editor */}
+                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3 shadow-sm">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-300">Instruksi Sistem & Persona Bot</label>
-                      <span className="text-[10px] text-slate-500">{systemPrompt.length} karakter</span>
+                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <Bot className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Instruksi Sistem & Persona Karakter</span>
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800">
+                        {systemPrompt.length} karakter
+                      </span>
                     </div>
-                    <div className="flex items-center gap-1.5 pb-1 flex-wrap">
-                      <span className="text-[10px] text-slate-400">Preset:</span>
-                      <button
-                        type="button"
-                        onClick={() => applyPersonaPreset('default')}
-                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
-                      >
-                        Sultan Carpet Resmi
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyPersonaPreset('survey')}
-                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
-                      >
-                        Fokus Survey & Obras
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyPersonaPreset('concise')}
-                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
-                      >
-                        Ringkas & Cepat
-                      </button>
-                    </div>
+
+                    {/* Textarea */}
                     <textarea
-                      rows={3}
+                      rows={10}
                       value={systemPrompt}
                       onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="Instruksi untuk gaya bahasa dan persona bot..."
-                      className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 leading-relaxed font-sans"
+                      placeholder="Tuliskan instruksi sistem, persona, dan aturan khusus balasan AI..."
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 leading-relaxed font-sans resize-y"
                     />
-                  </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex items-center gap-2.5 pt-1">
-                    <button
-                      onClick={handleSaveAiSettings}
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs transition shadow-lg shadow-purple-600/25 flex items-center justify-center gap-2"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>Simpan Pengaturan AI</span>
-                    </button>
-                    <button
-                      onClick={handleTestAi}
-                      disabled={testingAi}
-                      className={`py-2.5 px-4 rounded-xl border text-xs font-semibold transition flex items-center gap-1.5 shrink-0 ${
-                        aiProvider === 'groq'
-                          ? 'bg-amber-950/40 hover:bg-amber-950/60 text-amber-300 border-amber-500/40'
-                          : 'bg-purple-950/40 hover:bg-purple-950/60 text-purple-300 border-purple-500/40'
-                      }`}
-                    >
-                      {testingAi ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                      <span>Uji {aiProvider === 'groq' ? 'Groq' : 'Gemini'}</span>
-                    </button>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      💡 Instruksi ini memandu gaya bicara, etika, dan pengetahuan katalog produk yang dipakai AI saat membalas pesan WhatsApp pelanggan.
+                    </p>
                   </div>
+                </div>
 
-                  {/* Test Result Display */}
-                  {aiTestResult && (
-                    <div
-                      className={`p-3 rounded-xl border text-xs leading-relaxed transition-all ${
-                        aiTestResult.success
-                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
-                          : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
-                      }`}
-                    >
-                      <div className="font-bold mb-1 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          {aiTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertCircle className="w-4 h-4 text-rose-400" />}
-                          <span>{aiTestResult.success ? `Koneksi Berhasil (${aiTestResult.elapsed}ms)` : 'Koneksi Gagal'}</span>
-                        </div>
-                        {aiTestResult.model && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/30">
-                            {aiTestResult.model}
-                          </span>
-                        )}
-                      </div>
-                      <p className="line-clamp-3 text-[11px] opacity-90">{aiTestResult.reply || aiTestResult.message || aiTestResult.error}</p>
-                    </div>
-                  )}
+                {/* Sticky Panel Footer: Action Button */}
+                <div className="p-4 border-t border-slate-800 bg-slate-900/90 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleSaveAiSettings}
+                    className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs transition shadow-lg shadow-purple-600/25 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Simpan Pengaturan AI</span>
+                  </button>
                 </div>
               </div>
 
               {/* Right Column: Live AI Simulator / Playground */}
-              <div className="lg:col-span-7 flex flex-col h-full min-h-0 rounded-2xl border border-slate-800/80 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl overflow-hidden">
+              <div className="lg:col-span-7 xl:col-span-7 flex flex-col h-full min-h-0 rounded-3xl border border-slate-800/80 bg-[#0f172a]/85 backdrop-blur-xl shadow-2xl overflow-hidden">
                 {/* Simulator Header */}
-                <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                      aiProvider === 'groq' ? 'bg-amber-500/20 text-amber-400' : 'bg-purple-500/20 text-purple-400'
-                    }`}>
+                <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-2xl flex items-center justify-center ${
+                        aiProvider === 'groq' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                      }`}
+                    >
                       <Sparkles className="w-4 h-4" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                      <h3 className="font-bold text-sm sm:text-base text-white flex items-center gap-2">
                         <span>Simulator Percakapan AI</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                          aiProvider === 'groq'
-                            ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                            : 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
-                        }`}>
+                        <span
+                          className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${
+                            aiProvider === 'groq'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                          }`}
+                        >
                           {aiProvider === 'groq' ? '⚡ Groq LPU' : '🔮 Google Gemini'}
                         </span>
                       </h3>
@@ -4170,8 +4359,9 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setSimHistory([])}
-                    className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 transition"
+                    className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-slate-800/80 transition cursor-pointer border border-transparent hover:border-slate-800"
                     title="Bersihkan riwayat obrolan simulasi"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -4180,28 +4370,30 @@ export default function Dashboard() {
                 </div>
 
                 {/* Simulator Message Stream */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-0">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 min-h-0 custom-scrollbar">
                   {simHistory.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center p-6 text-center">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 shadow-lg ${
-                        aiProvider === 'groq'
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-amber-500/10'
-                          : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-purple-500/10'
-                      }`}>
-                        <Sparkles className="w-6 h-6" />
+                      <div
+                        className={`w-14 h-14 rounded-3xl flex items-center justify-center mb-3 shadow-xl ${
+                          aiProvider === 'groq'
+                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-amber-500/10'
+                            : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-purple-500/10'
+                        }`}
+                      >
+                        <Sparkles className="w-7 h-7" />
                       </div>
-                      <h4 className="text-sm font-bold text-white mb-1">
+                      <h4 className="text-base font-bold text-white mb-1.5">
                         Simulator Percakapan AI Sultan Carpet
                       </h4>
-                      <p className="text-xs text-slate-400 max-w-md mb-5 leading-relaxed">
-                        Uji kecerdasan bot dalam memahami pertanyaan pelanggan seputar karpet masjid Turki, jadwal survey, obras di lokasi, alamat showroom, dan garansi resmi.
+                      <p className="text-xs text-slate-400 max-w-md mb-6 leading-relaxed">
+                        Ketik pertanyaan atau klik salah satu topik pengujian di bawah untuk menguji kecerdasan balasan AI secara instan.
                       </p>
 
-                      <div className="w-full max-w-md space-y-2">
-                        <p className="text-[11px] font-semibold text-slate-400 text-left px-1 flex items-center gap-1.5">
-                          <span>💡 Pertanyaan Cepat untuk Pengujian:</span>
+                      <div className="w-full max-w-lg space-y-2">
+                        <p className="text-xs font-semibold text-slate-300 text-left px-1 flex items-center gap-1.5">
+                          <span>💡 Klik Cepat untuk Menguji Skenario:</span>
                         </p>
-                        <div className="flex flex-col gap-1.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {[
                             'Halo, apakah karpet masjid Turki bisa dipasang dan diobras di tempat?',
                             'Berapa harga karpet masjid grade A+ per roll dan minimal pemesanan?',
@@ -4213,9 +4405,9 @@ export default function Dashboard() {
                               key={idx}
                               type="button"
                               onClick={() => handleSimulateAiWithText(promptText)}
-                              className="text-left text-xs px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition flex items-center justify-between group shadow-sm"
+                              className="text-left text-xs p-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition flex items-center justify-between group shadow-sm cursor-pointer"
                             >
-                              <span className="truncate pr-2">{promptText}</span>
+                              <span className="line-clamp-2 pr-2">{promptText}</span>
                               <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 shrink-0 transition" />
                             </button>
                           ))}
@@ -4260,7 +4452,7 @@ export default function Dashboard() {
                                   showToastMsg('Balasan disalin!', 'success');
                                 }}
                                 title="Salin balasan"
-                                className="absolute right-2 -top-2 opacity-0 group-hover:opacity-100 transition p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 shadow-sm"
+                                className="absolute right-2 -top-2 opacity-0 group-hover:opacity-100 transition p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 shadow-sm cursor-pointer"
                               >
                                 <Copy className="w-3 h-3" />
                               </button>
@@ -4296,35 +4488,58 @@ export default function Dashboard() {
                   )}
                 </div>
 
+                {/* Quick Prompts Bar (Always Available Above Input) */}
+                <div className="px-3 sm:px-4 py-2 border-t border-slate-800/80 bg-slate-900/40 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                  <span className="text-[10px] text-slate-400 font-semibold shrink-0 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    <span>Uji Cepat:</span>
+                  </span>
+                  {[
+                    'Apakah bisa survey & pasang di tempat?',
+                    'Berapa harga karpet masjid grade A+ per roll?',
+                    'Lokasi showroom & jadwal buka?',
+                    'Bagaimana ketentuan garansi karpet?'
+                  ].map((chipText, chipIdx) => (
+                    <button
+                      key={chipIdx}
+                      type="button"
+                      onClick={() => handleSimulateAiWithText(chipText)}
+                      className="text-[10px] px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 hover:border-slate-600 transition shrink-0 cursor-pointer whitespace-nowrap"
+                    >
+                      {chipText}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Input Form */}
                 <form
                   onSubmit={handleSimulateAi}
-                  className="p-3 border-t border-slate-800 bg-slate-900/60 shrink-0 space-y-1.5"
+                  className="p-3 sm:p-4 border-t border-slate-800 bg-slate-900/70 shrink-0 space-y-1.5"
                 >
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       value={simPrompt}
                       onChange={(e) => setSimPrompt(e.target.value)}
-                      placeholder="Ketik pertanyaan uji AI (contoh: 'Apakah ada survey gratis dan pasang karpet malam hari?')..."
-                      className="flex-1 rounded-xl bg-slate-800/80 border border-slate-700/80 px-4 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                      placeholder="Ketik pertanyaan uji AI (contoh: 'Apakah ada survey gratis dan sampel fisik?')..."
+                      className="flex-1 rounded-2xl bg-slate-950 border border-slate-700/80 px-4 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 shadow-inner"
                     />
                     <button
                       type="submit"
                       disabled={simulating || !simPrompt.trim()}
-                      className={`p-2.5 rounded-xl text-white transition disabled:opacity-50 shrink-0 shadow-md ${
+                      className={`p-3 rounded-2xl text-white transition disabled:opacity-50 shrink-0 shadow-lg cursor-pointer ${
                         aiProvider === 'groq'
-                          ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/20'
-                          : 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/20'
+                          ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 shadow-amber-500/25'
+                          : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/25'
                       }`}
                       title="Kirim Pertanyaan Simulasi"
                     >
                       <Send className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="flex items-center justify-between px-1 text-[10px] text-slate-500">
+                  <div className="flex items-center justify-between px-1.5 text-[10px] text-slate-500">
                     <span>Tekan Enter ↵ untuk mengirim</span>
-                    <span>Simulasi langsung menggunakan data katalog resmi</span>
+                    <span>Simulasi langsung menggunakan data katalog resmi & RAG</span>
                   </div>
                 </form>
               </div>
@@ -5607,16 +5822,12 @@ export default function Dashboard() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    sendDirectWaMessage(
-                                      ownerSettings?.phone || businessSettings?.phone,
-                                      `Halo Sultan Carpet! Saya tertarik memesan produk: *${item.title}* (${item.price || ''})`
-                                    );
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-semibold border border-emerald-500/30 transition flex items-center gap-1 cursor-pointer"
+                                  onClick={() => handleOpenSendProductModal(item)}
+                                  className="px-3 py-1.5 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/40 text-emerald-300 font-semibold border border-emerald-500/40 hover:border-emerald-400 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:shadow"
+                                  title="Kirim pesan produk ini ke riwayat chat pelanggan WhatsApp"
                                 >
-                                  <span>Pesan via WA</span>
-                                  <ArrowRight className="w-3 h-3" />
+                                  <Send className="w-3 h-3 text-emerald-400" />
+                                  <span>Kirim Pesan</span>
                                 </button>
                               </div>
                             </div>
@@ -8420,17 +8631,331 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* MODAL: KIRIM PESAN PRODUK KE RIWAYAT CHAT */}
+      {showSendProductModal && selectedProductToSend && (() => {
+        const prod = selectedProductToSend;
+        const cleanImg = (prod.image || 'catalog/karpet-masjid-turki.jpg').replace(/^assets\//, '');
+        const imgSrc = cleanImg.startsWith('http') || cleanImg.startsWith('data:') ? cleanImg : `/${cleanImg}`;
+
+        // Deduplicate and filter conversations
+        const filteredRecipients = [];
+        const seenRecipients = new Set();
+        const searchQ = (sendProductChatSearch || '').trim().toLowerCase();
+
+        for (const conv of conversations) {
+          const key = conv.jid || conv.phone;
+          if (!key || seenRecipients.has(key)) continue;
+
+          if (searchQ) {
+            const name = (conv.senderName || '').toLowerCase();
+            const phone = (conv.phone || '').toLowerCase();
+            const formatted = (conv.formattedPhone || '').toLowerCase();
+            if (!name.includes(searchQ) && !phone.includes(searchQ) && !formatted.includes(searchQ)) {
+              continue;
+            }
+          }
+
+          seenRecipients.add(key);
+          filteredRecipients.push(conv);
+        }
+
+        const activeRecipientName = selectedChatRecipient
+          ? ((selectedChatRecipient.senderName && !/^\+?\d{10,}$/.test(selectedChatRecipient.senderName.trim()))
+              ? selectedChatRecipient.senderName.trim()
+              : (selectedChatRecipient.formattedPhone || (selectedChatRecipient.phone ? `+${selectedChatRecipient.phone}` : 'Nomor Pelanggan')))
+          : (manualPhoneInput.trim() ? manualPhoneInput.trim() : null);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+            <div className="w-full max-w-2xl rounded-3xl bg-[#0f172a] border border-slate-700/80 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden animate-in zoom-in-95 duration-200">
+              {/* Modal Header */}
+              <div className="p-5 sm:p-6 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <Send className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-base">Kirim Pesan Produk</h3>
+                    <p className="text-xs text-slate-400">Pilih riwayat chat pelanggan WhatsApp untuk mengirim informasi produk ini</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSendProductModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body (Scrollable) */}
+              <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
+                {/* 1. Selected Product Preview Card */}
+                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-950 border border-slate-700/80 shrink-0">
+                      <img
+                        src={imgSrc}
+                        alt={prod.title}
+                        onError={(e) => { e.target.src = '/catalog/karpet-masjid-turki.jpg'; }}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-white text-sm truncate">{prod.title}</h4>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 shrink-0">
+                          {prod.price}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 truncate mt-0.5">{prod.subtitle || prod.category}</p>
+                      <span className="font-mono text-[10px] text-slate-500">{prod.code || `PROD-${prod.id}`}</span>
+                    </div>
+                  </div>
+
+                  {prod.image && (
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none bg-slate-950/70 hover:bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 transition shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={includeProductImage}
+                        onChange={(e) => setIncludeProductImage(e.target.checked)}
+                        className="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-slate-700 focus:ring-emerald-500"
+                      />
+                      <span className="text-[11px] font-medium">Sertakan foto produk</span>
+                    </label>
+                  )}
+                </div>
+
+                {/* 2. Chat Recipient Selection */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Pilih Riwayat Chat Pelanggan ({conversations.length} Tersedia)</span>
+                    </label>
+                    {activeRecipientName && (
+                      <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1 bg-emerald-950/50 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span className="truncate max-w-[200px]">Terpilih: {activeRecipientName}</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Search Filter */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={sendProductChatSearch}
+                      onChange={(e) => setSendProductChatSearch(e.target.value)}
+                      placeholder="Cari nama kontak pelanggan atau nomor HP..."
+                      className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-8 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    />
+                    {sendProductChatSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setSendProductChatSearch('')}
+                        className="absolute right-2.5 top-2 text-slate-500 hover:text-slate-300"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Conversation List */}
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 border border-slate-800/80 rounded-2xl p-2 bg-slate-900/40">
+                    {filteredRecipients.length === 0 ? (
+                      <div className="p-5 text-center text-slate-500 space-y-1">
+                        <MessageSquare className="w-6 h-6 mx-auto text-slate-600 opacity-60" />
+                        <p className="text-xs text-slate-400 font-medium">
+                          {sendProductChatSearch ? 'Kontak riwayat chat tidak ditemukan' : 'Belum ada riwayat chat pelanggan'}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Anda dapat memasukkan nomor WhatsApp tujuan secara manual pada kolom di bawah.
+                        </p>
+                      </div>
+                    ) : (
+                      filteredRecipients.map((c, idx) => {
+                        const isSelected = selectedChatRecipient && !manualPhoneInput.trim() && (
+                          (selectedChatRecipient.jid && selectedChatRecipient.jid === c.jid) ||
+                          (selectedChatRecipient.phone && selectedChatRecipient.phone === c.phone)
+                        );
+                        const rawName = c.senderName && !/^\+?\d{10,}$/.test(c.senderName.trim()) ? c.senderName.trim() : null;
+                        const contactName = rawName || (c.formattedPhone && !c.formattedPhone.includes('LID') ? c.formattedPhone : 'Pelanggan');
+                        const phoneLabel = c.formattedPhone && !c.formattedPhone.includes('LID') ? c.formattedPhone : (c.phone ? `+${c.phone}` : '');
+                        const initialChar = (contactName ? contactName.charAt(0) : 'P').toUpperCase();
+
+                        let snippet = '';
+                        if (typeof c.lastMessage === 'string') {
+                          snippet = c.lastMessage;
+                        } else if (c.lastMessage && typeof c.lastMessage === 'object') {
+                          snippet = c.lastMessage.text || c.lastMessage.caption || (c.lastMessage.type ? `[${c.lastMessage.type}]` : '');
+                        }
+
+                        return (
+                          <div
+                            key={c.jid || c.phone || `rcpt_${idx}`}
+                            onClick={() => {
+                              setSelectedChatRecipient(c);
+                              setManualPhoneInput('');
+                            }}
+                            className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                              isSelected
+                                ? 'bg-emerald-950/50 border-emerald-500/60 ring-1 ring-emerald-500/30'
+                                : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700 hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                                isSelected ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                              }`}>
+                                {initialChar}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h5 className="font-bold text-white text-xs truncate">{contactName}</h5>
+                                  {phoneLabel && (
+                                    <span className="text-[10px] text-slate-400 font-mono">{phoneLabel}</span>
+                                  )}
+                                </div>
+                                {snippet && (
+                                  <p className="text-[11px] text-slate-400 truncate mt-0.5">{snippet}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition ${
+                              isSelected
+                                ? 'bg-emerald-500 border-emerald-400 text-slate-950'
+                                : 'border-slate-700 bg-slate-800/50'
+                            }`}>
+                              {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Fallback Manual Phone Input */}
+                  <div className="pt-1 flex items-center gap-2">
+                    <span className="text-[11px] text-slate-400 shrink-0">Atau ke nomor baru:</span>
+                    <div className="relative flex-1">
+                      <Phone className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2" />
+                      <input
+                        type="text"
+                        value={manualPhoneInput}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setManualPhoneInput(val);
+                          if (val.trim()) {
+                            let clean = val.replace(/\D/g, '');
+                            if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+                            setSelectedChatRecipient({
+                              phone: clean,
+                              senderName: 'Nomor WhatsApp Baru',
+                              formattedPhone: val
+                            });
+                          }
+                        }}
+                        placeholder="Contoh: 081298765432..."
+                        className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Message Textarea */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-200">Isi Pesan WhatsApp (Dapat Diedit)</label>
+                    <span className="text-[10px] text-slate-500 font-mono">{sendProductMessageText.length} karakter</span>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={sendProductMessageText}
+                    onChange={(e) => setSendProductMessageText(e.target.value)}
+                    placeholder="Tulis pesan detail produk..."
+                    className="w-full rounded-xl bg-slate-900 border border-slate-800 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-sans leading-relaxed resize-y"
+                  />
+                </div>
+
+                {/* 4. WhatsApp Bot Connection Status */}
+                <div className="flex items-center justify-between text-[11px] px-1 text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                    <span className={isConnected ? 'text-emerald-400 font-medium' : 'text-amber-400 font-medium'}>
+                      {isConnected
+                        ? `Bot WhatsApp Terhubung (+${botStatus.user?.id || 'Aktif'})`
+                        : 'Bot WhatsApp offline (pengiriman akan dibuka via WhatsApp Web)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowSendProductModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const phone = selectedChatRecipient?.phone || manualPhoneInput;
+                      if (!phone) {
+                        showToastMsg('Pilih riwayat chat atau masukkan nomor telepon terlebih dahulu', 'warning');
+                        return;
+                      }
+                      sendDirectWaMessage(phone, sendProductMessageText);
+                    }}
+                    className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
+                    title="Kirim secara manual melalui tautan WhatsApp Web (wa.me)"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">WhatsApp Web</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSendProductToChat}
+                    disabled={isSendingProductMessage || (!selectedChatRecipient && !manualPhoneInput.trim())}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSendingProductMessage ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Mengirim...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Kirim</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* CUSTOMER PROFILE MODAL */}
       {showProfileModal && profileTarget && (() => {
         const rawModalName = profileTarget.senderName && !/^\+?\d{10,}$/.test(profileTarget.senderName.trim())
           ? profileTarget.senderName.trim()
           : null;
         const modalHasRealPhone = profileTarget.phone && !/^\d{14,}$/.test(profileTarget.phone) && !profileTarget.phone.includes('@lid');
-        const modalFormattedPhone = profileTarget.formattedPhone && !profileTarget.formattedPhone.includes('LID')
+        const modalFormattedPhone = profileTarget.formattedPhone && !profileTarget.formattedPhone.includes('LID') && profileTarget.formattedPhone !== '-'
           ? profileTarget.formattedPhone
           : (modalHasRealPhone
               ? (profileTarget.phone.startsWith('+') ? profileTarget.phone : `+${profileTarget.phone}`)
-              : 'WhatsApp ID (LID)');
+              : '-');
         const modalDisplayName = rawModalName || (modalHasRealPhone ? modalFormattedPhone : 'Pelanggan');
         const modalInitials = (rawModalName || 'Pelanggan')
           .split(' ')

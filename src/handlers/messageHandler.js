@@ -26,7 +26,7 @@ class MessageHandler {
   }
 
   extractMessageInfo(message) {
-    if (!message) return { text: '', mediaType: 'text' };
+    if (!message) return { text: '', mediaType: 'unknown' };
     let msg = message;
     if (msg.viewOnceMessage?.message) msg = msg.viewOnceMessage.message;
     if (msg.viewOnceMessageV2?.message) msg = msg.viewOnceMessageV2.message;
