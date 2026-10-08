@@ -307,10 +307,12 @@ function initActionButtons() {
     if (!ok) return;
     try {
       showToast('Menghapus sesi & memuat QR baru...', 'info');
+      updateStatusUI('connecting', null, null);
+      switchTab('tab-qr');
       const res = await fetch('/api/logout', { method: 'POST' });
       const data = await res.json();
       showToast(data.message || 'Logout berhasil', 'success');
-      switchTab('tab-qr');
+      setTimeout(fetchBotStatus, 1200);
     } catch (err) {
       showToast('Gagal logout: ' + err.message, 'error');
     }

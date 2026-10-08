@@ -30,15 +30,50 @@ class WhatsAppBot extends EventEmitter {
     this.connectedAt = null;
     this.connectedTimestamp = 0;
     this.isReconnecting = false;
+    this.isInitializing = false;
+    this.isLoggingOut = false;
+    this.isRestarting = false;
+    this.reconnectTimer = null;
 
     // Link messageHandler with bot's event emitter for real-time web logs
     messageHandler.setEventEmitter(this);
   }
 
-  async init() {
+  async destroySocket() {
+    if (!this.sock) return;
+    const oldSock = this.sock;
+    this.sock = null;
     try {
+      console.log('[WhatsAppBot] Menutup dan membersihkan socket WhatsApp aktif...');
+      if (oldSock.ev && typeof oldSock.ev.removeAllListeners === 'function') {
+        oldSock.ev.removeAllListeners();
+      }
+      oldSock.end(undefined);
+    } catch (err) {
+      console.warn('[WhatsAppBot] Catatan saat menutup socket:', err.message);
+    }
+  }
+
+  async init() {
+    if (this.isInitializing) {
+      console.log('[WhatsAppBot] Inisialisasi sedang berjalan, mengabaikan panggilan duplikat.');
+      return;
+    }
+
+    this.isInitializing = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    try {
+      // Jika masih ada socket lama yang aktif, tutup terlebih dahulu
+      if (this.sock) {
+        await this.destroySocket();
+      }
+
       this.status = 'connecting';
-      this.emit('status_change', { status: this.status });
+      this.emit('status_change', { status: this.status, qrDataUrl: this.qrCodeDataUrl, user: this.userInfo });
 
       // Reload handlers to pick up latest code changes without needing full process restart
       try {
@@ -54,8 +89,41 @@ class WhatsAppBot extends EventEmitter {
       // Login utama (creds.json) tetap aman dan terjaga
       this.cleanCorruptedRatchetSessions();
 
+      // Cek apakah creds.json ada namun belum teregistrasi (misal scan belum selesai sebelum refresh/logout)
+      const credsPath = path.join(AUTH_FOLDER, 'creds.json');
+      if (fs.existsSync(credsPath)) {
+        let shouldWipe = false;
+        try {
+          const rawCreds = fs.readFileSync(credsPath, 'utf8');
+          if (!rawCreds || !rawCreds.trim()) {
+            shouldWipe = true;
+          } else {
+            const parsedCreds = JSON.parse(rawCreds);
+            if (!parsedCreds || parsedCreds.registered === false) {
+              console.log('[WhatsAppBot] Sesi sebelumnya belum selesai di-scan (unregistered). Membersihkan sesi...');
+              shouldWipe = true;
+            }
+          }
+        } catch (parseErr) {
+          console.warn('[WhatsAppBot] File creds.json tidak valid atau korup. Membersihkan sesi...', parseErr.message);
+          shouldWipe = true;
+        }
+
+        if (shouldWipe) {
+          await this.safeClearSessionFolder();
+        }
+      }
+
       const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-      const { version, isLatest } = await fetchLatestBaileysVersion();
+      let version = [2, 3000, 1015901307];
+      let isLatest = false;
+      try {
+        const vInfo = await fetchLatestBaileysVersion();
+        version = vInfo.version;
+        isLatest = vInfo.isLatest;
+      } catch (vErr) {
+        console.warn('[WhatsAppBot] Gagal mengambil versi Baileys via web, menggunakan fallback:', vErr.message);
+      }
       console.log(`[WhatsAppBot] Menggunakan WA Web v${version.join('.')}, isLatest: ${isLatest}`);
 
       this.sock = makeWASocket({
@@ -106,13 +174,13 @@ class WhatsAppBot extends EventEmitter {
           qrcodeTerminal.generate(qr, { small: true });
 
           this.emit('qr', { qrRaw: this.qrCodeRaw, qrDataUrl: this.qrCodeDataUrl });
-          this.emit('status_change', { status: this.status, qrDataUrl: this.qrCodeDataUrl });
+          this.emit('status_change', { status: this.status, qrDataUrl: this.qrCodeDataUrl, user: null });
         }
 
         if (connection === 'connecting') {
           console.log('[WhatsAppBot] Sedang menyambungkan ke server WhatsApp...');
           this.status = 'connecting';
-          this.emit('status_change', { status: this.status });
+          this.emit('status_change', { status: this.status, qrDataUrl: this.qrCodeDataUrl, user: this.userInfo });
         }
 
         if (connection === 'open') {
@@ -126,6 +194,9 @@ class WhatsAppBot extends EventEmitter {
           this.status = 'connected';
           this.qrCodeRaw = null;
           this.qrCodeDataUrl = null;
+          this.isReconnecting = false;
+          this.isLoggingOut = false;
+          this.isRestarting = false;
           this.connectedAt = new Date().toISOString();
           this.connectedTimestamp = Date.now();
           this.userInfo = {
@@ -136,6 +207,7 @@ class WhatsAppBot extends EventEmitter {
           this.emit('status_change', {
             status: this.status,
             user: this.userInfo,
+            qrDataUrl: null,
             connectedAt: this.connectedAt
           });
           this.emit('chats_updated', { source: 'connection_open' });
@@ -143,28 +215,92 @@ class WhatsAppBot extends EventEmitter {
 
         if (connection === 'close') {
           const statusCode = lastDisconnect?.error?.output?.statusCode;
-          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+          const errorMsg = lastDisconnect?.error?.message || '';
 
-          console.log(`[WhatsAppBot] Koneksi terputus. Kode alasan: ${statusCode}, Reconnect: ${shouldReconnect}`);
+          console.log(`[WhatsAppBot] Koneksi terputus. Kode alasan: ${statusCode} (${errorMsg || 'No detail'})`);
+
+          // Jika pemutusan koneksi ini dipicu oleh logout atau restart yang sedang aktif, biarkan fungsi tersebut menangani
+          if (this.isLoggingOut || this.isRestarting) {
+            console.log('[WhatsAppBot] Penutupan koneksi ditangani oleh alur logout/restart aktif.');
+            return;
+          }
+
           this.status = 'disconnected';
           this.userInfo = null;
-          this.emit('status_change', { status: this.status, reason: statusCode });
+          this.emit('status_change', { status: this.status, user: null, qrDataUrl: null, reason: statusCode });
 
-          if (shouldReconnect) {
-            if (!this.isReconnecting) {
-              this.isReconnecting = true;
-              console.log('[WhatsAppBot] Mencoba menyambung kembali dalam 5 detik...');
-              setTimeout(() => {
-                this.isReconnecting = false;
-                this.init();
-              }, 5000);
-            }
-          } else {
-            console.log('[WhatsAppBot] Sesi telah logout atau kedaluwarsa. Membersihkan sesi...');
-            this.clearSessionFolder();
-            setTimeout(() => {
+          // 1. Sesi logout dari WhatsApp (401 / loggedOut)
+          if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+            console.log('[WhatsAppBot] Sesi telah logout atau kedaluwarsa dari WhatsApp. Membersihkan sesi...');
+            await this.destroySocket();
+            await this.safeClearSessionFolder();
+            this.qrCodeRaw = null;
+            this.qrCodeDataUrl = null;
+            this.emit('status_change', { status: 'disconnected', user: null, qrDataUrl: null });
+
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
+              this.init();
+            }, 2500);
+            return;
+          }
+
+          // 2. QR Code timeout (408) tanpa user login
+          if ((statusCode === DisconnectReason.timedOut || statusCode === 408) && !this.userInfo) {
+            console.log('[WhatsAppBot] QR Code kedaluwarsa (timed out). Menyiapkan QR Code baru...');
+            this.qrCodeRaw = null;
+            this.qrCodeDataUrl = null;
+            this.emit('status_change', { status: 'connecting', user: null, qrDataUrl: null });
+
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
+              this.init();
+            }, 2000);
+            return;
+          }
+
+          // 3. Restart required oleh Baileys (515)
+          if (statusCode === DisconnectReason.restartRequired || statusCode === 515) {
+            console.log('[WhatsAppBot] Restart koneksi diperlukan oleh Baileys (515). Menyambung kembali...');
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
+              this.init();
+            }, 1500);
+            return;
+          }
+
+          // 4. Connection replaced / duplikasi sesi (440)
+          if (statusCode === DisconnectReason.connectionReplaced || statusCode === 440) {
+            console.warn('[WhatsAppBot] Sesi koneksi digantikan oleh sesi lain (440). Menata ulang...');
+            await this.destroySocket();
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
               this.init();
             }, 3000);
+            return;
+          }
+
+          // 5. Bad session (500)
+          if (statusCode === DisconnectReason.badSession || statusCode === 500) {
+            console.warn('[WhatsAppBot] Sesi korup (500). Membersihkan sesi...');
+            await this.destroySocket();
+            await this.safeClearSessionFolder();
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
+              this.init();
+            }, 2000);
+            return;
+          }
+
+          // 6. Default reconnect (jaringan putus sementara dsb.)
+          if (!this.isReconnecting) {
+            this.isReconnecting = true;
+            console.log('[WhatsAppBot] Mencoba menyambung kembali dalam 5 detik...');
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
+              this.isReconnecting = false;
+              this.init();
+            }, 5000);
           }
         }
       });
@@ -642,49 +778,153 @@ class WhatsAppBot extends EventEmitter {
     }
   }
 
-  clearSessionFolder() {
+  async safeClearSessionFolder(retries = 6, delayMs = 350) {
+    if (!fs.existsSync(AUTH_FOLDER)) return;
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const files = fs.readdirSync(AUTH_FOLDER);
+        for (const f of files) {
+          const fullPath = path.join(AUTH_FOLDER, f);
+          try {
+            const stat = fs.lstatSync(fullPath);
+            if (stat.isDirectory()) {
+              fs.rmSync(fullPath, { recursive: true, force: true });
+            } else {
+              fs.unlinkSync(fullPath);
+            }
+          } catch (_) {
+            // File might still be locked briefly by OS handle
+          }
+        }
+
+        const remaining = fs.readdirSync(AUTH_FOLDER);
+        if (remaining.length === 0) {
+          try {
+            fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+          } catch (_) {}
+          console.log('[WhatsAppBot] Folder sesi auth_info_baileys berhasil dibersihkan.');
+          return;
+        }
+      } catch (err) {
+        // Retry
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+
     try {
       if (fs.existsSync(AUTH_FOLDER)) {
         fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-        console.log('[WhatsAppBot] Folder sesi berhasil dibersihkan.');
       }
-    } catch (err) {
-      console.error('[WhatsAppBot] Gagal menghapus folder sesi:', err.message);
+    } catch (e) {
+      console.warn('[WhatsAppBot] Catatan pembersihan akhir sesi:', e.message);
     }
+  }
+
+  async clearSessionFolder() {
+    await this.safeClearSessionFolder();
   }
 
   async logout() {
+    if (this.isLoggingOut) {
+      console.log('[WhatsAppBot] Logout sedang diproses, abaikan panggilan duplikat.');
+      return { success: true, message: 'Logout sedang berlangsung.' };
+    }
+
+    this.isLoggingOut = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    console.log('[WhatsAppBot] Memulai proses logout dan reset sesi WhatsApp...');
+
     try {
       if (this.sock) {
-        await this.sock.logout().catch(() => {});
-        this.sock.end(undefined);
+        await this.sock.logout().catch((err) => {
+          console.warn('[WhatsAppBot] Catatan Baileys logout:', err.message);
+        });
       }
     } catch (err) {
-      console.error('[WhatsAppBot] Error saat logout:', err.message);
+      console.error('[WhatsAppBot] Error saat logout socket:', err.message);
     }
-    this.clearSessionFolder();
+
+    await this.destroySocket();
+
+    // Beri jeda kecil agar handle file OS Windows dilepas sepenuhnya
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    await this.safeClearSessionFolder();
+
     this.status = 'disconnected';
     this.userInfo = null;
+    this.qrCodeRaw = null;
     this.qrCodeDataUrl = null;
-    this.emit('status_change', { status: this.status });
-    setTimeout(() => {
-      this.init();
-    }, 2000);
-    return { success: true };
+    this.connectedAt = null;
+    this.connectedTimestamp = 0;
+    this.isReconnecting = false;
+
+    this.emit('status_change', {
+      status: this.status,
+      user: null,
+      qrDataUrl: null
+    });
+
+    // Inisialisasi ulang socket secara bersih untuk langsung menghasilkan QR Code baru
+    setTimeout(async () => {
+      this.isLoggingOut = false;
+      await this.init();
+    }, 1200);
+
+    return { success: true, message: 'Sesi WhatsApp dibersihkan. Memuat QR Code baru...' };
   }
 
   async restart() {
-    try {
-      if (this.sock) {
-        this.sock.end(undefined);
-      }
-    } catch (err) {
-      console.error('[WhatsAppBot] Error saat restart socket:', err.message);
+    if (this.isRestarting || this.isLoggingOut) {
+      console.log('[WhatsAppBot] Restart/Logout sedang diproses, abaikan panggilan duplikat.');
+      return { success: true, message: 'Proses sedang berlangsung.' };
     }
-    setTimeout(() => {
-      this.init();
-    }, 2000);
-    return { success: true };
+
+    this.isRestarting = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    console.log('[WhatsAppBot] Memulai ulang socket koneksi WhatsApp...');
+
+    this.status = 'connecting';
+    this.qrCodeRaw = null;
+    this.qrCodeDataUrl = null;
+    this.emit('status_change', {
+      status: this.status,
+      user: this.userInfo,
+      qrDataUrl: null
+    });
+
+    await this.destroySocket();
+
+    // Jika creds.json belum terdaftar (unregistered), bersihkan agar QR baru segera terbit
+    try {
+      const credsPath = path.join(AUTH_FOLDER, 'creds.json');
+      if (fs.existsSync(credsPath)) {
+        const raw = fs.readFileSync(credsPath, 'utf8');
+        const creds = JSON.parse(raw);
+        if (!creds || creds.registered === false) {
+          console.log('[WhatsAppBot] Sesi belum terdaftar pada restart. Membersihkan sesi lama...');
+          await this.safeClearSessionFolder();
+        }
+      }
+    } catch (_) {
+      await this.safeClearSessionFolder();
+    }
+
+    setTimeout(async () => {
+      this.isRestarting = false;
+      await this.init();
+    }, 1200);
+
+    return { success: true, message: 'Koneksi WhatsApp sedang dimuat ulang...' };
   }
 }
 

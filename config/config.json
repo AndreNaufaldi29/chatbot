@@ -175,9 +175,9 @@
   "protections": {
     "cooldown": {
       "enabled": true,
-      "min_delay_ms": 2500,
-      "max_delay_ms": 4000,
-      "jitter_ms": 1000,
+      "min_delay_ms": 5500,
+      "max_delay_ms": 7750,
+      "jitter_ms": 4000,
       "typing_simulation": true,
       "typing_speed_cpm": 300,
       "global_max_per_minute": 25
@@ -201,7 +201,7 @@
       "circuit_breaker_timeout_ms": 60000
     },
     "opt_in": {
-      "enabled": true,
+      "enabled": false,
       "default_opted_in": true,
       "opt_out_keywords": [
         "stop",
@@ -246,6 +246,12 @@
     "session_timeout": {
       "inactivity_minutes": 20,
       "gc_interval_minutes": 10
+    },
+    "flood_protection": {
+      "enabled": true,
+      "max_messages_per_minute": 5,
+      "cooldown_seconds": 75,
+      "warning_message": "⚠️ Mohon maaf, Anda mengirim pesan terlalu cepat. Silakan tunggu 1 menit sebelum mengirim pesan kembali agar layanan kami dapat memproses pertanyaan Anda dengan baik."
     }
   },
   "server": {

@@ -199,6 +199,17 @@ class MessageHandler {
     }
     protectionService.recordInbound(msg.key?.id, jid, rawText);
 
+    // 🛡️ 1.5. Proteksi Inbound Flood / Spammer Rate Limit
+    // Jika pelanggan mengirim pesan bertubi-tubi melebihi batas wajar, tahan dan beri peringatan
+    const floodCheck = protectionService.checkUserFlood(jid);
+    if (floodCheck.isBlocked) {
+      if (floodCheck.justBlocked && floodCheck.warningMessage) {
+        console.warn(`[Protection:Flood] Mengirim pesan peringatan rate limit ke ${jid}`);
+        await this.sendReply(sock, jid, floodCheck.warningMessage, msg).catch(() => {});
+      }
+      return;
+    }
+
     // 🛡️ 2. Proteksi Opt-In / Consent Policy (0pt-in & Opt-Out)
     // Kepatuhan regulasi WA: Jika user kirim STOP/BERHENTI, bot diam selamanya agar nomor tidak dilaporkan SPAM
     const optCheck = protectionService.checkOptInOut(jid, rawText);

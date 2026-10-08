@@ -36,12 +36,17 @@ class ProtectionService extends EventEmitter {
     // 7. Session Inactivity State
     this.userLastActivityTimes = new Map(); // jid -> timestamp ms
 
+    // 8. Inbound Flood & Spammer Protection State
+    this.userInboundTimestamps = new Map(); // jid -> array of timestamp ms
+    this.tempBlockedUsers = new Map(); // jid -> { unblockAt: number, reason: string }
+
     // Metrics / Statistics
     this.stats = {
       totalInboundProcessed: 0,
       duplicatesBlocked: 0,
       burstsAggregated: 0,
       globalRateLimitWaits: 0,
+      floodsBlocked: 0,
       retriesAttempted: 0,
       circuitTrips: 0,
       humanHandoffsActive: 0,
@@ -67,13 +72,14 @@ class ProtectionService extends EventEmitter {
     } catch (e) {}
 
     return {
-      cooldown: { enabled: true, min_delay_ms: 2500, max_delay_ms: 4000, jitter_ms: 1000, typing_simulation: true, global_max_per_minute: 25 },
+      cooldown: { enabled: true, min_delay_ms: 2500, max_delay_ms: 4000, jitter_ms: 1000, typing_simulation: true, typing_speed_cpm: 300, global_max_per_minute: 25 },
       deduplication: { enabled: true, id_ttl_seconds: 300, content_window_ms: 3000, outbound_window_ms: 4000 },
       conversation_buffer: { enabled: true, debounce_ms: 2000, max_buffer_items: 10, max_context_turns: 6 },
       retry_limit: { max_retries: 2, backoff_base_ms: 1000, circuit_breaker_threshold: 3, circuit_breaker_timeout_ms: 60000 },
       opt_in: { enabled: true, default_opted_in: true, opt_out_keywords: ['stop', 'berhenti', 'unsubscribe', 'jangan chat', 'off', 'keluar'], opt_in_keywords: ['mulai', 'start', 'optin', 'aktifkan', 'on', 'lanjut', 'ya'] },
       human_handoff: { enabled: true, keywords: ['cs', 'admin', 'operator', 'manusia', 'orang', 'live agent', 'bantuan manusia'], release_keywords: ['!bot', 'aktifkan bot', 'kembali ke bot', 'bot', 'menu', 'selesai'], auto_expire_hours: 2 },
-      session_timeout: { inactivity_minutes: 20, gc_interval_minutes: 10 }
+      session_timeout: { inactivity_minutes: 20, gc_interval_minutes: 10 },
+      flood_protection: { enabled: true, max_messages_per_minute: 15, cooldown_seconds: 60, warning_message: '⚠️ Mohon maaf, Anda mengirim pesan terlalu cepat. Silakan tunggu 1 menit sebelum mengirim pesan kembali agar layanan kami dapat memproses pertanyaan Anda dengan baik.' }
     };
   }
 
@@ -734,6 +740,112 @@ class ProtectionService extends EventEmitter {
 
     // 5. Prune Global Message Timestamps older than 60 seconds
     this.globalMessageTimestamps = this.globalMessageTimestamps.filter(t => now - t < 60000);
+
+    // 6. Prune Expired Flood Blocks
+    for (const [jid, blockInfo] of this.tempBlockedUsers.entries()) {
+      if (now > blockInfo.unblockAt) {
+        this.tempBlockedUsers.delete(jid);
+        this.userInboundTimestamps.delete(jid);
+      }
+    }
+  }
+
+  // =========================================================================
+  // 9. INBOUND FLOOD & SPAMMER RATE LIMITING
+  // =========================================================================
+
+  checkUserFlood(jid) {
+    const config = this.getConfig().flood_protection || {};
+    if (config.enabled === false || !jid) return { isBlocked: false };
+
+    const cleanJid = String(jid).trim();
+    const now = Date.now();
+    const maxPerMinute = config.max_messages_per_minute || 15;
+    const cooldownSeconds = config.cooldown_seconds || 60;
+
+    // 1. Check if user is currently in temporary flood block
+    if (this.tempBlockedUsers.has(cleanJid)) {
+      const blockInfo = this.tempBlockedUsers.get(cleanJid);
+      if (now < blockInfo.unblockAt) {
+        const remainingSeconds = Math.ceil((blockInfo.unblockAt - now) / 1000);
+        return {
+          isBlocked: true,
+          justBlocked: false,
+          remainingSeconds,
+          warningMessage: null
+        };
+      } else {
+        // Cooldown finished
+        this.tempBlockedUsers.delete(cleanJid);
+        this.userInboundTimestamps.delete(cleanJid);
+      }
+    }
+
+    // 2. Track timestamps within the last 60 seconds
+    let timestamps = this.userInboundTimestamps.get(cleanJid) || [];
+    timestamps = timestamps.filter(t => now - t < 60000);
+    timestamps.push(now);
+    this.userInboundTimestamps.set(cleanJid, timestamps);
+
+    // 3. Trigger flood block if exceeded
+    if (timestamps.length > maxPerMinute) {
+      this.stats.floodsBlocked++;
+      const unblockAt = now + (cooldownSeconds * 1000);
+      this.tempBlockedUsers.set(cleanJid, {
+        unblockAt,
+        reason: `Mengirim ${timestamps.length} pesan dalam 1 menit (Batas aman: ${maxPerMinute})`
+      });
+      console.warn(`[Protection:Flood] 🚫 Pengguna ${cleanJid} diblokir sementara karena terdeteksi spam (${timestamps.length} pesan/menit). Cooldown: ${cooldownSeconds} detik.`);
+
+      return {
+        isBlocked: true,
+        justBlocked: true,
+        remainingSeconds: cooldownSeconds,
+        warningMessage: config.warning_message || `⚠️ Mohon maaf, Anda mengirim pesan terlalu cepat. Silakan tunggu ${cooldownSeconds} detik sebelum mengirim pesan kembali agar layanan kami dapat memproses pertanyaan Anda dengan baik.`
+      };
+    }
+
+    return { isBlocked: false };
+  }
+
+  unblockUser(jid) {
+    if (!jid) return false;
+    const cleanJid = String(jid).trim();
+    const existed = this.tempBlockedUsers.has(cleanJid);
+    this.tempBlockedUsers.delete(cleanJid);
+    this.userInboundTimestamps.delete(cleanJid);
+    return existed;
+  }
+
+  getBlockedUsersList() {
+    const list = [];
+    const now = Date.now();
+    for (const [jid, info] of this.tempBlockedUsers.entries()) {
+      if (now < info.unblockAt) {
+        list.push({
+          jid,
+          unblockAt: new Date(info.unblockAt).toISOString(),
+          remainingSeconds: Math.max(0, Math.ceil((info.unblockAt - now) / 1000)),
+          reason: info.reason
+        });
+      }
+    }
+    return list;
+  }
+
+  resetStats() {
+    this.stats = {
+      totalInboundProcessed: 0,
+      duplicatesBlocked: 0,
+      burstsAggregated: 0,
+      globalRateLimitWaits: 0,
+      floodsBlocked: 0,
+      retriesAttempted: 0,
+      circuitTrips: 0,
+      humanHandoffsActive: this.getAllHandoffs().filter(h => h.active).length,
+      optOutUsers: Array.from(this.optInRegistry.values()).filter(r => r.optedIn === false).length
+    };
+    return this.getStats();
   }
 
   getStats() {
@@ -744,6 +856,7 @@ class ProtectionService extends EventEmitter {
       circuitBreakerState: this.circuitBreakers.get('ai')?.state || 'CLOSED',
       activeHandoffsCount: Array.from(this.handoffRegistry.values()).filter(r => r.active).length,
       optOutCount: Array.from(this.optInRegistry.values()).filter(r => r.optedIn === false).length,
+      blockedUsersCount: this.getBlockedUsersList().length,
       uptimeSeconds: Math.floor(process.uptime())
     };
   }

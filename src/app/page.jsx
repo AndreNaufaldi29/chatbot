@@ -130,6 +130,7 @@ export default function Dashboard() {
   const [aiTestResult, setAiTestResult] = useState(null);
 
   // Gemini Simulator State
+  const [aiStudioMobileView, setAiStudioMobileView] = useState('simulator'); // 'simulator' | 'config'
   const [simPrompt, setSimPrompt] = useState('Halo, apakah karpet masjid bisa dipotong dan diobras langsung di lokasi?');
   const [simulating, setSimulating] = useState(false);
   const [simHistory, setSimHistory] = useState([
@@ -487,7 +488,74 @@ export default function Dashboard() {
     return (conversations || []).filter((c) => Boolean(c.isHumanHandoff)).length;
   }, [conversations]);
 
+  // Protections & Anti-Spam Settings State
+  const [protectionsConfig, setProtectionsConfig] = useState({
+    cooldown: {
+      enabled: true,
+      min_delay_ms: 2500,
+      max_delay_ms: 4000,
+      jitter_ms: 1000,
+      typing_simulation: true,
+      typing_speed_cpm: 300,
+      global_max_per_minute: 25,
+    },
+    deduplication: {
+      enabled: true,
+      id_ttl_seconds: 300,
+      content_window_ms: 3000,
+      outbound_window_ms: 4000,
+    },
+    conversation_buffer: {
+      enabled: true,
+      debounce_ms: 2000,
+      max_buffer_items: 10,
+      max_context_turns: 6,
+    },
+    retry_limit: {
+      max_retries: 2,
+      backoff_base_ms: 1000,
+      circuit_breaker_threshold: 3,
+      circuit_breaker_timeout_ms: 60000,
+    },
+    opt_in: {
+      enabled: true,
+      default_opted_in: true,
+      opt_out_keywords: ['stop', 'berhenti', 'unsubscribe', 'jangan chat', 'off', 'keluar'],
+      opt_in_keywords: ['mulai', 'start', 'optin', 'aktifkan', 'on', 'lanjut', 'ya'],
+    },
+    flood_protection: {
+      enabled: true,
+      max_messages_per_minute: 15,
+      cooldown_seconds: 60,
+      warning_message: '⚠️ Mohon maaf, Anda mengirim pesan terlalu cepat. Silakan tunggu 1 menit sebelum mengirim pesan kembali agar layanan kami dapat memproses pertanyaan Anda dengan baik.',
+    },
+  });
+
+  const [protectionsStats, setProtectionsStats] = useState({
+    totalInboundProcessed: 0,
+    duplicatesBlocked: 0,
+    burstsAggregated: 0,
+    globalRateLimitWaits: 0,
+    floodsBlocked: 0,
+    retriesAttempted: 0,
+    circuitTrips: 0,
+    humanHandoffsActive: 0,
+    optOutUsers: 0,
+    blockedUsersCount: 0,
+  });
+
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [loadingProtections, setLoadingProtections] = useState(false);
+  const [savingProtections, setSavingProtections] = useState(false);
+  const [protectionsSubTab, setProtectionsSubTab] = useState('cooldown'); // 'cooldown' | 'flood' | 'dedup' | 'global_rate' | 'compliance' | 'tester'
+  const [newOptOutKeyword, setNewOptOutKeyword] = useState('');
+  const [newOptInKeyword, setNewOptInKeyword] = useState('');
+  const [simAntiSpamCount, setSimAntiSpamCount] = useState(0);
+  const [simAntiSpamLogs, setSimAntiSpamLogs] = useState([]);
+  const [isSimulatingSpam, setIsSimulatingSpam] = useState(false);
+
   const chatContainerRef = useRef(null);
+  const simScrollRef = useRef(null);
 
   // Show Toast Notification
   const showToastMsg = (message, type = 'success') => {
@@ -536,16 +604,21 @@ export default function Dashboard() {
           setActiveTab(tabParam);
         } else if (hash === 'handoff' || hash === 'hands-off' || hash === 'cs') {
           setActiveTab('handoff');
+        } else if (hash === 'settings' || hash === 'anti-spam' || hash === 'antispam' || hash === 'protections') {
+          setActiveTab('settings');
         } else if (hash) {
           setActiveTab(hash);
         } else if (pathname === 'handoff' || pathname === 'hands-off' || pathname === 'cs') {
           setActiveTab('handoff');
+        } else if (pathname === 'settings' || pathname === 'anti-spam') {
+          setActiveTab('settings');
         }
       } catch (err) {}
     }
 
     fetchStatus();
     fetchConfig();
+    fetchProtections();
     fetchTickets();
     fetchChats();
     fetchDbStatus();
@@ -555,6 +628,15 @@ export default function Dashboard() {
 
     // Setup SSE for real-time events
     const eventSource = new EventSource('/api/events');
+
+    eventSource.addEventListener('protections_updated', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data) {
+          setProtectionsConfig((prev) => ({ ...prev, ...data }));
+        }
+      } catch (err) {}
+    });
 
     eventSource.addEventListener('rag_updated', () => {
       fetchCrawledPages();
@@ -576,7 +658,12 @@ export default function Dashboard() {
             fetchChats();
             setActiveTab((curr) => (curr === 'qr' ? 'chats' : curr));
           }
-          return { ...prev, ...data };
+          return {
+            ...prev,
+            ...data,
+            qrDataUrl: data.qrDataUrl !== undefined ? data.qrDataUrl : prev.qrDataUrl,
+            user: data.user !== undefined ? data.user : prev.user
+          };
         });
       } catch (err) {}
     });
@@ -592,6 +679,7 @@ export default function Dashboard() {
           ...prev,
           status: 'waiting_qr',
           qrDataUrl: data.qrDataUrl,
+          user: null
         }));
       } catch (err) {}
     });
@@ -875,11 +963,41 @@ export default function Dashboard() {
     }
   }, [activeTab, selectedChatJid, conversations]);
 
+  // Auto scroll AI simulator chat to bottom
+  const scrollSimToBottom = () => {
+    if (simScrollRef.current) {
+      simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'gemini') {
+      scrollSimToBottom();
+      const t1 = setTimeout(scrollSimToBottom, 40);
+      const t2 = setTimeout(scrollSimToBottom, 150);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+  }, [activeTab, simHistory, simulating, aiStudioMobileView]);
+
   useEffect(() => {
     if (activeTab === 'chats') {
       fetchChats();
     }
   }, [activeTab]);
+
+  // Polling fallback untuk memastikan QR Code selalu termuat jika SSE mengalami jeda
+  useEffect(() => {
+    if (activeTab === 'qr' && botStatus.status !== 'connected') {
+      fetchStatus();
+      const interval = setInterval(() => {
+        fetchStatus();
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab, botStatus.status]);
 
   const fetchChats = async () => {
     try {
@@ -986,6 +1104,12 @@ export default function Dashboard() {
       if (data.faqs && Array.isArray(data.faqs)) {
         setFaqs(data.faqs);
       }
+      if (data.protections) {
+        setProtectionsConfig((prev) => ({
+          ...prev,
+          ...data.protections,
+        }));
+      }
       if (data.protections?.human_handoff) {
         setHandoffConfig((prev) => ({
           ...prev,
@@ -997,6 +1121,221 @@ export default function Dashboard() {
     } finally {
       setLoadingConfig(false);
     }
+  };
+
+  const fetchProtections = async () => {
+    try {
+      setLoadingProtections(true);
+      const res = await fetch('/api/protections');
+      const data = await res.json();
+      if (data.success) {
+        if (data.config) setProtectionsConfig((prev) => ({ ...prev, ...data.config }));
+        if (data.stats) setProtectionsStats(data.stats);
+        if (Array.isArray(data.blockedUsers)) setBlockedUsers(data.blockedUsers);
+      }
+    } catch (err) {
+      console.warn('Gagal memuat proteksi:', err.message);
+    } finally {
+      setLoadingProtections(false);
+    }
+  };
+
+  const handleSaveProtections = async (newCfg = null) => {
+    setSavingProtections(true);
+    const payload = newCfg || protectionsConfig;
+    try {
+      const res = await fetch('/api/protections/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setProtectionsConfig(data.protections);
+        showToastMsg('Pengaturan proteksi & anti-spam berhasil disimpan!', 'success');
+      } else {
+        showToastMsg(data.error || 'Gagal menyimpan proteksi', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Gagal menyimpan: ' + err.message, 'error');
+    } finally {
+      setSavingProtections(false);
+    }
+  };
+
+  const handleResetProtectionsStats = async () => {
+    const ok = await askConfirmation({
+      title: 'Reset Statistik Proteksi?',
+      message: 'Semua hitungan pesan terblokir, debounce, dan rate limit akan dikembalikan ke angka 0.',
+      confirmText: 'Ya, Reset Statistik',
+      cancelText: 'Batal',
+      type: 'warning'
+    });
+    if (!ok) return;
+    try {
+      const res = await fetch('/api/protections/reset-stats', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setProtectionsStats(data.stats);
+        showToastMsg('Statistik proteksi berhasil direset ke nol', 'success');
+      }
+    } catch (err) {
+      showToastMsg('Gagal reset statistik: ' + err.message, 'error');
+    }
+  };
+
+  const handleUnblockUser = async (jid) => {
+    try {
+      const res = await fetch('/api/protections/unblock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jid })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBlockedUsers((prev) => prev.filter(u => u.jid !== jid));
+        showToastMsg(`Nomor ${jid} berhasil dibuka blokirnya!`, 'success');
+        fetchProtections();
+      }
+    } catch (err) {
+      showToastMsg('Gagal membuka blokir: ' + err.message, 'error');
+    }
+  };
+
+  const handleLoadProtectionsDefaults = async () => {
+    const ok = await askConfirmation({
+      title: 'Terapkan Rekomendasi Standar Anti-Spam?',
+      message: 'Sistem akan mengatur delay minimum 2.5s, delay max 4.0s, jitter 1.0s, typing presence aktif, limit global 25 pesan/menit, dan proteksi flood 15 pesan/menit.',
+      confirmText: 'Terapkan Standar Aman',
+      cancelText: 'Batal',
+      type: 'info'
+    });
+    if (!ok) return;
+
+    const recommended = {
+      cooldown: {
+        enabled: true,
+        min_delay_ms: 2500,
+        max_delay_ms: 4000,
+        jitter_ms: 1000,
+        typing_simulation: true,
+        typing_speed_cpm: 300,
+        global_max_per_minute: 25
+      },
+      deduplication: {
+        enabled: true,
+        id_ttl_seconds: 300,
+        content_window_ms: 3000,
+        outbound_window_ms: 4000
+      },
+      conversation_buffer: {
+        enabled: true,
+        debounce_ms: 2000,
+        max_buffer_items: 10,
+        max_context_turns: 6
+      },
+      retry_limit: {
+        max_retries: 2,
+        backoff_base_ms: 1000,
+        circuit_breaker_threshold: 3,
+        circuit_breaker_timeout_ms: 60000
+      },
+      opt_in: {
+        enabled: true,
+        default_opted_in: true,
+        opt_out_keywords: ['stop', 'berhenti', 'unsubscribe', 'jangan chat', 'batal langganan', 'off', 'keluar'],
+        opt_in_keywords: ['mulai', 'start', 'optin', 'aktifkan', 'on', 'lanjut', 'ya']
+      },
+      flood_protection: {
+        enabled: true,
+        max_messages_per_minute: 15,
+        cooldown_seconds: 60,
+        warning_message: '⚠️ Mohon maaf, Anda mengirim pesan terlalu cepat. Silakan tunggu 1 menit sebelum mengirim pesan kembali agar layanan kami dapat memproses pertanyaan Anda dengan baik.'
+      }
+    };
+
+    setProtectionsConfig(recommended);
+    await handleSaveProtections(recommended);
+  };
+
+  const handleSimulateAntiSpamSend = () => {
+    setIsSimulatingSpam(true);
+    const newCount = simAntiSpamCount + 1;
+    setSimAntiSpamCount(newCount);
+
+    const now = new Date().toLocaleTimeString('id-ID');
+    const floodLimit = protectionsConfig.flood_protection?.max_messages_per_minute || 15;
+    const isFlood = newCount > floodLimit;
+    const minDelay = protectionsConfig.cooldown?.min_delay_ms || 2500;
+    const jitter = protectionsConfig.cooldown?.jitter_ms || 1000;
+    const estimatedTotal = (minDelay + Math.floor(Math.random() * jitter)) / 1000;
+
+    let logEntry;
+    if (isFlood) {
+      logEntry = {
+        time: now,
+        count: newCount,
+        status: 'BLOCKED_FLOOD',
+        text: `🚫 [BLOKIR FLOOD SPAM] Pesan ke-${newCount} terdeteksi spam! Sistem otomatis memblokir nomor selama ${protectionsConfig.flood_protection?.cooldown_seconds || 60}s dan mengirim pesan peringatan.`
+      };
+    } else if (newCount > 1 && newCount <= 3) {
+      logEntry = {
+        time: now,
+        count: newCount,
+        status: 'BUFFERED',
+        text: `🔄 [CONVERSATION BUFFER] Pesan ke-${newCount} digabungkan (Debounce ${protectionsConfig.conversation_buffer?.debounce_ms || 2000}ms). Bot tidak mengirim double-bubble chat.`
+      };
+    } else {
+      logEntry = {
+        time: now,
+        count: newCount,
+        status: 'COOLDOWN_ACTIVE',
+        text: `✓ [DELAY & TYPING] Pesan ke-${newCount} diproses. Mengetik aktif ~1.5s, delay acak ${estimatedTotal.toFixed(1)}s sebelum terkirim ke WhatsApp.`
+      };
+    }
+
+    setSimAntiSpamLogs((prev) => [logEntry, ...prev.slice(0, 14)]);
+    setTimeout(() => setIsSimulatingSpam(false), 300);
+  };
+
+  const updateNestedProtections = (section, key, value) => {
+    setProtectionsConfig((prev) => ({
+      ...prev,
+      [section]: {
+        ...(prev[section] || {}),
+        [key]: value,
+      },
+    }));
+  };
+
+  const handleAddOptOutKeyword = () => {
+    if (!newOptOutKeyword.trim()) return;
+    const kw = newOptOutKeyword.trim().toLowerCase();
+    const current = protectionsConfig.opt_in?.opt_out_keywords || [];
+    if (!current.includes(kw)) {
+      updateNestedProtections('opt_in', 'opt_out_keywords', [...current, kw]);
+    }
+    setNewOptOutKeyword('');
+  };
+
+  const handleRemoveOptOutKeyword = (kwToRemove) => {
+    const current = protectionsConfig.opt_in?.opt_out_keywords || [];
+    updateNestedProtections('opt_in', 'opt_out_keywords', current.filter((k) => k !== kwToRemove));
+  };
+
+  const handleAddOptInKeyword = () => {
+    if (!newOptInKeyword.trim()) return;
+    const kw = newOptInKeyword.trim().toLowerCase();
+    const current = protectionsConfig.opt_in?.opt_in_keywords || [];
+    if (!current.includes(kw)) {
+      updateNestedProtections('opt_in', 'opt_in_keywords', [...current, kw]);
+    }
+    setNewOptInKeyword('');
+  };
+
+  const handleRemoveOptInKeyword = (kwToRemove) => {
+    const current = protectionsConfig.opt_in?.opt_in_keywords || [];
+    updateNestedProtections('opt_in', 'opt_in_keywords', current.filter((k) => k !== kwToRemove));
   };
 
   const handleSaveStoreSection = async (sectionKey, sectionData, successMessage) => {
@@ -1239,11 +1578,17 @@ export default function Dashboard() {
     });
     if (!ok) return;
     try {
-      showToastMsg('Memulai ulang koneksi...', 'info');
+      showToastMsg('Memulai ulang koneksi WhatsApp...', 'info');
+      setBotStatus((prev) => ({
+        ...prev,
+        status: 'connecting',
+        qrDataUrl: null
+      }));
       const res = await fetch('/api/restart', { method: 'POST' });
       const data = await res.json();
       showToastMsg(data.message || 'Restart terkirim', 'success');
-      fetchStatus();
+      setTimeout(fetchStatus, 1200);
+      setTimeout(fetchStatus, 3000);
     } catch (err) {
       showToastMsg('Gagal restart: ' + err.message, 'error');
     }
@@ -1259,10 +1604,20 @@ export default function Dashboard() {
     });
     if (!ok) return;
     try {
-      showToastMsg('Menghapus sesi & memuat QR...', 'info');
-      await fetch('/api/logout', { method: 'POST' });
+      showToastMsg('Menghapus sesi & menyiapkan QR baru...', 'info');
+      // Reset status secara optimis agar layar tidak menampilkan akun lama
+      setBotStatus({
+        status: 'connecting',
+        user: null,
+        qrDataUrl: null,
+        connectedAt: null
+      });
       setActiveTab('qr');
-      showToastMsg('Sesi dihapus. Silakan scan QR baru.', 'success');
+      const res = await fetch('/api/logout', { method: 'POST' });
+      const data = await res.json();
+      showToastMsg(data.message || 'Sesi dihapus. Menyiapkan QR Code baru...', 'success');
+      setTimeout(fetchStatus, 1200);
+      setTimeout(fetchStatus, 2500);
     } catch (err) {
       showToastMsg('Gagal logout: ' + err.message, 'error');
     }
@@ -1673,7 +2028,7 @@ export default function Dashboard() {
       image: 'catalog/karpet-masjid-turki.jpg',
       imageBase64: '',
     });
-    setImagePreview('/catalog/karpet-masjid-turki.jpg');
+    setImagePreview(null);
     setShowProductModal(true);
   };
 
@@ -1695,8 +2050,7 @@ export default function Dashboard() {
     setShowProductModal(true);
   };
 
-  const handleImageFileChange = (e) => {
-    const file = e.target.files?.[0];
+  const processImageFile = (file) => {
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
       showToastMsg('Ukuran foto maksimal 5MB', 'error');
@@ -1708,6 +2062,11 @@ export default function Dashboard() {
       setImagePreview(reader.result);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleImageFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) processImageFile(file);
   };
 
   const handleSaveProduct = async (e) => {
@@ -3030,6 +3389,26 @@ export default function Dashboard() {
                     </span>
                   </div>
                 </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('settings');
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    activeTab === 'settings'
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm">🛡️</span>
+                    <span>Anti-Spam & Delay</span>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                    Proteksi
+                  </span>
+                </button>
               </nav>
             </div>
 
@@ -3386,6 +3765,23 @@ export default function Dashboard() {
                 </span>
               </div>
             </button>
+
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === 'settings'
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🛡️</span>
+                <span>Anti-Spam & Delay</span>
+              </div>
+              <span className="text-[11px] px-2 py-0.2 rounded-full font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Proteksi
+              </span>
+            </button>
           </nav>
         </div>
 
@@ -3563,6 +3959,7 @@ export default function Dashboard() {
               {activeTab === 'promo' && 'Promo & Penawaran Diskon Aktif'}
               {activeTab === 'qna' && 'Basis Tanya Jawab AI (Knowledge Base)'}
               {activeTab === 'handoff' && 'Hands-Off Customer Service & AI Takeover'}
+              {activeTab === 'settings' && 'Pengaturan Anti-Spam, Cooldown & Delay Chat'}
             </h2>
           </div>
 
@@ -3588,7 +3985,7 @@ export default function Dashboard() {
         </header>
 
         {/* TAB PANELS */}
-        <div className={`flex-1 min-h-0 ${['chats', 'gemini'].includes(activeTab) ? 'p-3 sm:p-5 h-[calc(100vh-4rem)] flex flex-col overflow-hidden' : 'overflow-y-auto p-6'}`}>
+        <div className={`flex-1 min-h-0 flex flex-col ${['chats', 'gemini'].includes(activeTab) ? 'p-2 sm:p-4 lg:p-5 h-full overflow-hidden' : 'overflow-y-auto p-4 sm:p-6'}`}>
           {/* TAB 1: 1 USER 1 CHAT WHATSAPP WEB LAYOUT */}
           {activeTab === 'chats' && (
             <div className="h-full flex-1 flex flex-col md:flex-row rounded-2xl border border-slate-800/80 bg-[#0b101b] overflow-hidden shadow-2xl">
@@ -4178,370 +4575,432 @@ export default function Dashboard() {
           {/* TAB 2: AI STUDIO (GROQ & GEMINI) */}
           {/* TAB 2: AI STUDIO (GROQ & GEMINI ENGINE + SIMULATOR) */}
           {activeTab === 'gemini' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full min-h-0">
-              {/* Left Column: AI Configuration Control Center */}
-              <div className="lg:col-span-5 xl:col-span-5 flex flex-col h-full min-h-0 rounded-3xl border border-slate-800 bg-[#0f172a]/85 backdrop-blur-xl shadow-2xl overflow-hidden">
-                {/* Panel Header */}
-                <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-purple-500/20 to-indigo-500/20 text-purple-400 border border-purple-500/30">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-white text-sm sm:text-base">Konfigurasi AI Layanan</h3>
-                      <p className="text-xs text-slate-400">Pilih mesin kecerdasan & persona respons bot</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800">
-                    <span className={`text-xs font-semibold ${geminiEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
-                      {geminiEnabled ? 'AI Aktif' : 'Nonaktif'}
+            <div className="flex flex-col h-full min-h-0">
+              {/* MOBILE SEGMENTED VIEW SWITCHER (< lg) */}
+              <div className="lg:hidden flex items-center p-1 bg-slate-900/90 rounded-2xl border border-slate-800 shrink-0 mb-2.5 gap-1 shadow-lg backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={() => setAiStudioMobileView('simulator')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    aiStudioMobileView === 'simulator'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-900/40'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Simulator Chat</span>
+                  {simHistory.length > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/35 text-purple-200 font-mono font-semibold">
+                      {simHistory.length}
                     </span>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={geminiEnabled}
-                        onChange={(e) => setGeminiEnabled(e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Panel Scrollable Content */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 min-h-0 custom-scrollbar">
-                  {/* Card 1: Engine & Model Selection */}
-                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3.5 shadow-sm">
-                    {/* Provider Toggle Tabs */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                          <Zap className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Penyedia AI Utama (Primary Engine)</span>
-                        </label>
-                        <span className="text-[10px] text-slate-400 font-mono">Pilih Mesin</span>
-                      </div>
-                      <div className="grid grid-cols-2 p-1 bg-slate-950/80 rounded-xl border border-slate-800 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setAiProvider('groq')}
-                          className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            aiProvider === 'groq'
-                              ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/25 border border-amber-400/30'
-                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                          }`}
-                        >
-                          <Zap className="w-3.5 h-3.5" />
-                          <span>Groq LPU</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/25 text-white/95 font-mono">~300ms</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAiProvider('gemini')}
-                          className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            aiProvider === 'gemini'
-                              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/25 border border-purple-400/30'
-                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                          }`}
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>Gemini AI</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/25 text-white/95 font-mono">Flash</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Model Dropdown */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-medium text-slate-300">
-                          {aiProvider === 'groq' ? 'Model Groq LPU' : 'Model Google Gemini'}
-                        </label>
-                        <span className="text-[10px] text-slate-400">
-                          {aiProvider === 'groq' ? '⚡ LPU Ultra-Speed' : '🔮 Google DeepMind'}
-                        </span>
-                      </div>
-                      {aiProvider === 'groq' ? (
-                        <select
-                          value={groqModel}
-                          onChange={(e) => setGroqModel(e.target.value)}
-                          className="w-full rounded-xl bg-slate-950 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500 font-medium cursor-pointer"
-                        >
-                          <option value="openai/gpt-oss-120b">OpenAI GPT-OSS 120B (Sangat Cerdas ~750ms - Rekomendasi)</option>
-                          <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Ultra Cepat ~500ms)</option>
-                          <option value="openai/gpt-oss-20b">OpenAI GPT-OSS 20B (Ringan & Cepat ~580ms)</option>
-                          <option value="allam-2-7b">Allam 2 7B</option>
-                        </select>
-                      ) : (
-                        <select
-                          value={geminiModel}
-                          onChange={(e) => setGeminiModel(e.target.value)}
-                          className="w-full rounded-xl bg-slate-950 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-purple-500 font-medium cursor-pointer"
-                        >
-                          <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Super Cepat ~1.8s - Rekomendasi)</option>
-                          <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Sangat Ringan & Cepat)</option>
-                          <option value="gemini-3.5-flash">Gemini 3.5 Flash (Stabil)</option>
-                          <option value="gemini-flash-latest">Gemini Flash Latest</option>
-                        </select>
-                      )}
-                    </div>
-
-                  </div>
-
-                  {/* Card 2: System Instruction / Persona Editor */}
-                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                        <Bot className="w-3.5 h-3.5 text-purple-400" />
-                        <span>Instruksi Sistem & Persona Karakter</span>
-                      </label>
-                      <span className="text-[10px] text-slate-400 font-mono bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800">
-                        {systemPrompt.length} karakter
-                      </span>
-                    </div>
-
-                    {/* Textarea */}
-                    <textarea
-                      rows={10}
-                      value={systemPrompt}
-                      onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="Tuliskan instruksi sistem, persona, dan aturan khusus balasan AI..."
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 leading-relaxed font-sans resize-y"
-                    />
-
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      💡 Instruksi ini memandu gaya bicara, etika, dan pengetahuan katalog produk yang dipakai AI saat membalas pesan WhatsApp pelanggan.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Sticky Panel Footer: Action Button */}
-                <div className="p-4 border-t border-slate-800 bg-slate-900/90 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleSaveAiSettings}
-                    className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs transition shadow-lg shadow-purple-600/25 flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>Simpan Pengaturan AI</span>
-                  </button>
-                </div>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiStudioMobileView('config')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    aiStudioMobileView === 'config'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-900/40'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Sliders className="w-3.5 h-3.5 text-purple-300" />
+                  <span>Pengaturan AI</span>
+                  <span className={`w-2 h-2 rounded-full ${geminiEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                </button>
               </div>
 
-              {/* Right Column: Live AI Simulator / Playground */}
-              <div className="lg:col-span-7 xl:col-span-7 flex flex-col h-full min-h-0 rounded-3xl border border-slate-800/80 bg-[#0f172a]/85 backdrop-blur-xl shadow-2xl overflow-hidden">
-                {/* Simulator Header */}
-                <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-9 h-9 rounded-2xl flex items-center justify-center ${
-                        aiProvider === 'groq' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                      }`}
-                    >
-                      <Sparkles className="w-4 h-4" />
+              {/* MAIN CONTENT AREA: Grid on Desktop, Single Active Panel on Mobile */}
+              <div className="flex-1 min-h-0 lg:grid lg:grid-cols-12 gap-5 h-full">
+                {/* Left Column: AI Configuration Control Center */}
+                <div
+                  className={`lg:col-span-5 xl:col-span-5 flex-col h-full min-h-0 rounded-3xl border border-slate-800 bg-[#0f172a]/85 backdrop-blur-xl shadow-2xl overflow-hidden ${
+                    aiStudioMobileView === 'config' ? 'flex' : 'hidden lg:flex'
+                  }`}
+                >
+                  {/* Panel Header */}
+                  <div className="p-3.5 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2.5 sm:gap-3">
+                      <div className="p-2 sm:p-2.5 rounded-2xl bg-gradient-to-tr from-purple-500/20 to-indigo-500/20 text-purple-400 border border-purple-500/30">
+                        <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-white text-xs sm:text-base">Konfigurasi AI Layanan</h3>
+                        <p className="text-[11px] sm:text-xs text-slate-400">Pilih mesin & persona bot</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-sm sm:text-base text-white flex items-center gap-2">
-                        <span>Simulator Percakapan AI</span>
-                        <span
-                          className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${
-                            aiProvider === 'groq'
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                          }`}
-                        >
-                          {aiProvider === 'groq' ? '⚡ Groq LPU' : '🔮 Google Gemini'}
+                    <div className="flex items-center gap-2 bg-slate-950/60 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-slate-800">
+                      <span className={`text-[11px] sm:text-xs font-semibold ${geminiEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        {geminiEnabled ? 'AI Aktif' : 'Nonaktif'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={geminiEnabled}
+                          onChange={(e) => setGeminiEnabled(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-4.5 sm:w-9 sm:h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 sm:after:h-4 sm:after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Panel Scrollable Content */}
+                  <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 min-h-0 custom-scrollbar">
+                    {/* Card 1: Engine & Model Selection */}
+                    <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3 sm:space-y-3.5 shadow-sm">
+                      {/* Provider Toggle Tabs */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                            <Zap className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Penyedia AI Utama (Primary Engine)</span>
+                          </label>
+                          <span className="text-[10px] text-slate-400 font-mono">Pilih Mesin</span>
+                        </div>
+                        <div className="grid grid-cols-2 p-1 bg-slate-950/80 rounded-xl border border-slate-800 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setAiProvider('groq')}
+                            className={`py-2 px-2.5 sm:px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
+                              aiProvider === 'groq'
+                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/25 border border-amber-400/30'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <Zap className="w-3.5 h-3.5 shrink-0" />
+                            <span>Groq LPU</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/25 text-white/95 font-mono hidden xs:inline">~300ms</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAiProvider('gemini')}
+                            className={`py-2 px-2.5 sm:px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
+                              aiProvider === 'gemini'
+                                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/25 border border-purple-400/30'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                            <span>Gemini AI</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/25 text-white/95 font-mono hidden xs:inline">Flash</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Model Dropdown */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-medium text-slate-300">
+                            {aiProvider === 'groq' ? 'Model Groq LPU' : 'Model Google Gemini'}
+                          </label>
+                          <span className="text-[10px] text-slate-400">
+                            {aiProvider === 'groq' ? '⚡ LPU Ultra-Speed' : '🔮 Google DeepMind'}
+                          </span>
+                        </div>
+                        {aiProvider === 'groq' ? (
+                          <select
+                            value={groqModel}
+                            onChange={(e) => setGroqModel(e.target.value)}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700/80 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500 font-medium cursor-pointer"
+                          >
+                            <option value="openai/gpt-oss-120b">OpenAI GPT-OSS 120B (Sangat Cerdas ~750ms - Rekomendasi)</option>
+                            <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Ultra Cepat ~500ms)</option>
+                            <option value="openai/gpt-oss-20b">OpenAI GPT-OSS 20B (Ringan & Cepat ~580ms)</option>
+                            <option value="allam-2-7b">Allam 2 7B</option>
+                          </select>
+                        ) : (
+                          <select
+                            value={geminiModel}
+                            onChange={(e) => setGeminiModel(e.target.value)}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700/80 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-purple-500 font-medium cursor-pointer"
+                          >
+                            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Super Cepat ~1.8s - Rekomendasi)</option>
+                            <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Sangat Ringan & Cepat)</option>
+                            <option value="gemini-3.5-flash">Gemini 3.5 Flash (Stabil)</option>
+                            <option value="gemini-flash-latest">Gemini Flash Latest</option>
+                          </select>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Card 2: System Instruction / Persona Editor */}
+                    <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                          <Bot className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Instruksi Sistem & Persona Karakter</span>
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-mono bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800">
+                          {systemPrompt.length} karakter
                         </span>
-                      </h3>
-                      <p className="text-xs text-slate-400">
-                        Uji respons langsung dengan pengetahuan katalog karpet & showroom Sultan Carpet Gallery
+                      </div>
+
+                      {/* Textarea */}
+                      <textarea
+                        rows={8}
+                        value={systemPrompt}
+                        onChange={(e) => setSystemPrompt(e.target.value)}
+                        placeholder="Tuliskan instruksi sistem, persona, dan aturan khusus balasan AI..."
+                        className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 leading-relaxed font-sans resize-y min-h-[160px] sm:min-h-[200px]"
+                      />
+
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        💡 Instruksi ini memandu gaya bicara, etika, dan pengetahuan katalog produk yang dipakai AI saat membalas pesan WhatsApp pelanggan.
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSimHistory([])}
-                    className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-slate-800/80 transition cursor-pointer border border-transparent hover:border-slate-800"
-                    title="Bersihkan riwayat obrolan simulasi"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Reset Chat</span>
-                  </button>
+
+                  {/* Panel Footer: Action Buttons */}
+                  <div className="p-3.5 sm:p-4 border-t border-slate-800 bg-slate-900/95 shrink-0 flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleSaveAiSettings}
+                      className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs transition shadow-lg shadow-purple-600/25 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Simpan Pengaturan AI</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAiStudioMobileView('simulator')}
+                      className="lg:hidden py-3 px-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95"
+                      title="Uji langsung balasan AI di simulator chat"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Uji Chat →</span>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Simulator Message Stream */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 min-h-0 custom-scrollbar">
-                  {simHistory.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center p-6 text-center">
+                {/* Right Column: Live AI Simulator / Playground */}
+                <div
+                  className={`lg:col-span-7 xl:col-span-7 flex-col h-full min-h-0 rounded-3xl border border-slate-800/80 bg-[#0f172a]/85 backdrop-blur-xl shadow-2xl overflow-hidden ${
+                    aiStudioMobileView === 'simulator' ? 'flex' : 'hidden lg:flex'
+                  }`}
+                >
+                  {/* Simulator Header */}
+                  <div className="p-3.5 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between shrink-0 gap-2">
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                       <div
-                        className={`w-14 h-14 rounded-3xl flex items-center justify-center mb-3 shadow-xl ${
-                          aiProvider === 'groq'
-                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-amber-500/10'
-                            : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-purple-500/10'
+                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-2xl flex items-center justify-center shrink-0 ${
+                          aiProvider === 'groq' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
                         }`}
                       >
-                        <Sparkles className="w-7 h-7" />
+                        <Sparkles className="w-4 h-4" />
                       </div>
-                      <h4 className="text-base font-bold text-white mb-1.5">
-                        Simulator Percakapan AI Sultan Carpet
-                      </h4>
-                      <p className="text-xs text-slate-400 max-w-md mb-6 leading-relaxed">
-                        Ketik pertanyaan atau klik salah satu topik pengujian di bawah untuk menguji kecerdasan balasan AI secara instan.
-                      </p>
-
-                      <div className="w-full max-w-lg space-y-2">
-                        <p className="text-xs font-semibold text-slate-300 text-left px-1 flex items-center gap-1.5">
-                          <span>💡 Klik Cepat untuk Menguji Skenario:</span>
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {[
-                            'Halo, apakah karpet masjid Turki bisa dipasang dan diobras di tempat?',
-                            'Berapa harga karpet masjid grade A+ per roll dan minimal pemesanan?',
-                            'Dimana lokasi showroom utama dan apakah buka di hari libur/Minggu?',
-                            'Apakah ada layanan survey gratis dan dibawakan contoh bahan fisik?',
-                            'Bagaimana ketentuan garansi karpet dan penanganan komplain?'
-                          ].map((promptText, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => handleSimulateAiWithText(promptText)}
-                              className="text-left text-xs p-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition flex items-center justify-between group shadow-sm cursor-pointer"
-                            >
-                              <span className="line-clamp-2 pr-2">{promptText}</span>
-                              <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 shrink-0 transition" />
-                            </button>
-                          ))}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-bold text-xs sm:text-base text-white truncate">
+                            Simulator Percakapan AI
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => setAiStudioMobileView('config')}
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition flex items-center gap-1 cursor-pointer ${
+                              aiProvider === 'groq'
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30'
+                                : 'bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30'
+                            }`}
+                            title="Klik untuk ubah model atau persona AI"
+                          >
+                            <span>{aiProvider === 'groq' ? '⚡ Groq LPU' : '🔮 Google Gemini'}</span>
+                            <span className="lg:hidden text-[9px] opacity-75 underline">(Ganti)</span>
+                          </button>
                         </div>
+                        <p className="text-[11px] text-slate-400 truncate hidden sm:block">
+                          Uji respons langsung dengan pengetahuan katalog karpet & showroom Sultan Carpet Gallery
+                        </p>
                       </div>
                     </div>
-                  ) : (
-                    <>
-                      {simHistory.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'}`}
-                        >
-                          <div className="text-[10px] text-slate-500 mb-1 px-1 flex items-center gap-1.5">
-                            {item.role === 'user' ? (
-                              <span>Simulasi Pelanggan • {item.time}</span>
-                            ) : (
-                              <>
-                                <span className={`font-semibold ${item.provider === 'groq' ? 'text-amber-400' : 'text-purple-400'}`}>
-                                  Sultan Carpet AI ({item.provider === 'groq' ? '⚡ Groq' : '🔮 Gemini'})
-                                </span>
-                                <span>• {item.time}</span>
-                              </>
-                            )}
-                          </div>
-                          <div className="relative group max-w-[85%]">
-                            <div
-                              className={`rounded-2xl px-4 py-3 text-xs leading-relaxed whitespace-pre-wrap shadow-md ${
-                                item.role === 'user'
-                                  ? 'bg-slate-800 text-slate-100 rounded-tr-none'
-                                  : item.provider === 'groq'
-                                  ? 'bg-gradient-to-br from-amber-950/60 via-slate-900 to-slate-900 text-amber-50 border border-amber-500/30 rounded-tl-none'
-                                  : 'bg-gradient-to-br from-purple-950/60 via-slate-900 to-slate-900 text-purple-50 border border-purple-500/30 rounded-tl-none'
-                              }`}
-                              dangerouslySetInnerHTML={{ __html: formatWaText(item.text) }}
-                            />
-                            {item.role === 'ai' && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(item.text);
-                                  showToastMsg('Balasan disalin!', 'success');
-                                }}
-                                title="Salin balasan"
-                                className="absolute right-2 -top-2 opacity-0 group-hover:opacity-100 transition p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 shadow-sm cursor-pointer"
-                              >
-                                <Copy className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                          {item.role === 'ai' && item.ragDocs && item.ragDocs.length > 0 && (
-                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                              <span className="text-[10px] text-purple-300 font-semibold flex items-center gap-1">
-                                <Brain className="w-3 h-3 text-purple-400" />
-                                <span>RAG:</span>
-                              </span>
-                              {item.ragDocs.map((doc, docIdx) => (
-                                <span
-                                  key={docIdx}
-                                  className="text-[9px] px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/30 text-purple-200"
-                                  title={doc.title}
-                                >
-                                  {doc.page}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-
-                      {simulating && (
-                        <div className="flex items-center gap-2 text-xs text-purple-400 italic py-2">
-                          <Sparkles className="w-4 h-4 animate-spin text-purple-400" />
-                          <span>{aiProvider === 'groq' ? 'Groq LPU sedang memproses (~300ms)...' : 'Gemini sedang menyusun balasan...'}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Quick Prompts Bar (Always Available Above Input) */}
-                <div className="px-3 sm:px-4 py-2 border-t border-slate-800/80 bg-slate-900/40 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
-                  <span className="text-[10px] text-slate-400 font-semibold shrink-0 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-amber-400" />
-                    <span>Uji Cepat:</span>
-                  </span>
-                  {[
-                    'Apakah bisa survey & pasang di tempat?',
-                    'Berapa harga karpet masjid grade A+ per roll?',
-                    'Lokasi showroom & jadwal buka?',
-                    'Bagaimana ketentuan garansi karpet?'
-                  ].map((chipText, chipIdx) => (
                     <button
-                      key={chipIdx}
                       type="button"
-                      onClick={() => handleSimulateAiWithText(chipText)}
-                      className="text-[10px] px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 hover:border-slate-600 transition shrink-0 cursor-pointer whitespace-nowrap"
+                      onClick={() => setSimHistory([])}
+                      className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl hover:bg-slate-800/80 transition cursor-pointer border border-transparent hover:border-slate-800 shrink-0"
+                      title="Bersihkan riwayat obrolan simulasi"
                     >
-                      {chipText}
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Reset Chat</span>
                     </button>
-                  ))}
-                </div>
+                  </div>
 
-                {/* Input Form */}
-                <form
-                  onSubmit={handleSimulateAi}
-                  className="p-3 sm:p-4 border-t border-slate-800 bg-slate-900/70 shrink-0 space-y-1.5"
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={simPrompt}
-                      onChange={(e) => setSimPrompt(e.target.value)}
-                      placeholder="Ketik pertanyaan uji AI (contoh: 'Apakah ada survey gratis dan sampel fisik?')..."
-                      className="flex-1 rounded-2xl bg-slate-950 border border-slate-700/80 px-4 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 shadow-inner"
-                    />
-                    <button
-                      type="submit"
-                      disabled={simulating || !simPrompt.trim()}
-                      className={`p-3 rounded-2xl text-white transition disabled:opacity-50 shrink-0 shadow-lg cursor-pointer ${
-                        aiProvider === 'groq'
-                          ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 shadow-amber-500/25'
-                          : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/25'
-                      }`}
-                      title="Kirim Pertanyaan Simulasi"
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
+                  {/* Simulator Message Stream */}
+                  <div
+                    ref={simScrollRef}
+                    className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3.5 min-h-0 custom-scrollbar"
+                  >
+                    {simHistory.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center p-4 sm:p-6 text-center">
+                        <div
+                          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-3xl flex items-center justify-center mb-3 shadow-xl ${
+                            aiProvider === 'groq'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-amber-500/10'
+                              : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-purple-500/10'
+                          }`}
+                        >
+                          <Sparkles className="w-6 h-6 sm:w-7 sm:h-7" />
+                        </div>
+                        <h4 className="text-sm sm:text-base font-bold text-white mb-1.5">
+                          Simulator Percakapan AI Sultan Carpet
+                        </h4>
+                        <p className="text-xs text-slate-400 max-w-md mb-4 sm:mb-6 leading-relaxed">
+                          Ketik pertanyaan atau klik salah satu topik pengujian di bawah untuk menguji kecerdasan balasan AI secara instan.
+                        </p>
+
+                        <div className="w-full max-w-lg space-y-2">
+                          <p className="text-xs font-semibold text-slate-300 text-left px-1 flex items-center gap-1.5">
+                            <span>💡 Klik Cepat untuk Menguji Skenario:</span>
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {[
+                              'Halo, apakah karpet masjid Turki bisa dipasang dan diobras di tempat?',
+                              'Berapa harga karpet masjid grade A+ per roll dan minimal pemesanan?',
+                              'Dimana lokasi showroom utama dan apakah buka di hari libur/Minggu?',
+                              'Apakah ada layanan survey gratis dan dibawakan contoh bahan fisik?',
+                              'Bagaimana ketentuan garansi karpet dan penanganan komplain?'
+                            ].map((promptText, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => handleSimulateAiWithText(promptText)}
+                                className="text-left text-xs p-2.5 sm:p-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition flex items-center justify-between group shadow-sm cursor-pointer"
+                              >
+                                <span className="line-clamp-2 pr-2">{promptText}</span>
+                                <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 shrink-0 transition" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {simHistory.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'}`}
+                          >
+                            <div className="text-[10px] text-slate-500 mb-1 px-1 flex items-center gap-1.5">
+                              {item.role === 'user' ? (
+                                <span>Simulasi Pelanggan • {item.time}</span>
+                              ) : (
+                                <>
+                                  <span className={`font-semibold ${item.provider === 'groq' ? 'text-amber-400' : 'text-purple-400'}`}>
+                                    Sultan Carpet AI ({item.provider === 'groq' ? '⚡ Groq' : '🔮 Gemini'})
+                                  </span>
+                                  <span>• {item.time}</span>
+                                </>
+                              )}
+                            </div>
+                            <div className="relative group max-w-[92%] sm:max-w-[85%]">
+                              <div
+                                className={`rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs leading-relaxed whitespace-pre-wrap shadow-md ${
+                                  item.role === 'user'
+                                    ? 'bg-slate-800 text-slate-100 rounded-tr-none'
+                                    : item.provider === 'groq'
+                                    ? 'bg-gradient-to-br from-amber-950/60 via-slate-900 to-slate-900 text-amber-50 border border-amber-500/30 rounded-tl-none'
+                                    : 'bg-gradient-to-br from-purple-950/60 via-slate-900 to-slate-900 text-purple-50 border border-purple-500/30 rounded-tl-none'
+                                }`}
+                                dangerouslySetInnerHTML={{ __html: formatWaText(item.text) }}
+                              />
+                              {item.role === 'ai' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(item.text);
+                                    showToastMsg('Balasan disalin!', 'success');
+                                  }}
+                                  title="Salin balasan"
+                                  className="absolute right-2 -top-2 opacity-0 group-hover:opacity-100 transition p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 shadow-sm cursor-pointer"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            {item.role === 'ai' && item.ragDocs && item.ragDocs.length > 0 && (
+                              <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                <span className="text-[10px] text-purple-300 font-semibold flex items-center gap-1">
+                                  <Brain className="w-3 h-3 text-purple-400" />
+                                  <span>RAG:</span>
+                                </span>
+                                {item.ragDocs.map((doc, docIdx) => (
+                                  <span
+                                    key={docIdx}
+                                    className="text-[9px] px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/30 text-purple-200"
+                                    title={doc.title}
+                                  >
+                                    {doc.page}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {simulating && (
+                          <div className="flex items-center gap-2 text-xs text-purple-400 italic py-2">
+                            <Sparkles className="w-4 h-4 animate-spin text-purple-400" />
+                            <span>{aiProvider === 'groq' ? 'Groq LPU sedang memproses (~300ms)...' : 'Gemini sedang menyusun balasan...'}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between px-1.5 text-[10px] text-slate-500">
-                    <span>Tekan Enter ↵ untuk mengirim</span>
-                    <span>Simulasi langsung menggunakan data katalog resmi & RAG</span>
+
+                  {/* Quick Prompts Bar (Always Available Above Input) */}
+                  <div className="px-2.5 sm:px-4 py-2 border-t border-slate-800/80 bg-slate-900/50 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                    <span className="text-[10px] text-slate-400 font-semibold shrink-0 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      <span className="hidden xs:inline">Uji Cepat:</span>
+                    </span>
+                    {[
+                      'Apakah bisa survey & pasang di tempat?',
+                      'Berapa harga karpet masjid grade A+ per roll?',
+                      'Lokasi showroom & jadwal buka?',
+                      'Bagaimana ketentuan garansi karpet?'
+                    ].map((chipText, chipIdx) => (
+                      <button
+                        key={chipIdx}
+                        type="button"
+                        onClick={() => handleSimulateAiWithText(chipText)}
+                        className="text-[10px] px-2.5 py-1 rounded-full bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 hover:border-slate-600 transition shrink-0 cursor-pointer whitespace-nowrap active:scale-95"
+                      >
+                        {chipText}
+                      </button>
+                    ))}
                   </div>
-                </form>
+
+                  {/* Input Form */}
+                  <form
+                    onSubmit={handleSimulateAi}
+                    className="p-2.5 sm:p-4 border-t border-slate-800 bg-slate-900/70 shrink-0 space-y-1 sm:space-y-1.5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={simPrompt}
+                        onChange={(e) => setSimPrompt(e.target.value)}
+                        placeholder="Ketik pertanyaan uji AI (misal: 'Apakah ada survey gratis?')..."
+                        className="flex-1 rounded-2xl bg-slate-950 border border-slate-700/80 px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 shadow-inner"
+                      />
+                      <button
+                        type="submit"
+                        disabled={simulating || !simPrompt.trim()}
+                        className={`p-2.5 sm:p-3 rounded-2xl text-white transition disabled:opacity-50 shrink-0 shadow-lg cursor-pointer ${
+                          aiProvider === 'groq'
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 shadow-amber-500/25'
+                            : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/25'
+                        }`}
+                        title="Kirim Pertanyaan Simulasi"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between px-1.5 text-[10px] text-slate-500">
+                      <span>Tekan Enter ↵ untuk mengirim</span>
+                      <span className="hidden sm:inline">Simulasi langsung menggunakan data katalog resmi & RAG</span>
+                    </div>
+                  </form>
+                </div>
               </div>
             </div>
           )}
@@ -7862,6 +8321,1069 @@ export default function Dashboard() {
             );
           })()}
 
+          {/* TAB 12: SETTINGS (ANTI-SPAM, DELAY & PROTECTIONS) */}
+          {activeTab === 'settings' && (
+            <div className="space-y-8 animate-in fade-in duration-200">
+              {/* Header Hero Banner */}
+              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900/90 to-emerald-950/40 border border-slate-800/80 p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
+                <div className="absolute -right-16 -top-16 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -left-16 -bottom-16 w-60 h-60 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+                
+                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                  <div className="space-y-2 max-w-2xl">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>SISTEM ANTI-BANNED & PENCEGAHAN SPAM WHATSAPP</span>
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
+                      <span>Pengaturan Delay & Anti-Spam</span>
+                    </h2>
+                    <p className="text-sm text-slate-300 leading-relaxed">
+                      Kelola jeda pengiriman pesan (cooldown), simulasi mengetik manusiawi, batas anti-flood pelanggan, deduplikasi pesan kembar, dan circuit breaker agar nomor WhatsApp Anda tetap sehat dan terhindar dari pemblokiran resmi.
+                    </p>
+                  </div>
+
+                  {/* Top Action Buttons */}
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      onClick={fetchProtections}
+                      disabled={loadingProtections}
+                      className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 text-xs font-medium border border-slate-700/80 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
+                      title="Muat ulang data statistik & konfigurasi proteksi"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingProtections ? 'animate-spin' : ''}`} />
+                      <span>{loadingProtections ? 'Memuat...' : 'Sinkronkan'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleResetProtectionsStats}
+                      className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-rose-300 text-xs font-medium border border-rose-500/20 transition-all flex items-center gap-2 shadow-sm"
+                      title="Reset angka metrik statistik ke 0"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset Metrik</span>
+                    </button>
+
+                    <button
+                      onClick={handleLoadProtectionsDefaults}
+                      className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-emerald-300 text-xs font-medium border border-emerald-500/30 transition-all flex items-center gap-2 shadow-sm"
+                      title="Gunakan konfigurasi delay dan proteksi yang paling direkomendasikan"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Standar Aman</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleSaveProtections()}
+                      disabled={savingProtections}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold transition-all flex items-center gap-2 shadow-lg shadow-emerald-900/30 disabled:opacity-50"
+                    >
+                      {savingProtections ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Menyimpan...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Simpan Pengaturan</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 5 Real-Time KPI Stats Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6 pt-6 border-t border-slate-800/80">
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-slate-400 mb-1">
+                      <span className="text-[11px] font-medium uppercase tracking-wider">Total Diproses</span>
+                      <MessageSquare className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="text-xl sm:text-2xl font-bold text-white">
+                      {(protectionsStats?.totalInboundProcessed || 0).toLocaleString('id-ID')}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">Pesan masuk dievaluasi</div>
+                  </div>
+
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-slate-400 mb-1">
+                      <span className="text-[11px] font-medium uppercase tracking-wider">Spam Ditangkal</span>
+                      <ShieldAlert className="w-4 h-4 text-rose-400" />
+                    </div>
+                    <div className="text-xl sm:text-2xl font-bold text-rose-400">
+                      {(protectionsStats?.floodsBlocked || 0).toLocaleString('id-ID')}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">Pesan flood di-cooldown</div>
+                  </div>
+
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-slate-400 mb-1">
+                      <span className="text-[11px] font-medium uppercase tracking-wider">Duplikat Dicegah</span>
+                      <Copy className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div className="text-xl sm:text-2xl font-bold text-amber-400">
+                      {(protectionsStats?.duplicatesBlocked || 0).toLocaleString('id-ID')}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">Pesan identik kembar</div>
+                  </div>
+
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-slate-400 mb-1">
+                      <span className="text-[11px] font-medium uppercase tracking-wider">Debounce Buffer</span>
+                      <Zap className="w-4 h-4 text-cyan-400" />
+                    </div>
+                    <div className="text-xl sm:text-2xl font-bold text-cyan-400">
+                      {(protectionsStats?.burstsAggregated || 0).toLocaleString('id-ID')}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">Pesan beruntun digabung</div>
+                  </div>
+
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between col-span-2 sm:col-span-1">
+                    <div className="flex items-center justify-between text-slate-400 mb-1">
+                      <span className="text-[11px] font-medium uppercase tracking-wider">Opt-Out / Stop</span>
+                      <UserCheck className="w-4 h-4 text-purple-400" />
+                    </div>
+                    <div className="text-xl sm:text-2xl font-bold text-purple-400">
+                      {(protectionsStats?.optOutUsers || 0).toLocaleString('id-ID')}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">Pengguna berhenti pesan</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-Tabs Pill Navigation Bar */}
+              <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-900/80 border border-slate-800 rounded-2xl backdrop-blur-md">
+                {[
+                  { id: 'cooldown', label: 'Delay & Cooldown', icon: Clock },
+                  { id: 'flood', label: 'Proteksi Spam (Flood)', icon: ShieldAlert, badge: blockedUsers.length > 0 ? `${blockedUsers.length} Diblokir` : null },
+                  { id: 'dedup', label: 'Anti-Pesan Kembar & Debounce', icon: Copy },
+                  { id: 'global_rate', label: 'Batas Global & Anti-Ban', icon: Zap },
+                  { id: 'compliance', label: 'Kata Kunci Stop / Opt-Out', icon: UserCheck },
+                  { id: 'tester', label: 'Simulator & Uji Delay', icon: Sliders },
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = protectionsSubTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setProtectionsSubTab(tab.id)}
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                        isActive
+                          ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{tab.label}</span>
+                      {tab.badge && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white animate-pulse">
+                          {tab.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* SUB-TAB 1: DELAY & COOLDOWN */}
+              {protectionsSubTab === 'cooldown' && (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                          <Clock className="w-5 h-5 text-emerald-400" />
+                          <span>Delay Pengiriman & Simulasi Mengetik Alami</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Memberikan jeda waktu acak sebelum bot membalas pesan dan menampilkan status "sedang mengetik..." di WhatsApp agar terkesan manusiawi.
+                        </p>
+                      </div>
+
+                      {/* Enable Switch */}
+                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
+                        <span className="text-xs font-medium text-slate-300">Status Delay:</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(protectionsConfig.cooldown?.enabled)}
+                          onChange={(e) => updateNestedProtections('cooldown', 'enabled', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 relative"></div>
+                        <span className={`text-xs font-bold ${protectionsConfig.cooldown?.enabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                          {protectionsConfig.cooldown?.enabled ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Min Delay */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Delay Minimum (Waktu Tunggu Tercepat)</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {((protectionsConfig.cooldown?.min_delay_ms || 2500) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.min_delay_ms || 2500} ms)
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="500"
+                          max="10000"
+                          step="250"
+                          value={protectionsConfig.cooldown?.min_delay_ms || 2500}
+                          onChange={(e) => updateNestedProtections('cooldown', 'min_delay_ms', parseInt(e.target.value) || 2500)}
+                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[11px] text-slate-500">
+                          <span>Cepat (0.5s)</span>
+                          <span>Rekomendasi (2.5s)</span>
+                          <span>Lambat (10s)</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Waktu minimum bot menahan balasan sebelum dikirim ke pengguna. Hindari nilai di bawah 1 detik pada nomor baru.
+                        </p>
+                      </div>
+
+                      {/* Max Delay */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Delay Maksimum (Batas Atas)</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {((protectionsConfig.cooldown?.max_delay_ms || 4000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.max_delay_ms || 4000} ms)
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1000"
+                          max="15000"
+                          step="250"
+                          value={protectionsConfig.cooldown?.max_delay_ms || 4000}
+                          onChange={(e) => updateNestedProtections('cooldown', 'max_delay_ms', parseInt(e.target.value) || 4000)}
+                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[11px] text-slate-500">
+                          <span>1 detik</span>
+                          <span>Rekomendasi (4.0s)</span>
+                          <span>15 detik</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Batas terlama jeda pengiriman sehingga respons pelanggan tetap cepat dan tidak merasa diabaikan.
+                        </p>
+                      </div>
+
+                      {/* Jitter (Random Variation) */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Jitter Acak (Variasi Waktu)</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            + 0 ~ {((protectionsConfig.cooldown?.jitter_ms || 1000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.jitter_ms || 1000} ms)
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="4000"
+                          step="200"
+                          value={protectionsConfig.cooldown?.jitter_ms || 1000}
+                          onChange={(e) => updateNestedProtections('cooldown', 'jitter_ms', parseInt(e.target.value) || 0)}
+                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[11px] text-slate-500">
+                          <span>0s (Tetap)</span>
+                          <span>Rekomendasi (+1.0s)</span>
+                          <span>+4.0s</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Memberikan tambahan waktu acak di setiap balasan agar jeda tidak selalu bernilai sama persis (menghindari deteksi bot statis oleh algoritma Meta).
+                        </p>
+                      </div>
+
+                      {/* Typing Simulation */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-xs font-semibold text-slate-200 block">Simulasi Mengetik (Typing Presence)</label>
+                            <span className="text-[11px] text-slate-400">Kirim status "sedang mengetik..." di WA</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(protectionsConfig.cooldown?.typing_simulation)}
+                            onChange={(e) => updateNestedProtections('cooldown', 'typing_simulation', e.target.checked)}
+                            className="w-4 h-4 accent-emerald-500 rounded bg-slate-800 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-300">Kecepatan Mengetik (CPM)</span>
+                            <span className="text-xs font-bold text-emerald-400">{protectionsConfig.cooldown?.typing_speed_cpm || 300} Karakter/menit</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="100"
+                            max="800"
+                            step="50"
+                            disabled={!protectionsConfig.cooldown?.typing_simulation}
+                            value={protectionsConfig.cooldown?.typing_speed_cpm || 300}
+                            onChange={(e) => updateNestedProtections('cooldown', 'typing_speed_cpm', parseInt(e.target.value) || 300)}
+                            className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer disabled:opacity-40"
+                          />
+                          <p className="text-[10px] text-slate-500">
+                            Durasi mengetik otomatis dihitung sesuai panjang teks jawaban AI (misal pesan 150 karakter akan mengetik selama ~3 detik).
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Safety Alert Note */}
+                    <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-start gap-3">
+                      <Sparkles className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="font-semibold text-emerald-200 block">Rekomendasi Keamanan WhatsApp:</strong>
+                        Nilai delay minimum 2.500 ms (2.5 detik) dengan jitter 1.000 ms dan simulasi mengetik aktif terbukti paling aman untuk penggunaan nomor bot operasional toko karpet, meminimalisir risiko pelaporan spam oleh pelanggan.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB 2: FLOOD PROTECTION & TEMP BLOCK */}
+              {protectionsSubTab === 'flood' && (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                          <ShieldAlert className="w-5 h-5 text-rose-400" />
+                          <span>Proteksi Anti-Flood & Pemblokiran Spammer Otomatis</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Mencegah pelanggan nakal atau bot spammer yang membombardir pesan ke nomor Anda dalam hitungan detik.
+                        </p>
+                      </div>
+
+                      {/* Enable Switch */}
+                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
+                        <span className="text-xs font-medium text-slate-300">Status Anti-Flood:</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(protectionsConfig.flood_protection?.enabled)}
+                          onChange={(e) => updateNestedProtections('flood_protection', 'enabled', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500 relative"></div>
+                        <span className={`text-xs font-bold ${protectionsConfig.flood_protection?.enabled ? 'text-rose-400' : 'text-slate-500'}`}>
+                          {protectionsConfig.flood_protection?.enabled ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Max Messages / Minute */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Maksimal Pesan per Menit per Nomor</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                            {protectionsConfig.flood_protection?.max_messages_per_minute || 15} pesan / menit
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="5"
+                          max="40"
+                          step="1"
+                          value={protectionsConfig.flood_protection?.max_messages_per_minute || 15}
+                          onChange={(e) => updateNestedProtections('flood_protection', 'max_messages_per_minute', parseInt(e.target.value) || 15)}
+                          className="w-full accent-rose-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[11px] text-slate-500">
+                          <span>Ketat (5 pesan)</span>
+                          <span>Standar (15 pesan)</span>
+                          <span>Longgar (40 pesan)</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Jika satu nomor mengirim pesan melebihi batas ini dalam jendela 60 detik, sistem langsung mengaktifkan cooldown sementara.
+                        </p>
+                      </div>
+
+                      {/* Cooldown Duration */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Durasi Blokir Cooldown Sementara</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                            {protectionsConfig.flood_protection?.cooldown_seconds || 60} detik ({Math.round((protectionsConfig.flood_protection?.cooldown_seconds || 60) / 60)} menit)
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="15"
+                          max="300"
+                          step="15"
+                          value={protectionsConfig.flood_protection?.cooldown_seconds || 60}
+                          onChange={(e) => updateNestedProtections('flood_protection', 'cooldown_seconds', parseInt(e.target.value) || 60)}
+                          className="w-full accent-rose-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[11px] text-slate-500">
+                          <span>15 detik</span>
+                          <span>1 menit</span>
+                          <span>5 menit</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Selama durasi ini, pesan tambahan dari pengirim spam akan diabaikan tanpa membebani kuota API AI / database Anda.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Warning Message Template */}
+                    <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-slate-200">
+                          Pesan Peringatan Otomatis ke Pengirim Flood (Dikirim 1x saat terdeteksi)
+                        </label>
+                        <span className="text-[11px] text-slate-500">
+                          {(protectionsConfig.flood_protection?.warning_message || '').length} karakter
+                        </span>
+                      </div>
+                      <textarea
+                        rows="3"
+                        value={protectionsConfig.flood_protection?.warning_message || ''}
+                        onChange={(e) => updateNestedProtections('flood_protection', 'warning_message', e.target.value)}
+                        placeholder="Masukkan pesan peringatan sopan saat pelanggan mengirim chat terlalu cepat..."
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-rose-500/50 resize-none"
+                      />
+                      <p className="text-[11px] text-slate-400">
+                        Pesan ini akan dikirim otomatis satu kali ke pelanggan ketika mereka pertama kali memicu batas flood agar mereka memahami alasan bot memberi jeda.
+                      </p>
+                    </div>
+
+                    {/* Blocked Users Table */}
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 text-rose-400" />
+                          <span>Daftar Nomor Sedang Di-Cooldown Spam ({blockedUsers.length})</span>
+                        </h4>
+                        {blockedUsers.length > 0 && (
+                          <span className="text-[11px] text-rose-400 font-medium">
+                            Auto-unblock setelah sisa waktu habis
+                          </span>
+                        )}
+                      </div>
+
+                      {blockedUsers.length === 0 ? (
+                        <div className="p-6 rounded-2xl bg-slate-950/40 border border-slate-800/80 text-center space-y-2">
+                          <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto opacity-70" />
+                          <p className="text-xs font-medium text-slate-300">Tidak ada nomor yang sedang terblokir spam saat ini.</p>
+                          <p className="text-[11px] text-slate-500">Semua aktivitas obrolan pengguna berjalan tertib dan aman.</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-2xl border border-slate-800">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800">
+                              <tr>
+                                <th className="p-3.5">Nomor WhatsApp / JID</th>
+                                <th className="p-3.5">Waktu Terdeteksi</th>
+                                <th className="p-3.5">Sisa Cooldown</th>
+                                <th className="p-3.5 text-right">Tindakan</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                              {blockedUsers.map((user) => (
+                                <tr key={user.jid} className="hover:bg-slate-800/30 transition-colors">
+                                  <td className="p-3.5 font-medium text-slate-200">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                                      <span>{user.jid.replace('@s.whatsapp.net', '').replace('@lid', '')}</span>
+                                    </div>
+                                  </td>
+                                  <td className="p-3.5 text-slate-400">
+                                    {new Date(user.blockedAt).toLocaleTimeString('id-ID')}
+                                  </td>
+                                  <td className="p-3.5">
+                                    <span className="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 font-bold border border-rose-500/20">
+                                      {user.remainingSeconds} detik lagi
+                                    </span>
+                                  </td>
+                                  <td className="p-3.5 text-right">
+                                    <button
+                                      onClick={() => handleUnblockUser(user.jid)}
+                                      className="px-3 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30 text-[11px] transition-all"
+                                    >
+                                      Buka Blokir
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB 3: DEDUPLICATION & DEBOUNCE BUFFER */}
+              {protectionsSubTab === 'dedup' && (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                          <Copy className="w-5 h-5 text-amber-400" />
+                          <span>Anti-Pesan Kembar & Debounce Penggabungan Chat</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Menghilangkan pengiriman berulang karena klik dobel WhatsApp dan menggabungkan chat kalimat terpotong dari pelanggan.
+                        </p>
+                      </div>
+
+                      {/* Enable Switch */}
+                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
+                        <span className="text-xs font-medium text-slate-300">Status Deduplikasi:</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(protectionsConfig.deduplication?.enabled)}
+                          onChange={(e) => updateNestedProtections('deduplication', 'enabled', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500 relative"></div>
+                        <span className={`text-xs font-bold ${protectionsConfig.deduplication?.enabled ? 'text-amber-400' : 'text-slate-500'}`}>
+                          {protectionsConfig.deduplication?.enabled ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Inbound Window */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Jendela Filter Pesan Masuk Kembar</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            {((protectionsConfig.deduplication?.content_window_ms || 3000) / 1000).toFixed(1)} detik ({protectionsConfig.deduplication?.content_window_ms || 3000} ms)
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1000"
+                          max="8000"
+                          step="500"
+                          value={protectionsConfig.deduplication?.content_window_ms || 3000}
+                          onChange={(e) => updateNestedProtections('deduplication', 'content_window_ms', parseInt(e.target.value) || 3000)}
+                          className="w-full accent-amber-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <p className="text-[11px] text-slate-400">
+                          Jika pelanggan secara tidak sengaja menekan tombol kirim 2x untuk pesan yang sama persis, bot hanya akan menjawab 1 kali.
+                        </p>
+                      </div>
+
+                      {/* Outbound Window */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Jendela Filter Pesan Keluar Kembar</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            {((protectionsConfig.deduplication?.outbound_window_ms || 4000) / 1000).toFixed(1)} detik ({protectionsConfig.deduplication?.outbound_window_ms || 4000} ms)
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1000"
+                          max="10000"
+                          step="500"
+                          value={protectionsConfig.deduplication?.outbound_window_ms || 4000}
+                          onChange={(e) => updateNestedProtections('deduplication', 'outbound_window_ms', parseInt(e.target.value) || 4000)}
+                          className="w-full accent-amber-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <p className="text-[11px] text-slate-400">
+                          Mencegah bot mengirim pesan jawaban yang persis sama ke nomor yang sama dalam waktu berdekatan.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Section: Conversation Buffer / Debounce */}
+                    <div className="pt-6 border-t border-slate-800 space-y-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                            <Zap className="w-4 h-4 text-cyan-400" />
+                            <span>Conversation Buffer (Debounce Penggabungan Pesan)</span>
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-1">
+                            Pelanggan di Indonesia sering mengetik terputus-putus seperti: "Halo min" (kirim), "karpet masjid ready?" (kirim), "bisa kirim hari ini?" (kirim).
+                          </p>
+                        </div>
+
+                        <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
+                          <span className="text-xs font-medium text-slate-300">Status Buffer:</span>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(protectionsConfig.conversation_buffer?.enabled)}
+                            onChange={(e) => updateNestedProtections('conversation_buffer', 'enabled', e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500 relative"></div>
+                          <span className={`text-xs font-bold ${protectionsConfig.conversation_buffer?.enabled ? 'text-cyan-400' : 'text-slate-500'}`}>
+                            {protectionsConfig.conversation_buffer?.enabled ? 'Aktif' : 'Nonaktif'}
+                          </span>
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-semibold text-slate-200">Waktu Tunggu Debounce</label>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                              {((protectionsConfig.conversation_buffer?.debounce_ms || 2000) / 1000).toFixed(1)} detik ({protectionsConfig.conversation_buffer?.debounce_ms || 2000} ms)
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1000"
+                            max="5000"
+                            step="500"
+                            value={protectionsConfig.conversation_buffer?.debounce_ms || 2000}
+                            onChange={(e) => updateNestedProtections('conversation_buffer', 'debounce_ms', parseInt(e.target.value) || 2000)}
+                            className="w-full accent-cyan-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          />
+                          <p className="text-[11px] text-slate-400">
+                            Bot akan menunggu selama durasi ini setelah pesan terakhir sebelum meracik jawaban AI lengkap.
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-semibold text-slate-200">Maksimum Item yang Ditampung</label>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                              {protectionsConfig.conversation_buffer?.max_buffer_items || 10} pesan berurutan
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="3"
+                            max="20"
+                            step="1"
+                            value={protectionsConfig.conversation_buffer?.max_buffer_items || 10}
+                            onChange={(e) => updateNestedProtections('conversation_buffer', 'max_buffer_items', parseInt(e.target.value) || 10)}
+                            className="w-full accent-cyan-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          />
+                          <p className="text-[11px] text-slate-400">
+                            Batas maksimal rentetan potongan chat yang digabungkan menjadi 1 prompt utuh untuk dijawab AI.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB 4: GLOBAL RATE & CIRCUIT BREAKER */}
+              {protectionsSubTab === 'global_rate' && (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
+                    <div className="pb-4 border-b border-slate-800">
+                      <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                        <Zap className="w-5 h-5 text-emerald-400" />
+                        <span>Batas Pengiriman Global & Keamanan Circuit Breaker</span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Menjaga volume kumulatif semua pesan keluar WhatsApp dari seluruh chat agar tidak memicu deteksi spam Meta dan menyediakan mekanisme penghentian otomatis saat terjadi kegagalan jaringan.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Global Rate Limit */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Batas Maksimal Pengiriman Global per Menit</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {protectionsConfig.cooldown?.global_max_per_minute || 25} pesan / menit
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10"
+                          max="80"
+                          step="5"
+                          value={protectionsConfig.cooldown?.global_max_per_minute || 25}
+                          onChange={(e) => updateNestedProtections('cooldown', 'global_max_per_minute', parseInt(e.target.value) || 25)}
+                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[11px] text-slate-500">
+                          <span>Sangat Aman (10)</span>
+                          <span>Standar Toko (25)</span>
+                          <span>Tinggi (80)</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Batas maksimal total pesan keluar WhatsApp dari bot ke seluruh nomor pelanggan dalam 1 menit. Jika melebihi batas ini, pengiriman berikutnya akan diantrikan otomatis.
+                        </p>
+                      </div>
+
+                      {/* Retry Count */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Maksimal Percobaan Kirim Ulang (Retry)</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700">
+                            {protectionsConfig.retry_limit?.max_retries || 2} kali percobaan
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="5"
+                          step="1"
+                          value={protectionsConfig.retry_limit?.max_retries || 2}
+                          onChange={(e) => updateNestedProtections('retry_limit', 'max_retries', parseInt(e.target.value) || 2)}
+                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Jika socket WhatsApp terputus mendadak saat bot hendak membalas, bot akan mencoba mengulang kirim sesuai angka ini.
+                        </p>
+                      </div>
+
+                      {/* Circuit Breaker Fail Threshold */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Ambang Batas Gagal Beruntun (Circuit Breaker)</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                            {protectionsConfig.retry_limit?.circuit_breaker_threshold || 3} kegagalan beruntun
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="2"
+                          max="10"
+                          step="1"
+                          value={protectionsConfig.retry_limit?.circuit_breaker_threshold || 3}
+                          onChange={(e) => updateNestedProtections('retry_limit', 'circuit_breaker_threshold', parseInt(e.target.value) || 3)}
+                          className="w-full accent-rose-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Jika pengiriman gagal berturut-turut hingga mencapai ambang batas ini, sistem akan memutus sirkuit untuk menghindari spamming socket yang rusak.
+                        </p>
+                      </div>
+
+                      {/* Circuit Breaker Timeout */}
+                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200">Durasi Istirahat Pemutus Sirkuit</label>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            {Math.round((protectionsConfig.retry_limit?.circuit_breaker_timeout_ms || 60000) / 1000)} detik
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10000"
+                          max="180000"
+                          step="10000"
+                          value={protectionsConfig.retry_limit?.circuit_breaker_timeout_ms || 60000}
+                          onChange={(e) => updateNestedProtections('retry_limit', 'circuit_breaker_timeout_ms', parseInt(e.target.value) || 60000)}
+                          className="w-full accent-amber-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                        />
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Waktu tunggu sebelum sistem mencoba mengalirkan kembali pesan setelah sirkuit terputus akibat kegagalan beruntun.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB 5: COMPLIANCE & OPT-OUT KEYWORDS */}
+              {protectionsSubTab === 'compliance' && (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                          <UserCheck className="w-5 h-5 text-purple-400" />
+                          <span>Kepatuhan WhatsApp & Kata Kunci Stop (Opt-Out)</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Memberikan opsi kepada pelanggan untuk berhenti menerima pesan otomatis, memenuhi ketentuan resmi WhatsApp Commerce Policy.
+                        </p>
+                      </div>
+
+                      {/* Enable Switch */}
+                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
+                        <span className="text-xs font-medium text-slate-300">Status Kepatuhan:</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(protectionsConfig.opt_in?.enabled)}
+                          onChange={(e) => updateNestedProtections('opt_in', 'enabled', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500 relative"></div>
+                        <span className={`text-xs font-bold ${protectionsConfig.opt_in?.enabled ? 'text-purple-400' : 'text-slate-500'}`}>
+                          {protectionsConfig.opt_in?.enabled ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </label>
+                    </div>
+
+                    {/* Opt-Out Keywords */}
+                    <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-200 block">
+                            Kata Kunci Stop / Berhenti Chat (Opt-Out)
+                          </label>
+                          <span className="text-[11px] text-slate-400">
+                            Jika pelanggan mengirim salah satu kata ini, bot berhenti mengirim pesan otomatis.
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-purple-400">
+                          {(protectionsConfig.opt_in?.opt_out_keywords || []).length} Kata Kunci
+                        </span>
+                      </div>
+
+                      {/* Chips List */}
+                      <div className="flex flex-wrap gap-2 min-h-[44px] p-3 rounded-xl bg-slate-900 border border-slate-800">
+                        {(protectionsConfig.opt_in?.opt_out_keywords || []).map((keyword) => (
+                          <span
+                            key={keyword}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/10 text-rose-300 border border-rose-500/20 text-xs font-medium"
+                          >
+                            <span>{keyword}</span>
+                            <button
+                              onClick={() => handleRemoveOptOutKeyword(keyword)}
+                              className="text-rose-400 hover:text-rose-200 transition-colors p-0.5"
+                              title="Hapus kata kunci"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Add Form */}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Tambah kata kunci baru (contoh: jangan kirim, unsub)..."
+                          value={newOptOutKeyword}
+                          onChange={(e) => setNewOptOutKeyword(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOptOutKeyword(); } }}
+                          className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        />
+                        <button
+                          onClick={handleAddOptOutKeyword}
+                          className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition-all flex items-center gap-1.5"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Tambah</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Opt-In Keywords */}
+                    <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-200 block">
+                            Kata Kunci Mulai / Aktifkan Kembali (Opt-In)
+                          </label>
+                          <span className="text-[11px] text-slate-400">
+                            Mengizinkan pelanggan yang sebelumnya berhenti untuk kembali berinteraksi dengan bot.
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-emerald-400">
+                          {(protectionsConfig.opt_in?.opt_in_keywords || []).length} Kata Kunci
+                        </span>
+                      </div>
+
+                      {/* Chips List */}
+                      <div className="flex flex-wrap gap-2 min-h-[44px] p-3 rounded-xl bg-slate-900 border border-slate-800">
+                        {(protectionsConfig.opt_in?.opt_in_keywords || []).map((keyword) => (
+                          <span
+                            key={keyword}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-xs font-medium"
+                          >
+                            <span>{keyword}</span>
+                            <button
+                              onClick={() => handleRemoveOptInKeyword(keyword)}
+                              className="text-emerald-400 hover:text-emerald-200 transition-colors p-0.5"
+                              title="Hapus kata kunci"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Add Form */}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Tambah kata kunci mulai (contoh: halo lagi, aktifkan)..."
+                          value={newOptInKeyword}
+                          onChange={(e) => setNewOptInKeyword(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOptInKeyword(); } }}
+                          className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                        />
+                        <button
+                          onClick={handleAddOptInKeyword}
+                          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all flex items-center gap-1.5"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Tambah</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB 6: SIMULATOR & TESTER */}
+              {protectionsSubTab === 'tester' && (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                          <Sliders className="w-5 h-5 text-emerald-400" />
+                          <span>Live Simulator & Pengujian Logika Anti-Spam</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Uji bagaimana sistem menghitung delay acak, simulasi mengetik, buffer penggabungan pesan, dan pemblokiran otomatis saat pelanggan melakukan klik spam beruntun.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { setSimAntiSpamCount(0); setSimAntiSpamLogs([]); }}
+                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all flex items-center gap-1.5"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset Test</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      {/* Left: Interactive Trigger Button */}
+                      <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between space-y-6">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-xs text-slate-400">
+                            <span>Frekuensi Klik Pengujian</span>
+                            <span className="font-bold text-emerald-400">{simAntiSpamCount} Pesan</span>
+                          </div>
+                          <div className="text-sm font-semibold text-white">
+                            Simulasi Chat Pelanggan Masuk
+                          </div>
+                          <p className="text-xs text-slate-400 leading-relaxed">
+                            Klik tombol di bawah ini beberapa kali secara cepat untuk melihat bagaimana algoritma bereaksi saat menerima pesan beruntun dari satu pengguna.
+                          </p>
+                        </div>
+
+                        <div className="space-y-3">
+                          <button
+                            onClick={handleSimulateAntiSpamSend}
+                            className={`w-full py-4 px-6 rounded-2xl font-bold text-sm transition-all transform active:scale-95 shadow-xl flex items-center justify-center gap-3 ${
+                              isSimulatingSpam
+                                ? 'bg-emerald-400 text-slate-950 scale-95'
+                                : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/20'
+                            }`}
+                          >
+                            <Send className="w-4 h-4" />
+                            <span>Kirim Chat Uji Coba (+1)</span>
+                          </button>
+                          
+                          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-slate-400 text-center">
+                            Batas flood saat ini: <strong className="text-rose-400 font-semibold">{protectionsConfig.flood_protection?.max_messages_per_minute || 15} pesan/menit</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Live Feed Log */}
+                      <div className="lg:col-span-2 bg-slate-950/60 border border-slate-800 rounded-2xl p-5 flex flex-col space-y-3 min-h-[320px]">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>Log Respon Anti-Spam Real-Time</span>
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            {simAntiSpamLogs.length} event tercatat
+                          </span>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto space-y-2 max-h-[300px] pr-1">
+                          {simAntiSpamLogs.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-2 text-slate-500">
+                              <Sliders className="w-8 h-8 opacity-40 text-emerald-400" />
+                              <p className="text-xs font-medium text-slate-400">Belum ada pengujian simulasi yang dijalankan.</p>
+                              <p className="text-[11px]">Klik tombol "Kirim Chat Uji Coba" di sebelah kiri untuk melihat evaluasi delay & proteksi secara langsung.</p>
+                            </div>
+                          ) : (
+                            simAntiSpamLogs.map((log, idx) => (
+                              <div
+                                key={idx}
+                                className={`p-3 rounded-xl border text-xs font-mono transition-all animate-in fade-in duration-150 ${
+                                  log.status === 'BLOCKED_FLOOD'
+                                    ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
+                                    : log.status === 'BUFFERED'
+                                    ? 'bg-amber-950/30 border-amber-500/40 text-amber-300'
+                                    : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between text-[11px] font-bold opacity-80 mb-1">
+                                  <span>{log.time}</span>
+                                  <span className="uppercase tracking-wider">#{log.count} - {log.status}</span>
+                                </div>
+                                <div className="text-slate-200 font-sans text-xs">{log.text}</div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sticky Footer Bar with Save Actions */}
+              <div className="sticky bottom-4 z-30 p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Sinkronisasi Perlindungan WhatsApp</h4>
+                    <p className="text-[11px] text-slate-400">
+                      Perubahan konfigurasi tersimpan langsung ke server backend & proteksi runtime.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <button
+                    onClick={handleLoadProtectionsDefaults}
+                    className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition-all"
+                  >
+                    Pulihkan Standar Aman
+                  </button>
+
+                  <button
+                    onClick={() => handleSaveProtections()}
+                    disabled={savingProtections}
+                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 disabled:opacity-50"
+                  >
+                    {savingProtections ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Simpan Semua Pengaturan</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
       {/* ADD / EDIT FAQ MODAL */}
       {showFaqModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
@@ -8329,94 +9851,119 @@ export default function Dashboard() {
 
       {/* MODAL: TAMBAH / EDIT PRODUK */}
       {showProductModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-xl rounded-3xl bg-[#0f172a] border border-slate-700 p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-xl rounded-3xl bg-[#0f172a] border border-slate-700/80 p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto transform animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shadow-sm">
                   <ShoppingBag className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">
+                  <h3 className="font-bold text-white text-base leading-snug">
                     {editingProduct ? `Edit Produk: ${editingProduct.title}` : 'Tambah Produk Baru ke Katalog'}
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Otomatis terhubung di WhatsApp Bot & memori pengetahuan AI Gemini
+                    Otomatis tersinkronisasi ke Bot WhatsApp & memori AI Gemini
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowProductModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                aria-label="Tutup modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSaveProduct} className="space-y-4">
-              {/* Image Preview & Upload Options */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                  <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Foto Produk</span>
-                </label>
-                <div className="flex flex-col sm:flex-row items-center gap-4 p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800">
-                  <div className="w-24 h-24 rounded-xl overflow-hidden bg-slate-950 border border-slate-700 flex items-center justify-center shrink-0 relative">
-                    <img
-                      src={imagePreview || '/catalog/karpet-masjid-turki.jpg'}
-                      alt="Preview"
-                      onError={(e) => {
-                        e.target.src = '/catalog/karpet-masjid-turki.jpg';
-                      }}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="flex-1 space-y-2 text-xs">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleImageFileChange}
-                      accept="image/*"
-                      className="hidden"
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-semibold border border-emerald-500/30 flex items-center gap-1.5 transition"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Pilih Foto dari Komputer</span>
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Mendukung format JPG, PNG, WEBP (maks. 5MB). Atau pilih preset foto karpet di bawah:
-                    </p>
-                    {/* Presets */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {[
-                        { label: 'Karpet Masjid', path: 'catalog/karpet-masjid-turki.jpg' },
-                        { label: 'Permadani Persia', path: 'catalog/karpet-persia-mewah.jpg' },
-                        { label: 'Nordic Scandi', path: 'catalog/karpet-scandi-modern.jpg' },
-                        { label: 'Bulu Shaggy', path: 'catalog/karpet-shaggy-bulu.jpg' },
-                        { label: 'Karpet Tile Kantor', path: 'catalog/karpet-kantor-tile.jpg' },
-                      ].map((preset) => (
-                        <button
-                          key={preset.path}
-                          type="button"
-                          onClick={() => {
-                            setProductForm((prev) => ({ ...prev, image: preset.path, imageBase64: '' }));
-                            setImagePreview(`/${preset.path}`);
-                          }}
-                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] transition"
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              {/* Tempat Upload Foto Produk */}
+              <div className="space-y-1.5">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImageFileChange}
+                  accept="image/*"
+                  className="hidden"
+                />
+
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Upload Foto Produk</span>
+                  </label>
+                  <span className="text-[10px] text-slate-500">JPG, PNG, WEBP (Maks. 5MB)</span>
                 </div>
+
+                {imagePreview ? (
+                  <div className="flex items-center gap-4 p-3 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-inner">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-950 border border-slate-700 shrink-0 relative shadow-sm">
+                      <img
+                        src={imagePreview}
+                        alt="Preview Foto Produk"
+                        onError={(e) => {
+                          e.target.src = '/catalog/karpet-masjid-turki.jpg';
+                        }}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <p className="text-xs font-semibold text-white truncate">
+                        {productForm.imageBase64 ? 'Foto Baru Berhasil Dipilih' : 'Foto Produk Aktif'}
+                      </p>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Foto ini akan ditampilkan pada pesan WhatsApp bot & katalog web.
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-[11px] font-semibold border border-emerald-500/30 flex items-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Ganti Foto</span>
+                        </button>
+                        {productForm.imageBase64 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProductForm((prev) => ({ ...prev, imageBase64: '' }));
+                              setImagePreview(editingProduct?.image ? (editingProduct.image.startsWith('http') ? editingProduct.image : `/${editingProduct.image.replace(/^assets\//, '')}`) : null);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 text-[11px] font-medium transition cursor-pointer"
+                          >
+                            Batal Ganti
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer?.files?.[0];
+                      if (file) processImageFile(file);
+                    }}
+                    className="border-2 border-dashed border-slate-700/80 hover:border-emerald-500/70 rounded-2xl p-4 bg-slate-900/50 hover:bg-slate-900/90 transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-3.5 text-center sm:text-left group"
+                  >
+                    <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition shrink-0 shadow-sm">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-200 group-hover:text-emerald-300 transition">
+                        Klik untuk upload foto atau seret file gambar ke sini
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Mendukung format JPG, PNG, atau WEBP hingga 5MB
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Category Selection */}
@@ -8424,21 +9971,21 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                     <Tag className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Kategori Karpet *</span>
+                    <span>Kategori Karpet <span className="text-rose-400">*</span></span>
                   </label>
                   <button
                     type="button"
                     onClick={handleOpenAddCategory}
-                    className="text-[11px] text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1 font-medium transition cursor-pointer"
                   >
                     <Plus className="w-3 h-3" />
-                    <span>+ Tambah Kategori Baru</span>
+                    <span>Tambah Kategori Baru</span>
                   </button>
                 </div>
                 <select
                   value={productForm.category || (carpetCategoriesList[0]?.name || 'Karpet Masjid & Musholla')}
                   onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))}
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition cursor-pointer"
                 >
                   {carpetCategoriesList.map((c) => (
                     <option key={c.name} value={c.name} className="bg-slate-900 text-white py-1">
@@ -8448,100 +9995,121 @@ export default function Dashboard() {
                 </select>
               </div>
 
-              {/* Grid 2 Cols: Title & Price */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Product Title (Full Width) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1">
+                  <span>Nama Produk Karpet</span>
+                  <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={productForm.title}
+                  onChange={(e) => {
+                    const title = e.target.value;
+                    setProductForm((prev) => ({
+                      ...prev,
+                      title,
+                      code: prev.code || title.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase().slice(0, 20),
+                    }));
+                  }}
+                  placeholder="Contoh: Karpet Minimalis Scandinavia Nordic Line"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
+                />
+              </div>
+
+              {/* Grid 2 Cols: Price & SKU Code */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Nama Produk Karpet *</label>
-                  <input
-                    type="text"
-                    required
-                    value={productForm.title}
-                    onChange={(e) => {
-                      const title = e.target.value;
-                      setProductForm((prev) => ({
-                        ...prev,
-                        title,
-                        code: prev.code || title.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase().slice(0, 20),
-                      }));
-                    }}
-                    placeholder="Contoh: Karpet Masjid Sultan Turki Grade A+"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Harga *</label>
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1">
+                    <span>Harga Produk</span>
+                    <span className="text-rose-400">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={productForm.price}
                     onChange={(e) => setProductForm((prev) => ({ ...prev, price: e.target.value }))}
-                    placeholder="Contoh: Rp 3.850.000"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                    placeholder="Contoh: Rp 1.450.000"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-emerald-400 font-semibold placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition font-mono"
                   />
                 </div>
-              </div>
-
-              {/* Grid 2 Cols: Code & Variations */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Kode SKU Produk</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-300">Kode SKU Produk</label>
+                    <span className="text-[10px] text-slate-500">(Opsional)</span>
+                  </div>
                   <input
                     type="text"
                     value={productForm.code}
                     onChange={(e) => setProductForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                    placeholder="Contoh: MASJID-TURKI-A"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">Pilihan Warna & Ukuran</label>
-                  <input
-                    type="text"
-                    value={productForm.footer}
-                    onChange={(e) => setProductForm((prev) => ({ ...prev, footer: e.target.value }))}
-                    placeholder="Contoh: Warna: Hijau Emerald & Merah Ruby. Ukuran: Roll 1.2m x 6m."
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    placeholder="Contoh: NORDIC-SCANDI"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition font-mono uppercase"
                   />
                 </div>
               </div>
 
-              {/* Subtitle / Description */}
+              {/* Color & Size Variants (Full Width) */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300">Deskripsi Singkat / Subtitle</label>
-                <textarea
-                  rows={2}
-                  value={productForm.subtitle}
-                  onChange={(e) => setProductForm((prev) => ({ ...prev, subtitle: e.target.value }))}
-                  placeholder="Contoh: Karpet masjid grade A benang polypropylene heattwist lembut, tebal 15mm dengan motif mihrab mewah."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 leading-relaxed font-sans"
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">Pilihan Warna & Ukuran (Varian)</label>
+                  <span className="text-[10px] text-slate-500">Info varian untuk bot</span>
+                </div>
+                <input
+                  type="text"
+                  value={productForm.footer}
+                  onChange={(e) => setProductForm((prev) => ({ ...prev, footer: e.target.value }))}
+                  placeholder="Contoh: Warna: Warm Beige, Ivory Cream & Charcoal | Ukuran: 160x230cm, 200x300cm"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
                 />
               </div>
 
-              {/* URL Link */}
+              {/* Subtitle / Description (Full Width) */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300">Link URL Produk (Opsional)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">Deskripsi Singkat / Spesifikasi</label>
+                  <span className="text-[10px] text-slate-500">Pengetahuan produk AI</span>
+                </div>
+                <textarea
+                  rows={3}
+                  value={productForm.subtitle}
+                  onChange={(e) => setProductForm((prev) => ({ ...prev, subtitle: e.target.value }))}
+                  placeholder="Contoh: Karpet ruang tamu modern minimalis bertekstur lembut, anti-slip backing, motif geometris kontemporer chic. Sangat nyaman untuk ruang keluarga."
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 leading-relaxed font-sans transition resize-none"
+                />
+              </div>
+
+              {/* Product Web URL (Optional) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Link URL Produk (Opsional)</span>
+                  </label>
+                  <span className="text-[10px] text-slate-500">Tautan website/marketplace</span>
+                </div>
                 <input
                   type="text"
                   value={productForm.url}
                   onChange={(e) => setProductForm((prev) => ({ ...prev, url: e.target.value }))}
-                  placeholder="https://sultancarpet.co.id/koleksi/..."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono text-[11px]"
+                  placeholder="https://sultancarpet.co.id/products/karpet-nordic-scandi"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 font-mono text-[11px] transition"
                 />
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowProductModal(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition cursor-pointer border border-slate-700/50"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={savingProduct}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-950/40 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {savingProduct ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   <span>{savingProduct ? 'Menyimpan...' : editingProduct ? 'Simpan Perubahan' : 'Simpan Produk Baru'}</span>

@@ -148,8 +148,8 @@ app.patch('/api/chats/:jid/profile', (req, res) => {
 // Restart Bot Connection
 app.post('/api/restart', async (req, res) => {
   try {
-    await bot.restart();
-    res.json({ success: true, message: 'Memulai ulang koneksi WhatsApp...' });
+    const result = await bot.restart();
+    res.json({ success: true, message: result?.message || 'Memulai ulang koneksi WhatsApp...' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -158,8 +158,8 @@ app.post('/api/restart', async (req, res) => {
 // Logout and Reset Session
 app.post('/api/logout', async (req, res) => {
   try {
-    await bot.logout();
-    res.json({ success: true, message: 'Sesi WhatsApp dibersihkan. QR Code baru akan dibuat.' });
+    const result = await bot.logout();
+    res.json({ success: true, message: result?.message || 'Sesi WhatsApp dibersihkan. QR Code baru akan dibuat.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -212,10 +212,12 @@ app.delete('/api/tickets/:id', (req, res) => {
 app.get('/api/protections', (req, res) => {
   const config = protectionService.getConfig();
   const stats = protectionService.getStats();
+  const blockedUsers = typeof protectionService.getBlockedUsersList === 'function' ? protectionService.getBlockedUsersList() : [];
   res.json({
     success: true,
     config,
-    stats
+    stats,
+    blockedUsers
   });
 });
 
@@ -223,10 +225,43 @@ app.post('/api/protections/config', (req, res) => {
   try {
     const newConfig = req.body;
     const config = menuHandler.getConfig();
-    config.protections = { ...config.protections, ...newConfig };
+    if (!config.protections) config.protections = {};
+
+    // Deep merge untuk menjaga sub-properti tidak hilang
+    for (const key of Object.keys(newConfig)) {
+      if (typeof newConfig[key] === 'object' && newConfig[key] !== null && !Array.isArray(newConfig[key])) {
+        config.protections[key] = {
+          ...(config.protections[key] || {}),
+          ...newConfig[key]
+        };
+      } else {
+        config.protections[key] = newConfig[key];
+      }
+    }
+
     menuHandler.saveConfig(config);
     broadcastSSE('protections_updated', config.protections);
-    res.json({ success: true, protections: config.protections });
+    res.json({ success: true, protections: config.protections, message: 'Pengaturan proteksi & anti-spam berhasil disimpan!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/protections/reset-stats', (req, res) => {
+  try {
+    const stats = protectionService.resetStats();
+    res.json({ success: true, stats, message: 'Statistik proteksi berhasil direset.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/protections/unblock', (req, res) => {
+  try {
+    const { jid } = req.body;
+    if (!jid) return res.status(400).json({ error: 'JID nomor telepon wajib disertakan.' });
+    const unblocked = protectionService.unblockUser(jid);
+    res.json({ success: true, unblocked, jid, message: `Nomor ${jid} berhasil dibuka blokirnya.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
