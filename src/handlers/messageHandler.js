@@ -263,6 +263,9 @@ class MessageHandler {
       const msg = record.lastMsg;
       if (!msg.message || msg.key.fromMe) return;
 
+      // Catat waktu awal pesan masuk dari customer untuk kalkulasi jeda respons tepat ~1 menit
+      msg._inboundTimestamp = record.startTime || Date.now();
+
       const config = menuHandler.getConfig();
       const rawText = record.texts.join(' \n ').trim();
       if (!rawText) return;
@@ -315,8 +318,10 @@ class MessageHandler {
         timestamp: new Date().toISOString()
       });
 
-      // Mark message as read
-      if (config.bot?.auto_read_messages) {
+      // Jika sistem proteksi cooldown aktif, tanda baca (read receipt / centang biru)
+      // akan ditunda secara alami (3-8 detik) di dalam waitForUserCooldown agar tidak terbaca 0ms robotik
+      const protections = protectionService.getConfig();
+      if (config.bot?.auto_read_messages && protections.cooldown?.enabled === false) {
         await sock.readMessages([msg.key]).catch(() => {});
       }
 
@@ -973,11 +978,11 @@ class MessageHandler {
       // 2. Global Rate Limiter (Token Bucket / Sliding Window)
       await protectionService.waitForGlobalRateLimit();
 
-      // 3. Per-User Cooldown + Natural Randomized Jitter
-      await protectionService.waitForUserCooldown(jid);
+      // 3. Per-User Cooldown + Natural Multi-Stage Human Simulation (~1 Menit)
+      const inboundTimestamp = originalMsg?._inboundTimestamp || (originalMsg?.messageTimestamp ? Number(originalMsg.messageTimestamp) * 1000 : null);
+      const originalKey = originalMsg?.key || null;
 
-      // 4. Simulasi Mengetik Alami ('composing')
-      await protectionService.simulateTypingPresence(sock, jid, textContent.length);
+      await protectionService.waitForUserCooldown(jid, inboundTimestamp, textContent.length, sock, originalKey);
 
       // 5. Kirim via Baileys dengan Retry Limit & Exponential Backoff + Unquoted Fallback
       const result = await protectionService.withRetry(async () => {

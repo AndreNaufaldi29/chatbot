@@ -493,12 +493,12 @@ export default function Dashboard() {
   const [protectionsConfig, setProtectionsConfig] = useState({
     cooldown: {
       enabled: true,
-      min_delay_ms: 2500,
-      max_delay_ms: 4000,
-      jitter_ms: 1000,
+      min_delay_ms: 55000,
+      max_delay_ms: 65000,
+      jitter_ms: 8000,
       typing_simulation: true,
       typing_speed_cpm: 300,
-      global_max_per_minute: 25,
+      global_max_per_minute: 20,
     },
     deduplication: {
       enabled: true,
@@ -1216,12 +1216,12 @@ export default function Dashboard() {
     const recommended = {
       cooldown: {
         enabled: true,
-        min_delay_ms: 2500,
-        max_delay_ms: 4000,
-        jitter_ms: 1000,
+        min_delay_ms: 55000,
+        max_delay_ms: 65000,
+        jitter_ms: 8000,
         typing_simulation: true,
         typing_speed_cpm: 300,
-        global_max_per_minute: 25
+        global_max_per_minute: 20
       },
       deduplication: {
         enabled: true,
@@ -8534,31 +8534,111 @@ export default function Dashboard() {
                       </label>
                     </div>
 
+                    {/* Quick Preset Buttons */}
+                    <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-300">Preset Kecepatan Balasan Cepat:</span>
+                        <span className="text-[11px] text-emerald-400 font-medium">🛡️ Jeda 1 Menit Direkomendasikan untuk Mencegah Ban Meta</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProtectionsConfig(prev => ({
+                              ...prev,
+                              cooldown: {
+                                ...prev.cooldown,
+                                enabled: true,
+                                min_delay_ms: 55000,
+                                max_delay_ms: 65000,
+                                jitter_ms: 8000
+                              }
+                            }));
+                            showToastMsg('Preset 1 Menit (Aman Meta) dipilih', 'info');
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                            protectionsConfig.cooldown?.min_delay_ms >= 50000 && protectionsConfig.cooldown?.min_delay_ms <= 60000
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
+                              : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/60'
+                          }`}
+                        >
+                          ⏱️ 1 Menit (Sangat Aman / Anti-Ban)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProtectionsConfig(prev => ({
+                              ...prev,
+                              cooldown: {
+                                ...prev.cooldown,
+                                enabled: true,
+                                min_delay_ms: 25000,
+                                max_delay_ms: 35000,
+                                jitter_ms: 5000
+                              }
+                            }));
+                            showToastMsg('Preset 30 Detik dipilih', 'info');
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                            protectionsConfig.cooldown?.min_delay_ms >= 20000 && protectionsConfig.cooldown?.min_delay_ms < 50000
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
+                              : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/60'
+                          }`}
+                        >
+                          ☕ 30 Detik (Santai)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProtectionsConfig(prev => ({
+                              ...prev,
+                              cooldown: {
+                                ...prev.cooldown,
+                                enabled: true,
+                                min_delay_ms: 8000,
+                                max_delay_ms: 12000,
+                                jitter_ms: 3000
+                              }
+                            }));
+                            showToastMsg('Preset 10 Detik dipilih', 'info');
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                            protectionsConfig.cooldown?.min_delay_ms >= 5000 && protectionsConfig.cooldown?.min_delay_ms < 20000
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
+                              : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/60'
+                          }`}
+                        >
+                          ⚡ 10 Detik (Cepat)
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {/* Min Delay */}
                       <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
                         <div className="flex items-center justify-between">
                           <label className="text-xs font-semibold text-slate-200">Delay Minimum (Waktu Tunggu Tercepat)</label>
                           <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            {((protectionsConfig.cooldown?.min_delay_ms || 2500) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.min_delay_ms || 2500} ms)
+                            {((protectionsConfig.cooldown?.min_delay_ms || 55000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.min_delay_ms || 55000} ms)
                           </span>
                         </div>
                         <input
                           type="range"
-                          min="500"
-                          max="10000"
-                          step="250"
-                          value={protectionsConfig.cooldown?.min_delay_ms || 2500}
-                          onChange={(e) => updateNestedProtections('cooldown', 'min_delay_ms', parseInt(e.target.value) || 2500)}
+                          min="1000"
+                          max="120000"
+                          step="1000"
+                          value={protectionsConfig.cooldown?.min_delay_ms || 55000}
+                          onChange={(e) => updateNestedProtections('cooldown', 'min_delay_ms', parseInt(e.target.value) || 1000)}
                           className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
                         />
                         <div className="flex justify-between text-[11px] text-slate-500">
-                          <span>Cepat (0.5s)</span>
-                          <span>Rekomendasi (2.5s)</span>
-                          <span>Lambat (10s)</span>
+                          <span>1 detik</span>
+                          <span>30 detik</span>
+                          <span>1 Menit (60s)</span>
+                          <span>2 Menit (120s)</span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-normal">
-                          Waktu minimum bot menahan balasan sebelum dikirim ke pengguna. Hindari nilai di bawah 1 detik pada nomor baru.
+                          Waktu minimum bot menahan balasan sejak pesan customer masuk. Nilai 50–60 detik sangat ideal untuk nomor bisnis agar terhindar dari pemblokiran Meta.
                         </p>
                       </div>
 
@@ -8567,25 +8647,26 @@ export default function Dashboard() {
                         <div className="flex items-center justify-between">
                           <label className="text-xs font-semibold text-slate-200">Delay Maksimum (Batas Atas)</label>
                           <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            {((protectionsConfig.cooldown?.max_delay_ms || 4000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.max_delay_ms || 4000} ms)
+                            {((protectionsConfig.cooldown?.max_delay_ms || 65000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.max_delay_ms || 65000} ms)
                           </span>
                         </div>
                         <input
                           type="range"
-                          min="1000"
-                          max="15000"
-                          step="250"
-                          value={protectionsConfig.cooldown?.max_delay_ms || 4000}
-                          onChange={(e) => updateNestedProtections('cooldown', 'max_delay_ms', parseInt(e.target.value) || 4000)}
+                          min="2000"
+                          max="180000"
+                          step="1000"
+                          value={protectionsConfig.cooldown?.max_delay_ms || 65000}
+                          onChange={(e) => updateNestedProtections('cooldown', 'max_delay_ms', parseInt(e.target.value) || 2000)}
                           className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
                         />
                         <div className="flex justify-between text-[11px] text-slate-500">
-                          <span>1 detik</span>
-                          <span>Rekomendasi (4.0s)</span>
-                          <span>15 detik</span>
+                          <span>2 detik</span>
+                          <span>1 Menit (60s)</span>
+                          <span>2 Menit (120s)</span>
+                          <span>3 Menit (180s)</span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-normal">
-                          Batas terlama jeda pengiriman sehingga respons pelanggan tetap cepat dan tidak merasa diabaikan.
+                          Batas terlama jeda pengiriman sehingga respons pelanggan tetap terjadwal teratur.
                         </p>
                       </div>
 
@@ -8594,22 +8675,23 @@ export default function Dashboard() {
                         <div className="flex items-center justify-between">
                           <label className="text-xs font-semibold text-slate-200">Jitter Acak (Variasi Waktu)</label>
                           <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            + 0 ~ {((protectionsConfig.cooldown?.jitter_ms || 1000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.jitter_ms || 1000} ms)
+                            + 0 ~ {((protectionsConfig.cooldown?.jitter_ms || 8000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.jitter_ms || 8000} ms)
                           </span>
                         </div>
                         <input
                           type="range"
                           min="0"
-                          max="4000"
-                          step="200"
-                          value={protectionsConfig.cooldown?.jitter_ms || 1000}
+                          max="20000"
+                          step="500"
+                          value={protectionsConfig.cooldown?.jitter_ms || 8000}
                           onChange={(e) => updateNestedProtections('cooldown', 'jitter_ms', parseInt(e.target.value) || 0)}
                           className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
                         />
                         <div className="flex justify-between text-[11px] text-slate-500">
                           <span>0s (Tetap)</span>
-                          <span>Rekomendasi (+1.0s)</span>
-                          <span>+4.0s</span>
+                          <span>+5.0s</span>
+                          <span>+8.0s (Rekomendasi)</span>
+                          <span>+20.0s</span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-normal">
                           Memberikan tambahan waktu acak di setiap balasan agar jeda tidak selalu bernilai sama persis (menghindari deteksi bot statis oleh algoritma Meta).

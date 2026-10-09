@@ -168,19 +168,19 @@
   "bot": {
     "name": "Sultan Carpet Assistant",
     "welcome_greeting": "Selamat datang di Sultan Carpet Gallery. Pusat karpet masjid import Turki kualitas terbaik, karpet klasik Persia sutra, karpet minimalis Scandinavia, karpet bulu shaggy, dan karpet tile kantor dengan layanan survey dan obras gratis.",
-    "cooldown_seconds": 3,
+    "cooldown_seconds": 60,
     "ignore_groups": true,
     "auto_read_messages": true
   },
   "protections": {
     "cooldown": {
       "enabled": true,
-      "min_delay_ms": 5500,
-      "max_delay_ms": 7750,
-      "jitter_ms": 4000,
+      "min_delay_ms": 55000,
+      "max_delay_ms": 65000,
+      "jitter_ms": 8000,
       "typing_simulation": true,
       "typing_speed_cpm": 300,
-      "global_max_per_minute": 25
+      "global_max_per_minute": 20
     },
     "deduplication": {
       "enabled": true,
@@ -190,7 +190,7 @@
     },
     "conversation_buffer": {
       "enabled": true,
-      "debounce_ms": 2000,
+      "debounce_ms": 3000,
       "max_buffer_items": 10,
       "max_context_turns": 6
     },
