@@ -107,6 +107,7 @@ export default function Dashboard() {
     qrDataUrl: null,
     connectedAt: null,
   });
+  const [restartingConn, setRestartingConn] = useState(false);
 
   // Data States
   const [chatLogs, setChatLogs] = useState([]);
@@ -988,13 +989,13 @@ export default function Dashboard() {
     }
   }, [activeTab]);
 
-  // Polling fallback untuk memastikan QR Code selalu termuat jika SSE mengalami jeda
+  // Polling fallback super responsif agar QR Code langsung muncul seketika jika SSE jeda
   useEffect(() => {
     if (activeTab === 'qr' && botStatus.status !== 'connected') {
       fetchStatus();
       const interval = setInterval(() => {
         fetchStatus();
-      }, 3000);
+      }, 1200);
       return () => clearInterval(interval);
     }
   }, [activeTab, botStatus.status]);
@@ -1569,6 +1570,7 @@ export default function Dashboard() {
   };
 
   const handleRestart = async () => {
+    if (restartingConn) return;
     const ok = await askConfirmation({
       title: 'Mulai Ulang Koneksi WhatsApp?',
       message: 'Sistem akan memuat ulang socket WhatsApp dan menyegarkan koneksi bot secara otomatis.',
@@ -1577,6 +1579,7 @@ export default function Dashboard() {
       type: 'info'
     });
     if (!ok) return;
+    setRestartingConn(true);
     try {
       showToastMsg('Memulai ulang koneksi WhatsApp...', 'info');
       setBotStatus((prev) => ({
@@ -1587,14 +1590,20 @@ export default function Dashboard() {
       const res = await fetch('/api/restart', { method: 'POST' });
       const data = await res.json();
       showToastMsg(data.message || 'Restart terkirim', 'success');
-      setTimeout(fetchStatus, 1200);
-      setTimeout(fetchStatus, 3000);
+      // Polling beruntun cepat agar QR Code langsung tampil seketika
+      setTimeout(fetchStatus, 300);
+      setTimeout(fetchStatus, 700);
+      setTimeout(fetchStatus, 1400);
+      setTimeout(fetchStatus, 2400);
     } catch (err) {
       showToastMsg('Gagal restart: ' + err.message, 'error');
+    } finally {
+      setTimeout(() => setRestartingConn(false), 1200);
     }
   };
 
   const handleLogout = async () => {
+    if (restartingConn) return;
     const ok = await askConfirmation({
       title: 'Logout Sesi WhatsApp?',
       message: 'Sesi WhatsApp aktif akan dihapus dari server dan Anda perlu melakukan scan QR ulang untuk menghubungkan kembali.',
@@ -1603,6 +1612,7 @@ export default function Dashboard() {
       type: 'danger'
     });
     if (!ok) return;
+    setRestartingConn(true);
     try {
       showToastMsg('Menghapus sesi & menyiapkan QR baru...', 'info');
       // Reset status secara optimis agar layar tidak menampilkan akun lama
@@ -1616,10 +1626,15 @@ export default function Dashboard() {
       const res = await fetch('/api/logout', { method: 'POST' });
       const data = await res.json();
       showToastMsg(data.message || 'Sesi dihapus. Menyiapkan QR Code baru...', 'success');
-      setTimeout(fetchStatus, 1200);
-      setTimeout(fetchStatus, 2500);
+      // Polling beruntun cepat agar QR Code langsung tampil seketika
+      setTimeout(fetchStatus, 300);
+      setTimeout(fetchStatus, 700);
+      setTimeout(fetchStatus, 1400);
+      setTimeout(fetchStatus, 2400);
     } catch (err) {
       showToastMsg('Gagal logout: ' + err.message, 'error');
+    } finally {
+      setTimeout(() => setRestartingConn(false), 1200);
     }
   };
 
@@ -5081,14 +5096,16 @@ export default function Dashboard() {
                 <div className="flex items-center gap-3 mt-6">
                   <button
                     onClick={handleRestart}
-                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition flex items-center gap-2"
+                    disabled={restartingConn}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Muat Ulang Koneksi</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${restartingConn ? 'animate-spin text-emerald-400' : ''}`} />
+                    <span>{restartingConn ? 'Memproses...' : 'Muat Ulang Koneksi'}</span>
                   </button>
                   <button
                     onClick={handleLogout}
-                    className="px-4 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-xs font-semibold text-rose-300 border border-rose-800/40 transition flex items-center gap-2"
+                    disabled={restartingConn}
+                    className="px-4 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-xs font-semibold text-rose-300 border border-rose-800/40 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     <span>Reset Sesi / Scan Ulang</span>

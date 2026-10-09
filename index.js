@@ -109,6 +109,25 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
+// Handle uncaught exceptions to prevent process termination on transient socket disconnects
+process.on('uncaughtException', (err) => {
+  const msg = err?.message || String(err || '');
+  if (
+    msg.includes('Bad MAC') ||
+    msg.includes('Over 2000 messages') ||
+    msg.includes('SessionError') ||
+    msg.includes('No matching sessions') ||
+    msg.includes('Decrypted message with closed session') ||
+    msg.includes('Connection Closed') ||
+    msg.includes('ECONNRESET') ||
+    msg.includes('EPIPE')
+  ) {
+    console.warn('[System] Mengabaikan error soket sementara:', msg);
+    return;
+  }
+  console.error('[Uncaught Exception]', err);
+});
+
 // Auto-clean corrupted ratchet session on unhandled rejection
 process.on('unhandledRejection', (reason) => {
   const msg = reason?.message || String(reason || '');

@@ -19,6 +19,15 @@ const dbService = require('./services/dbService');
 
 const AUTH_FOLDER = path.join(__dirname, '../auth_info_baileys');
 
+// Cache versi Baileys agar tidak memblokir handshake websocket saat restart / reset sesi
+let cachedBaileysVersion = [2, 3000, 1043857760];
+(async () => {
+  try {
+    const vInfo = await fetchLatestBaileysVersion();
+    if (vInfo?.version) cachedBaileysVersion = vInfo.version;
+  } catch (_) {}
+})();
+
 class WhatsAppBot extends EventEmitter {
   constructor() {
     super();
@@ -40,6 +49,7 @@ class WhatsAppBot extends EventEmitter {
   }
 
   async destroySocket() {
+    this.isInitializing = false;
     if (!this.sock) return;
     const oldSock = this.sock;
     this.sock = null;
@@ -47,6 +57,17 @@ class WhatsAppBot extends EventEmitter {
       console.log('[WhatsAppBot] Menutup dan membersihkan socket WhatsApp aktif...');
       if (oldSock.ev && typeof oldSock.ev.removeAllListeners === 'function') {
         oldSock.ev.removeAllListeners();
+        if (typeof oldSock.ev.on === 'function') {
+          oldSock.ev.on('error', () => {});
+        }
+      }
+      if (oldSock.ws) {
+        if (typeof oldSock.ws.on === 'function') {
+          oldSock.ws.on('error', () => {});
+        }
+        if (typeof oldSock.ws.close === 'function') {
+          try { oldSock.ws.close(); } catch (_) {}
+        }
       }
       oldSock.end(undefined);
     } catch (err) {
@@ -115,16 +136,8 @@ class WhatsAppBot extends EventEmitter {
       }
 
       const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-      let version = [2, 3000, 1015901307];
-      let isLatest = false;
-      try {
-        const vInfo = await fetchLatestBaileysVersion();
-        version = vInfo.version;
-        isLatest = vInfo.isLatest;
-      } catch (vErr) {
-        console.warn('[WhatsAppBot] Gagal mengambil versi Baileys via web, menggunakan fallback:', vErr.message);
-      }
-      console.log(`[WhatsAppBot] Menggunakan WA Web v${version.join('.')}, isLatest: ${isLatest}`);
+      const version = cachedBaileysVersion || [2, 3000, 1043857760];
+      console.log(`[WhatsAppBot] Menggunakan WA Web v${version.join('.')}`);
 
       this.sock = makeWASocket({
         version,
@@ -132,9 +145,9 @@ class WhatsAppBot extends EventEmitter {
         printQRInTerminal: false, // We'll handle terminal QR explicitly with qrcode-terminal
         auth: state,
         browser: ['WhatsApp CS Bot', 'Chrome', '1.0.0'],
-        defaultQueryTimeoutMs: 60000,
-        connectTimeoutMs: 60000,
-        syncFullHistory: true, // Enable full WhatsApp chat and message history sync
+        defaultQueryTimeoutMs: 30000,
+        connectTimeoutMs: 30000,
+        syncFullHistory: false, // Nonaktifkan sync history berat agar QR barcode muncul seketika!
         shouldIgnoreJid: (jid) => {
           // Abaikan status cerita & siaran newsletter agar tidak memicu error dekripsi sesi
           return (
@@ -505,6 +518,8 @@ class WhatsAppBot extends EventEmitter {
       console.error('[WhatsAppBot] Error inisialisasi Baileys:', err);
       this.status = 'disconnected';
       this.emit('status_change', { status: this.status, error: err.message });
+    } finally {
+      this.isInitializing = false;
     }
   }
 
@@ -778,46 +793,28 @@ class WhatsAppBot extends EventEmitter {
     }
   }
 
-  async safeClearSessionFolder(retries = 6, delayMs = 350) {
+  async safeClearSessionFolder(retries = 4, delayMs = 120) {
     if (!fs.existsSync(AUTH_FOLDER)) return;
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        const files = fs.readdirSync(AUTH_FOLDER);
-        for (const f of files) {
-          const fullPath = path.join(AUTH_FOLDER, f);
-          try {
-            const stat = fs.lstatSync(fullPath);
-            if (stat.isDirectory()) {
-              fs.rmSync(fullPath, { recursive: true, force: true });
-            } else {
-              fs.unlinkSync(fullPath);
-            }
-          } catch (_) {
-            // File might still be locked briefly by OS handle
-          }
-        }
-
-        const remaining = fs.readdirSync(AUTH_FOLDER);
-        if (remaining.length === 0) {
-          try {
-            fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-          } catch (_) {}
-          console.log('[WhatsAppBot] Folder sesi auth_info_baileys berhasil dibersihkan.');
-          return;
-        }
-      } catch (err) {
-        // Retry
-      }
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-
-    try {
-      if (fs.existsSync(AUTH_FOLDER)) {
         fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+        console.log('[WhatsAppBot] Folder sesi auth_info_baileys berhasil dibersihkan.');
+        return;
+      } catch (err) {
+        // Pada Windows, jika ada file handle yang sedang dilepaskan, hapus file individual
+        try {
+          const files = fs.readdirSync(AUTH_FOLDER);
+          for (const f of files) {
+            try {
+              fs.unlinkSync(path.join(AUTH_FOLDER, f));
+            } catch (_) {}
+          }
+        } catch (_) {}
       }
-    } catch (e) {
-      console.warn('[WhatsAppBot] Catatan pembersihan akhir sesi:', e.message);
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
     }
   }
 
@@ -839,24 +836,29 @@ class WhatsAppBot extends EventEmitter {
 
     console.log('[WhatsAppBot] Memulai proses logout dan reset sesi WhatsApp...');
 
-    try {
-      if (this.sock) {
-        await this.sock.logout().catch((err) => {
-          console.warn('[WhatsAppBot] Catatan Baileys logout:', err.message);
-        });
+    // Hanya panggil sock.logout() jika status benar-benar terhubung
+    // Batasi timeout 800ms agar tidak menggantung jika server WA tidak merespons
+    if (this.sock && this.status === 'connected') {
+      try {
+        await Promise.race([
+          this.sock.logout().catch((err) => {
+            console.warn('[WhatsAppBot] Catatan Baileys logout:', err.message);
+          }),
+          new Promise((resolve) => setTimeout(resolve, 800))
+        ]);
+      } catch (err) {
+        console.error('[WhatsAppBot] Error saat logout socket:', err.message);
       }
-    } catch (err) {
-      console.error('[WhatsAppBot] Error saat logout socket:', err.message);
     }
 
     await this.destroySocket();
 
-    // Beri jeda kecil agar handle file OS Windows dilepas sepenuhnya
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Jeda minimal agar handle file OS Windows terlepas
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     await this.safeClearSessionFolder();
 
-    this.status = 'disconnected';
+    this.status = 'connecting';
     this.userInfo = null;
     this.qrCodeRaw = null;
     this.qrCodeDataUrl = null;
@@ -870,11 +872,11 @@ class WhatsAppBot extends EventEmitter {
       qrDataUrl: null
     });
 
-    // Inisialisasi ulang socket secara bersih untuk langsung menghasilkan QR Code baru
+    // Inisialisasi ulang socket secara cepat untuk langsung menghasilkan QR Code baru
     setTimeout(async () => {
       this.isLoggingOut = false;
       await this.init();
-    }, 1200);
+    }, 200);
 
     return { success: true, message: 'Sesi WhatsApp dibersihkan. Memuat QR Code baru...' };
   }
@@ -922,7 +924,7 @@ class WhatsAppBot extends EventEmitter {
     setTimeout(async () => {
       this.isRestarting = false;
       await this.init();
-    }, 1200);
+    }, 200);
 
     return { success: true, message: 'Koneksi WhatsApp sedang dimuat ulang...' };
   }
