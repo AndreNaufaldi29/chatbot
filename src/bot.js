@@ -2,7 +2,8 @@ const {
   default: makeWASocket,
   DisconnectReason,
   useMultiFileAuthState,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  Browsers
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcodeTerminal = require('qrcode-terminal');
@@ -106,11 +107,9 @@ class WhatsAppBot extends EventEmitter {
         console.warn('[WhatsAppBot] Handler reload notice:', e.message);
       }
 
-      // Bersihkan sesi ratchet lama yang berpotensi rusak (Bad MAC / 2000 messages into future)
-      // Login utama (creds.json) tetap aman dan terjaga
-      this.cleanCorruptedRatchetSessions();
-
-      // Cek apakah creds.json ada namun belum teregistrasi (misal scan belum selesai sebelum refresh/logout)
+      // Cek integritas file creds.json: hanya bersihkan jika file kosong atau JSON rusak/korup.
+      // JANGAN membersihkan sesi jika registered masih false karena saat pairing/scan QR,
+      // Baileys memerlukan credentials yang tersimpan tersebut untuk menyelesaikan handshake login!
       const credsPath = path.join(AUTH_FOLDER, 'creds.json');
       if (fs.existsSync(credsPath)) {
         let shouldWipe = false;
@@ -119,14 +118,10 @@ class WhatsAppBot extends EventEmitter {
           if (!rawCreds || !rawCreds.trim()) {
             shouldWipe = true;
           } else {
-            const parsedCreds = JSON.parse(rawCreds);
-            if (!parsedCreds || parsedCreds.registered === false) {
-              console.log('[WhatsAppBot] Sesi sebelumnya belum selesai di-scan (unregistered). Membersihkan sesi...');
-              shouldWipe = true;
-            }
+            JSON.parse(rawCreds);
           }
         } catch (parseErr) {
-          console.warn('[WhatsAppBot] File creds.json tidak valid atau korup. Membersihkan sesi...', parseErr.message);
+          console.warn('[WhatsAppBot] File creds.json korup atau tidak valid JSON. Membersihkan sesi...', parseErr.message);
           shouldWipe = true;
         }
 
@@ -144,7 +139,7 @@ class WhatsAppBot extends EventEmitter {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false, // We'll handle terminal QR explicitly with qrcode-terminal
         auth: state,
-        browser: ['WhatsApp CS Bot', 'Chrome', '1.0.0'],
+        browser: Browsers.windows('Desktop'),
         defaultQueryTimeoutMs: 30000,
         connectTimeoutMs: 30000,
         syncFullHistory: false, // Nonaktifkan sync history berat agar QR barcode muncul seketika!
@@ -238,11 +233,29 @@ class WhatsAppBot extends EventEmitter {
             return;
           }
 
+          // 1. Restart required oleh Baileys (515 atau Stream Errored / restart required)
+          // INI NORMAL & WAJIB SAAT SCAN QR BERHASIL DITERIMA OLEH SERVER WHATSAPP!
+          const isRestartRequired =
+            statusCode === DisconnectReason.restartRequired ||
+            statusCode === 515 ||
+            (errorMsg && (errorMsg.includes('restart required') || errorMsg.includes('Stream Errored')));
+
+          if (isRestartRequired) {
+            console.log('[WhatsAppBot] 🔄 Scan QR diterima / restart Baileys (515). Menyambungkan kembali untuk menyelesaikan login...');
+            this.status = 'connecting';
+            this.emit('status_change', { status: 'connecting', user: this.userInfo, qrDataUrl: null });
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
+              this.init();
+            }, 800);
+            return;
+          }
+
           this.status = 'disconnected';
           this.userInfo = null;
           this.emit('status_change', { status: this.status, user: null, qrDataUrl: null, reason: statusCode });
 
-          // 1. Sesi logout dari WhatsApp (401 / loggedOut)
+          // 2. Sesi logout dari WhatsApp (401 / loggedOut)
           if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
             console.log('[WhatsAppBot] Sesi telah logout atau kedaluwarsa dari WhatsApp. Membersihkan sesi...');
             await this.destroySocket();
@@ -258,7 +271,7 @@ class WhatsAppBot extends EventEmitter {
             return;
           }
 
-          // 2. QR Code timeout (408) tanpa user login
+          // 3. QR Code timeout (408) tanpa user login
           if ((statusCode === DisconnectReason.timedOut || statusCode === 408) && !this.userInfo) {
             console.log('[WhatsAppBot] QR Code kedaluwarsa (timed out). Menyiapkan QR Code baru...');
             this.qrCodeRaw = null;
@@ -269,16 +282,6 @@ class WhatsAppBot extends EventEmitter {
             this.reconnectTimer = setTimeout(() => {
               this.init();
             }, 2000);
-            return;
-          }
-
-          // 3. Restart required oleh Baileys (515)
-          if (statusCode === DisconnectReason.restartRequired || statusCode === 515) {
-            console.log('[WhatsAppBot] Restart koneksi diperlukan oleh Baileys (515). Menyambung kembali...');
-            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(() => {
-              this.init();
-            }, 1500);
             return;
           }
 
@@ -906,15 +909,15 @@ class WhatsAppBot extends EventEmitter {
 
     await this.destroySocket();
 
-    // Jika creds.json belum terdaftar (unregistered), bersihkan agar QR baru segera terbit
+    // Hanya bersihkan folder jika creds.json rusak/kosong (jangan bersihkan jika sedang pairing)
     try {
       const credsPath = path.join(AUTH_FOLDER, 'creds.json');
       if (fs.existsSync(credsPath)) {
         const raw = fs.readFileSync(credsPath, 'utf8');
-        const creds = JSON.parse(raw);
-        if (!creds || creds.registered === false) {
-          console.log('[WhatsAppBot] Sesi belum terdaftar pada restart. Membersihkan sesi lama...');
+        if (!raw || !raw.trim()) {
           await this.safeClearSessionFolder();
+        } else {
+          JSON.parse(raw);
         }
       }
     } catch (_) {
