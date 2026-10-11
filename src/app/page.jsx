@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import {
   QrCode,
   MessageSquare,
@@ -203,6 +204,33 @@ export default function Dashboard() {
   const [loadingCustomerQuestions, setLoadingCustomerQuestions] = useState(false);
   const [faqSubTab, setFaqSubTab] = useState('qa_list'); // 'qa_list' | 'customer_insights' | 'web_crawler'
   const [syncingFaqsToAi, setSyncingFaqsToAi] = useState(false);
+  const [faqImporting, setFaqImporting] = useState(false);
+  const excelFileInputRef = useRef(null);
+  const [faqCustomCategories, setFaqCustomCategories] = useState([]);
+
+  const defaultFaqCategories = [
+    'Karpet Masjid & Musholla',
+    'Pemasangan & Obras',
+    'Survey & Sampel',
+    'Promo & Diskon',
+    'Garansi & Keaslian',
+    'Nego & Pembayaran',
+    'Ketersediaan Stok',
+    'Komplain & Retur',
+    'Umum'
+  ];
+
+  const allFaqCategories = React.useMemo(() => {
+    const set = new Set([
+      ...defaultFaqCategories,
+      ...(config?.faq_categories || []),
+      ...(faqCustomCategories || [])
+    ]);
+    (faqs || []).forEach((f) => {
+      if (f.category && f.category.trim()) set.add(f.category.trim());
+    });
+    return Array.from(set);
+  }, [config?.faq_categories, faqCustomCategories, faqs]);
 
   // Web Crawler / Scraper States
   const [crawledPages, setCrawledPages] = useState([]);
@@ -464,6 +492,7 @@ export default function Dashboard() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [togglingAiJid, setTogglingAiJid] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
+  const [previewImageModal, setPreviewImageModal] = useState(null);
 
   // Hands-Off (Human Handoff & CS Takeover) State
   const [handoffConfig, setHandoffConfig] = useState({
@@ -475,7 +504,7 @@ export default function Dashboard() {
     release_notice: 'Bot asisten Sultan Carpet telah aktif kembali. Silakan ketik pertanyaan atau konsultasi karpet Anda.'
   });
   const [savingHandoffConfig, setSavingHandoffConfig] = useState(false);
-  const [handoffSubTab, setHandoffSubTab] = useState('contacts'); // 'contacts' | 'rules' | 'tester'
+  const [handoffSubTab, setHandoffSubTab] = useState('rules'); // 'rules' | 'tester'
   const [handoffSearch, setHandoffSearch] = useState('');
   const [handoffFilter, setHandoffFilter] = useState('all'); // 'all' | 'handoff' | 'ai'
   const [newHandoffKeyword, setNewHandoffKeyword] = useState('');
@@ -624,6 +653,7 @@ export default function Dashboard() {
     fetchChats();
     fetchDbStatus();
     fetchFaqs();
+    fetchFaqCategories();
     fetchCustomerQuestions();
     fetchCrawledPages();
 
@@ -929,6 +959,13 @@ export default function Dashboard() {
       } catch (err) {}
     });
 
+    eventSource.addEventListener('faq_categories_updated', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (Array.isArray(data)) setFaqCustomCategories(data);
+      } catch (err) {}
+    });
+
     return () => {
       eventSource.close();
     };
@@ -1009,6 +1046,11 @@ export default function Dashboard() {
         const unique = [];
         const seen = new Set();
         for (const item of data) {
+          if (!item || !Array.isArray(item.messages) || item.messages.length === 0) continue;
+          const hasRealMessage = item.messages.some(
+            (m) => m && m.id && !m.id.startsWith('sync_init_') && !m.id.startsWith('contact_init_')
+          );
+          if (!hasRealMessage) continue;
           const k = item.jid || item.phone;
           if (k && !seen.has(k)) {
             seen.add(k);
@@ -1016,7 +1058,7 @@ export default function Dashboard() {
           }
         }
         setConversations(unique);
-        if (unique.length > 0 && !selectedChatJid) {
+        if (unique.length > 0 && (!selectedChatJid || !unique.some(c => c.jid === selectedChatJid || c.phone === selectedChatJid))) {
           setSelectedChatJid(unique[0].jid || unique[0].phone);
         }
       }
@@ -1104,6 +1146,9 @@ export default function Dashboard() {
       }
       if (data.faqs && Array.isArray(data.faqs)) {
         setFaqs(data.faqs);
+      }
+      if (data.faq_categories && Array.isArray(data.faq_categories)) {
+        setFaqCustomCategories(data.faq_categories);
       }
       if (data.protections) {
         setProtectionsConfig((prev) => ({
@@ -1886,7 +1931,7 @@ export default function Dashboard() {
         id: '',
         q: prefill.q || prefill.text || '',
         a: prefill.a || '',
-        category: prefill.category || 'Karpet Masjid & Musholla',
+        category: prefill.category || '',
         source: prefill.source || (prefill.senderName ? `WhatsApp: ${prefill.senderName}` : 'Chat WhatsApp Pelanggan')
       });
       setEditingFaq(null);
@@ -1895,7 +1940,7 @@ export default function Dashboard() {
         id: '',
         q: '',
         a: '',
-        category: 'Karpet Masjid & Musholla',
+        category: '',
         source: 'Input Admin'
       });
       setEditingFaq(null);
@@ -1909,7 +1954,7 @@ export default function Dashboard() {
       id: faq.id || '',
       q: faq.q || '',
       a: faq.a || '',
-      category: faq.category || 'Karpet Masjid & Musholla',
+      category: faq.category || '',
       source: faq.source || 'Input Admin'
     });
     setShowFaqModal(true);
@@ -1921,6 +1966,14 @@ export default function Dashboard() {
       showToastMsg('Pertanyaan dan jawaban wajib diisi!', 'error');
       return;
     }
+    const cleanCategory = (faqForm.category || '').trim() || 'Umum';
+    const payload = {
+      ...faqForm,
+      category: cleanCategory,
+      q: faqForm.q.trim(),
+      a: faqForm.a.trim(),
+      source: (faqForm.source || '').trim() || 'Input Admin'
+    };
     setFaqSaving(true);
     try {
       let res;
@@ -1928,13 +1981,13 @@ export default function Dashboard() {
         res = await fetch(`/api/faqs/${editingFaq.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(faqForm)
+          body: JSON.stringify(payload)
         });
       } else {
         res = await fetch('/api/faqs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(faqForm)
+          body: JSON.stringify(payload)
         });
       }
       const data = await res.json();
@@ -1991,6 +2044,226 @@ export default function Dashboard() {
       setSyncingFaqsToAi(false);
     }
   };
+
+  const handleDownloadFaqTemplate = () => {
+    try {
+      const templateData = [
+        {
+          'Pertanyaan': 'Apakah karpet masjid bisa dipotong dan diobras langsung di lokasi masjid?',
+          'Jawaban': 'Ya, betul. Tim teknisi Sultan Carpet membawa mesin obras portable langsung ke lokasi masjid Anda sehingga pemotongan dan obras dilakukan presisi mengikuti pilar dan arah shaf kiblat.',
+          'Kategori': 'Pemasangan & Obras'
+        },
+        {
+          'Pertanyaan': 'Bagaimana ketentuan garansi karpet di Sultan Carpet Gallery?',
+          'Jawaban': 'Kami memberikan garansi keaslian 100% serat benang import Turki dan garansi kerapian jahitan obras selama 1 tahun. Jika ada sambungan obras lepas, tim kami siap servis gratis.',
+          'Kategori': 'Garansi & Keaslian'
+        },
+        {
+          'Pertanyaan': 'Apakah melayani survey lokasi dan membawakan sampel karpet?',
+          'Jawaban': 'Tentu! Kami menyediakan layanan survey gratis untuk wilayah Jabodetabek. Tim kami membawakan sampel ketebalan karpet dan mengukur luas ruangan masjid secara presisi.',
+          'Kategori': 'Survey & Sampel'
+        },
+        {
+          'Pertanyaan': 'Berapa minimal pemesanan karpet custom roll di Sultan Carpet?',
+          'Jawaban': 'Minimal pemesanan karpet custom roll adalah 1 roll (panjang 6 meter x lebar 1.2 meter). Untuk ukuran ruangan khusus dapat dikonsultasikan langsung bersama tim CS kami.',
+          'Kategori': 'Karpet Masjid & Musholla'
+        }
+      ];
+
+      const worksheet = XLSX.utils.json_to_sheet(templateData);
+      worksheet['!cols'] = [
+        { wch: 45 },
+        { wch: 65 },
+        { wch: 25 }
+      ];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Template Tanya Jawab AI');
+      XLSX.writeFile(workbook, 'template_tanya_jawab_ai.xlsx');
+      showToastMsg('Template Excel berhasil diunduh! Silakan isi lalu upload kembali.', 'success');
+    } catch (err) {
+      console.warn('Client-side Excel generation fallback:', err);
+      window.location.href = '/api/faqs/template';
+    }
+  };
+
+  const handleUploadExcelFaq = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset input agar dapat memilih file yang sama jika user mengeditnya
+    e.target.value = '';
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+      showToastMsg('Format file tidak didukung. Harap upload file Excel .xlsx, .xls, atau .csv', 'error');
+      return;
+    }
+
+    setFaqImporting(true);
+    showToastMsg('Membaca & memproses file Excel...', 'info');
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        throw new Error('File Excel tidak memiliki lembar kerja (worksheet).');
+      }
+
+      const worksheet = workbook.Sheets[sheetName];
+      const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+      if (!rawRows || rawRows.length === 0) {
+        showToastMsg('File Excel kosong atau tidak memiliki baris data.', 'error');
+        setFaqImporting(false);
+        return;
+      }
+
+      const parsedItems = [];
+      for (const row of rawRows) {
+        let q = '';
+        let a = '';
+        let category = 'Karpet Masjid & Musholla';
+
+        for (const [key, val] of Object.entries(row)) {
+          const cleanKey = String(key || '').trim().toLowerCase();
+          const strVal = String(val !== undefined && val !== null ? val : '').trim();
+
+          if (
+            cleanKey.includes('pertanyaan') ||
+            cleanKey.includes('tanya') ||
+            cleanKey.includes('soal') ||
+            cleanKey === 'q' ||
+            cleanKey === 'question'
+          ) {
+            if (!q) q = strVal;
+          } else if (
+            cleanKey.includes('jawaban') ||
+            cleanKey.includes('jawab') ||
+            cleanKey.includes('balasan') ||
+            cleanKey === 'a' ||
+            cleanKey === 'answer'
+          ) {
+            if (!a) a = strVal;
+          } else if (
+            cleanKey.includes('kategori') ||
+            cleanKey.includes('category') ||
+            cleanKey.includes('topik') ||
+            cleanKey.includes('topic')
+          ) {
+            if (strVal) category = strVal;
+          }
+        }
+
+        // Fallback jika nama kolom tidak cocok tapi ada data di baris
+        if (!q && !a && Object.values(row).length >= 2) {
+          const values = Object.values(row).map((v) => String(v || '').trim());
+          if (values[0] && values[1]) {
+            q = values[0];
+            a = values[1];
+            if (values[2]) category = values[2];
+          }
+        }
+
+        if (q && a) {
+          parsedItems.push({
+            q,
+            a,
+            category: category || 'Umum',
+            source: `Import Excel: ${file.name}`
+          });
+        }
+      }
+
+      if (parsedItems.length === 0) {
+        showToastMsg('Tidak ditemukan data Tanya & Jawab valid. Pastikan kolom "Pertanyaan" dan "Jawaban" terisi.', 'error');
+        setFaqImporting(false);
+        return;
+      }
+
+      // Simpan ke database/sistem: coba batch endpoint lebih dulu
+      let savedSuccessfully = false;
+      let finalFaqs = null;
+      let addedCount = 0;
+      let updatedCount = 0;
+
+      try {
+        const batchRes = await fetch('/api/faqs/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: parsedItems })
+        });
+        if (batchRes.ok) {
+          const batchData = await batchRes.json();
+          if (batchData.success) {
+            savedSuccessfully = true;
+            finalFaqs = batchData.faqs;
+            addedCount = batchData.addedCount;
+            updatedCount = batchData.updatedCount;
+          }
+        }
+      } catch (e) {
+        // Fallback jika batch belum respons
+      }
+
+      // Fallback: simpan berurutan via POST /api/faqs jika batch belum tersedia
+      if (!savedSuccessfully) {
+        for (const item of parsedItems) {
+          try {
+            const res = await fetch('/api/faqs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(item)
+            });
+            const data = await res.json();
+            if (data.success && data.faqs) {
+              finalFaqs = data.faqs;
+              addedCount++;
+            }
+          } catch (err) {}
+        }
+        if (addedCount > 0) savedSuccessfully = true;
+      }
+
+      if (savedSuccessfully) {
+        if (finalFaqs) {
+          setFaqs(finalFaqs);
+        } else {
+          fetchFaqs();
+        }
+        showToastMsg(
+          `🎉 Sukses! ${addedCount} Tanya-Jawab baru berhasil ditambahkan${updatedCount > 0 ? ` & ${updatedCount} diperbarui` : ''} dari file Excel!`,
+          'success'
+        );
+        fetchCustomerQuestions();
+      } else {
+        showToastMsg('Gagal menyimpan data Tanya-Jawab ke server.', 'error');
+      }
+    } catch (err) {
+      console.error('Error importing Excel FAQ:', err);
+      showToastMsg('Gagal memproses file Excel: ' + err.message, 'error');
+    } finally {
+      setFaqImporting(false);
+    }
+  };
+
+  const fetchFaqCategories = async () => {
+    try {
+      const res = await fetch('/api/faqs/categories');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.customCategories)) {
+          setFaqCustomCategories(data.customCategories);
+        } else if (Array.isArray(data.categories)) {
+          setFaqCustomCategories(data.categories);
+        }
+      }
+    } catch (e) {
+      console.warn('Gagal memuat kategori faq:', e.message);
+    }
+  };
+
+
 
   const sendDirectWaMessage = (phone, text) => {
     let targetPhone = phone || ownerSettings?.phone || businessSettings?.phone || '6281298765432';
@@ -3004,16 +3277,34 @@ export default function Dashboard() {
   // Helper to format WhatsApp markdown and media tags into HTML
   const formatWaText = (text) => {
     if (!text) return '';
-    let s = text
+    let s = String(text);
+
+    // Hapus seluruh teks placeholder foto atau pelanggan tanpa konten
+    if (
+      /^\[Foto(\s+pelanggan)?\]$/i.test(s.trim()) ||
+      s.trim().toLowerCase() === 'pelanggan' ||
+      s.trim().toLowerCase() === '[foto terkirim]'
+    ) {
+      return '';
+    }
+
+    // Ekstrak hanya caption foto jika ada, hapus badge "Foto Diterima" dan kata "pelanggan"
+    s = s.replace(/\[Foto(?::\s*([^\]]*)|(\s+pelanggan)?)\]/gi, (match, caption) => {
+      const cap = (caption || '').trim();
+      if (!cap || cap.toLowerCase() === 'pelanggan') return '';
+      return cap;
+    });
+
+    s = s.replace(/\[Foto Terkirim\]/gi, '');
+    s = s.trim();
+    if (!s || s.toLowerCase() === 'pelanggan') return '';
+
+    s = s
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
 
-    // Format media indicators (photos, videos, stickers, docs, voice)
-    s = s.replace(/\[Foto:?([^\]]*)\]/g, (match, caption) => {
-      const capText = caption && caption.trim() ? `<div class="mt-1 text-slate-200 text-xs font-normal">${caption.trim()}</div>` : '';
-      return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-medium my-0.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>Foto Diterima</div>${capText}`;
-    });
+    // Format media indicators (videos, stickers, docs, voice)
     s = s.replace(/\[Video:?([^\]]*)\]/g, (match, caption) => {
       const capText = caption && caption.trim() ? `<div class="mt-1 text-slate-200 text-xs font-normal">${caption.trim()}</div>` : '';
       return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 text-xs font-medium my-0.5"><span class="w-2 h-2 rounded-full bg-sky-400"></span>Video Diterima</div>${capText}`;
@@ -3028,7 +3319,32 @@ export default function Dashboard() {
     s = s.replace(/\*([^*\n]+)\*/g, '<strong class="font-bold text-emerald-300">$1</strong>');
     s = s.replace(/_([^_\n]+)_/g, '<em class="italic text-slate-300">$1</em>');
     s = s.replace(/~([^~\n]+)~/g, '<del class="line-through text-slate-500">$1</del>');
-    return s;
+    return s.trim();
+  };
+
+  // Helper to format conversation list preview snippets (cleanly showing photos as 📷 Foto)
+  const formatSnippet = (msg) => {
+    if (!msg) return 'Mulai percakapan';
+    const text = typeof msg === 'string' ? msg : (msg.text || '');
+    const hasImage = typeof msg === 'object' && Boolean(msg.image || msg.mediaType === 'image' || (text && text.includes('[Foto')));
+
+    let cleanText = text
+      .replace(/^\[Foto(?::\s*|\s+pelanggan\]?|\]?)/i, '')
+      .replace(/\]$/, '')
+      .trim();
+    if (
+      cleanText.toLowerCase() === 'pelanggan' ||
+      cleanText.toLowerCase() === '[foto pelanggan]' ||
+      cleanText.toLowerCase() === '[foto]' ||
+      cleanText.toLowerCase() === '[foto terkirim]'
+    ) {
+      cleanText = '';
+    }
+
+    if (hasImage) {
+      return cleanText ? `📷 ${cleanText}` : '📷 Foto';
+    }
+    return cleanText || 'Mulai percakapan';
   };
 
   const isConnected = botStatus.status === 'connected';
@@ -4227,7 +4543,7 @@ export default function Dashboard() {
                                   <CheckCheck className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                                 )}
                                 <span className="truncate text-[11px] text-slate-400">
-                                  {conv.lastMessage?.text || 'Mulai percakapan'}
+                                  {formatSnippet(conv.lastMessage)}
                                 </span>
                               </div>
 
@@ -4488,23 +4804,46 @@ export default function Dashboard() {
                                 </div>
                               )}
 
-                              {/* Product Image preview if msg.image exists */}
-                              {msg.image && (
-                                <div className="mb-2 rounded-xl overflow-hidden border border-slate-700/60 bg-slate-950/60 max-w-xs shadow-md">
-                                  <img
-                                    src={msg.image.startsWith('/') ? msg.image : `/${msg.image}`}
-                                    alt="Foto Produk Karpet"
-                                    className="w-full h-44 object-cover hover:scale-105 transition-transform duration-300"
-                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                  />
-                                </div>
-                              )}
+                              {/* Photo / Image preview for customer or bot message */}
+                              {msg.image && (() => {
+                                const resolvedImgSrc = msg.image.startsWith('/') || msg.image.startsWith('http') || msg.image.startsWith('data:')
+                                  ? msg.image
+                                  : `/${msg.image}`;
+                                return (
+                                  <div
+                                    onClick={() => {
+                                      const rawCap = (msg.text || '').replace(/^\[Foto(?::\s*|\s+pelanggan\]?)/i, '').replace(/\]$/, '').trim();
+                                      const cleanCap = (rawCap.toLowerCase() === 'pelanggan' || rawCap.toLowerCase() === '[foto pelanggan]' || rawCap.toLowerCase() === '[foto]' || rawCap.toLowerCase() === '[foto terkirim]') ? '' : rawCap;
+                                      setPreviewImageModal({
+                                        url: resolvedImgSrc,
+                                        title: msg.senderName || 'Foto Lampiran',
+                                        caption: cleanCap
+                                      });
+                                    }}
+                                    className="mb-2 rounded-xl overflow-hidden border border-slate-700/60 bg-slate-950/80 max-w-xs shadow-md cursor-pointer group/img relative"
+                                    title="Klik untuk memperbesar gambar"
+                                  >
+                                    <img
+                                      src={resolvedImgSrc}
+                                      alt="Foto Lampiran"
+                                      className="w-full max-h-56 object-cover group-hover/img:scale-105 transition-transform duration-300"
+                                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                    />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-semibold backdrop-blur-[2px]">
+                                      <Eye className="w-4 h-4 text-emerald-400" />
+                                      <span>Perbesar Foto</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 
                               {/* Message Content */}
-                              <div
-                                className="text-xs leading-relaxed"
-                                dangerouslySetInnerHTML={{ __html: formatWaText(msg.text) }}
-                              />
+                              {Boolean(formatWaText(msg.text)) && (
+                                <div
+                                  className="text-xs leading-relaxed"
+                                  dangerouslySetInnerHTML={{ __html: formatWaText(msg.text) }}
+                                />
+                              )}
 
                               {/* Timestamp & Status */}
                               <div className="flex items-center justify-end gap-1 mt-1.5 pt-0.5 text-[10px] text-slate-400">
@@ -6970,104 +7309,106 @@ export default function Dashboard() {
           {/* TAB: TANYA JAWAB AI (AI KNOWLEDGE) */}
           {activeTab === 'qna' && (
             <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200">
-              {/* Header Hero Banner */}
-              <div className="p-6 md:p-8 rounded-3xl border border-slate-800 bg-gradient-to-br from-[#0f172a] via-[#111c35] to-[#0a1224] backdrop-blur-xl shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
-                <div className="absolute bottom-0 right-1/3 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                  <div className="space-y-2">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold tracking-wide">
-                      <Brain className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Basis Pengetahuan Tanya Jawab (AI Knowledge Base)</span>
-                    </div>
-                    <h2 className="text-xl md:text-2xl font-bold text-white tracking-tight">
-                      Daftar Pertanyaan & Jawaban AI
-                    </h2>
-                    <p className="text-xs md:text-sm text-slate-400 max-w-2xl leading-relaxed">
-                      Kelola pertanyaan dan jawaban resmi toko agar AI (Groq & Gemini) otomatis mempelajari dan menjawab pelanggan secara cepat, tepat, dan profesional.
-                    </p>
+              {/* Top Action & Knowledge Management Bar */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-sm">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
+                    <Brain className="w-5 h-5" />
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-                    <button
-                      onClick={() => handleOpenAddFaq()}
-                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/25 flex items-center gap-2 cursor-pointer active:scale-95"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Tambah Tanya Jawab</span>
-                    </button>
-
-                    <button
-                      onClick={() => fetchCustomerQuestions()}
-                      disabled={loadingCustomerQuestions}
-                      className="px-3.5 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-sky-300 font-medium text-xs transition border border-sky-500/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                      title="Pindai pesan chat masuk yang berupa pertanyaan dari customer"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${loadingCustomerQuestions ? 'animate-spin' : ''}`} />
-                      <span>{loadingCustomerQuestions ? 'Memindai...' : 'Pindai Chat Nyata'}</span>
-                    </button>
-
-                    <button
-                      onClick={handleSyncFaqsToAi}
-                      disabled={syncingFaqsToAi}
-                      className="px-3.5 py-2.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 font-medium text-xs transition border border-purple-500/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                      title="Sinkronkan pembaruan ke AI Studio"
-                    >
-                      <Sparkles className={`w-3.5 h-3.5 text-purple-400 ${syncingFaqsToAi ? 'animate-spin' : ''}`} />
-                      <span>{syncingFaqsToAi ? 'Sinkron...' : 'Sinkron ke AI'}</span>
-                    </button>
+                  <div>
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">
+                        Basis Tanya Jawab AI (Knowledge Base)
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-mono font-semibold">
+                        {faqs.length} Q&A Aktif
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Kelola bank pertanyaan dan jawaban resmi toko agar AI menjawab chat WhatsApp pelanggan secara konsisten dan akurat.
+                    </p>
                   </div>
                 </div>
 
-                {/* Metrics Stats Row */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mt-6 pt-6 border-t border-slate-800/80 relative z-10">
-                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                    <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
-                      <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Total Tanya-Jawab</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xl font-bold text-white font-mono">{faqs.length}</span>
-                      <span className="text-[10px] text-emerald-400">Aktif Dipelajari</span>
-                    </div>
-                  </div>
+                {/* Action Buttons Toolbar */}
+                <div className="flex flex-wrap items-center gap-2.5 sm:self-auto self-start">
+                  {/* Hidden Excel File Input */}
+                  <input
+                    type="file"
+                    ref={excelFileInputRef}
+                    onChange={handleUploadExcelFaq}
+                    accept=".xlsx, .xls, .csv"
+                    className="hidden"
+                  />
 
-                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                    <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
-                      <Tag className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Kategori Topik</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xl font-bold text-white font-mono">
-                        {new Set(faqs.map(f => f.category || 'Umum')).size}
-                      </span>
-                      <span className="text-[10px] text-amber-300">Kategori</span>
-                    </div>
-                  </div>
+                  {/* Download Template Excel */}
+                  <button
+                    onClick={handleDownloadFaqTemplate}
+                    title="Unduh format template Excel (.xlsx) untuk mengisi pertanyaan & jawaban secara massal"
+                    className="px-3.5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-600 text-xs font-semibold flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 text-emerald-400" />
+                    <span>Download Template Excel</span>
+                  </button>
 
-                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                    <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
-                      <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
-                      <span>Pertanyaan Chat Asli</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xl font-bold text-white font-mono">{customerQuestions.length}</span>
-                      <span className="text-[10px] text-sky-300">Terdeteksi</span>
-                    </div>
-                  </div>
+                  {/* Upload Excel Button */}
+                  <button
+                    onClick={() => excelFileInputRef.current?.click()}
+                    disabled={faqImporting}
+                    title="Upload file Excel (.xlsx / .csv) untuk otomatis menambah Q&A ke memori AI"
+                    className="px-3.5 py-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30 hover:border-emerald-500/50 text-xs font-semibold flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Upload className={`w-4 h-4 text-emerald-400 ${faqImporting ? 'animate-bounce' : ''}`} />
+                    <span>{faqImporting ? 'Mengimpor Data...' : 'Upload Excel'}</span>
+                  </button>
 
-                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                    <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
-                      <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                      <span>Engine AI</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-bold text-white font-mono uppercase">
-                        {aiProvider === 'groq' ? 'Groq Llama' : 'Gemini'}
-                      </span>
-                      <span className="text-[10px] text-emerald-400">● Grounded</span>
-                    </div>
+
+
+                  {/* Tambah Tanya Jawab Manual */}
+                  <button
+                    onClick={() => handleOpenAddFaq()}
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/25 flex items-center gap-2 cursor-pointer active:scale-95"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Tambah Tanya Jawab</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Metrics Stats Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
+                  <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
+                    <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Total Tanya-Jawab</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xl font-bold text-white font-mono">{faqs.length}</span>
+                    <span className="text-[10px] text-emerald-400">Aktif Dipelajari</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
+                  <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
+                    <Tag className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Kategori Topik</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xl font-bold text-white font-mono">
+                      {new Set(faqs.map(f => f.category || 'Umum')).size}
+                    </span>
+                    <span className="text-[10px] text-amber-300">Kategori</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
+                  <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
+                    <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Pertanyaan Chat Asli</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xl font-bold text-white font-mono">{customerQuestions.length}</span>
+                    <span className="text-[10px] text-sky-300">Terdeteksi</span>
                   </div>
                 </div>
               </div>
@@ -7108,24 +7449,6 @@ export default function Dashboard() {
                         {customerQuestions.length}
                       </span>
                     )}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setFaqSubTab('web_crawler');
-                      fetchCrawledPages();
-                    }}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                      faqSubTab === 'web_crawler'
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                    }`}
-                  >
-                    <Globe className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Website Crawling / Scraping</span>
-                    <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] font-mono text-purple-300">
-                      {crawledPages.length}
-                    </span>
                   </button>
                 </div>
 
@@ -7173,17 +7496,7 @@ export default function Dashboard() {
 
                     {/* Category Filter Pills */}
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
-                      {[
-                        'Semua',
-                        'Karpet Masjid & Musholla',
-                        'Pemasangan & Obras',
-                        'Survey & Sampel',
-                        'Promo & Diskon',
-                        'Garansi & Keaslian',
-                        'Nego & Pembayaran',
-                        'Ketersediaan Stok',
-                        'Komplain & Retur'
-                      ].map((cat) => (
+                      {['Semua', ...allFaqCategories].map((cat) => (
                         <button
                           key={cat}
                           onClick={() => setFaqCategoryFilter(cat)}
@@ -7196,6 +7509,8 @@ export default function Dashboard() {
                           {cat}
                         </button>
                       ))}
+
+
                     </div>
                   </div>
 
@@ -7327,7 +7642,7 @@ export default function Dashboard() {
               {/* TAB 2: REAL CUSTOMER QUESTIONS FROM WHATSAPP */}
               {faqSubTab === 'customer_insights' && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800">
                     <div className="space-y-1">
                       <h4 className="text-xs font-semibold text-white flex items-center gap-2">
                         <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
@@ -7337,15 +7652,6 @@ export default function Dashboard() {
                         Sistem memindai pesan masuk dari riwayat WhatsApp untuk mendeteksi pertanyaan aktual. Anda bisa langsung mengajari AI jawaban idealnya.
                       </p>
                     </div>
-
-                    <button
-                      onClick={() => fetchCustomerQuestions()}
-                      disabled={loadingCustomerQuestions}
-                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-medium border border-slate-700 flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${loadingCustomerQuestions ? 'animate-spin' : ''}`} />
-                      <span>{loadingCustomerQuestions ? 'Memindai Ulang...' : 'Pindai Ulang'}</span>
-                    </button>
                   </div>
 
                   {customerQuestions.length === 0 ? (
@@ -7417,387 +7723,72 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* SUB-TAB: WEBSITE CRAWLER / SCRAPER */}
-              {faqSubTab === 'web_crawler' && (
-                <div className="space-y-6">
-                  {/* Hero / Input Crawl Card */}
-                  <div className="p-6 sm:p-7 rounded-3xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/30 via-slate-900/60 to-slate-950/80 backdrop-blur-xl shadow-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-                    <div className="relative z-10 space-y-5">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-inner">
-                            <Globe className="w-6 h-6 animate-pulse" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h3 className="text-lg font-bold text-white tracking-tight">Website Crawler & Scraping Engine</h3>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                                RAG Sync Otomatis
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              Pindai halaman web/landing page produk, katalog online, artikel, atau FAQ website. Teks otomatis diolah menjadi potongan semantik RAG agar AI dapat menjawab langsung dari materi website.
-                            </p>
-                          </div>
-                        </div>
 
-                        <button
-                          onClick={() => fetchCrawledPages()}
-                          disabled={loadingCrawledPages}
-                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-medium border border-slate-700 flex items-center gap-2 self-start sm:self-center transition disabled:opacity-50 cursor-pointer"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${loadingCrawledPages ? 'animate-spin' : ''}`} />
-                          <span>{loadingCrawledPages ? 'Menyegarkan...' : 'Segarkan Data'}</span>
-                        </button>
-                      </div>
-
-                      {/* URL Crawler Form */}
-                      <form onSubmit={handleStartCrawl} className="bg-slate-900/80 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                            <LinkIcon className="w-3.5 h-3.5 text-indigo-400" />
-                            <span>Target URL Website:</span>
-                          </label>
-                          <div className="relative flex items-center">
-                            <input
-                              type="url"
-                              value={crawlUrlInput}
-                              onChange={(e) => setCrawlUrlInput(e.target.value)}
-                              placeholder="https://sultancarpet.com/katalog atau https://toko-anda.com/faq"
-                              required
-                              disabled={crawlingWeb}
-                              className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition disabled:opacity-60"
-                            />
-                          </div>
-                          <p className="text-[11px] text-slate-400">
-                            Masukkan URL publik (HTTP/HTTPS). Bot akan otomatis membersihkan tag HTML, iklan, dan script agar menyisakan teks informatif murni.
-                          </p>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-slate-800/80">
-                          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
-                            <div className="flex items-center gap-2">
-                              <label className="text-slate-400">Maks. Halaman:</label>
-                              <select
-                                value={crawlMaxPages}
-                                onChange={(e) => setCrawlMaxPages(Number(e.target.value))}
-                                disabled={crawlingWeb}
-                                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                              >
-                                <option value={1}>1 Halaman Saja</option>
-                                <option value={3}>3 Halaman Terkait</option>
-                                <option value={5}>5 Halaman Terkait</option>
-                                <option value={10}>10 Halaman Terkait</option>
-                              </select>
-                            </div>
-
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                              <input
-                                type="checkbox"
-                                checked={crawlFollowLinks}
-                                onChange={(e) => setCrawlFollowLinks(e.target.checked)}
-                                disabled={crawlingWeb || crawlMaxPages <= 1}
-                                className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-950"
-                              />
-                              <span className="text-slate-300">Jelajahi Sub-link Internal domain yang sama</span>
-                            </label>
-                          </div>
-
-                          <button
-                            type="submit"
-                            disabled={crawlingWeb || !crawlUrlInput.trim()}
-                            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer"
-                          >
-                            {crawlingWeb ? (
-                              <>
-                                <RefreshCw className="w-4 h-4 animate-spin" />
-                                <span>Sedang Scraping & Ekstraksi...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Globe className="w-4 h-4" />
-                                <span>Mulai Crawling Sekarang</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </form>
-
-                      {/* Stat summary */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-                          <p className="text-[11px] text-slate-400 font-medium">Halaman Terkumpul</p>
-                          <p className="text-lg font-bold text-white mt-0.5">{crawledPages.length} Halaman</p>
-                        </div>
-                        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-                          <p className="text-[11px] text-slate-400 font-medium">Total Chunk RAG</p>
-                          <p className="text-lg font-bold text-indigo-400 mt-0.5">
-                            {crawledPages.reduce((acc, p) => acc + (p.chunks?.length || 0), 0)} Chunk
-                          </p>
-                        </div>
-                        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-                          <p className="text-[11px] text-slate-400 font-medium">Karakter Bersih</p>
-                          <p className="text-lg font-bold text-sky-400 mt-0.5">
-                            {(crawledPages.reduce((acc, p) => acc + (p.content?.length || 0), 0)).toLocaleString('id-ID')}
-                          </p>
-                        </div>
-                        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-                          <p className="text-[11px] text-slate-400 font-medium">Status Pengetahuan</p>
-                          <p className="text-xs font-semibold text-emerald-400 mt-1 flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                            Aktif di Otak AI
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* List of Crawled Pages */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Database className="w-4 h-4 text-indigo-400" />
-                        <span>Daftar Halaman Website Terindeks ({crawledPages.length})</span>
-                      </h4>
-                      {crawledPages.length > 0 && (
-                        <p className="text-xs text-slate-400">
-                          Data ini otomatis disinkronkan ke Vector RAG untuk referensi tanya jawab pelanggan
-                        </p>
-                      )}
-                    </div>
-
-                    {loadingCrawledPages ? (
-                      <div className="p-12 text-center text-slate-400 text-xs">Memuat daftar scraping...</div>
-                    ) : crawledPages.length === 0 ? (
-                      <div className="p-12 rounded-3xl border border-slate-800 bg-slate-900/40 text-center space-y-3">
-                        <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 mx-auto flex items-center justify-center text-xl">
-                          🌐
-                        </div>
-                        <h4 className="text-sm font-semibold text-white">Belum Ada Website Yang Di-crawl</h4>
-                        <p className="text-xs text-slate-400 max-w-md mx-auto">
-                          Ketikkan alamat website toko, landing page, atau katalog Anda di formulir atas lalu klik "Mulai Crawling Sekarang". AI akan langsung membaca dan memahami isinya.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {crawledPages.map((page) => (
-                          <div
-                            key={page.id}
-                            className="p-5 rounded-2xl border border-slate-800 bg-[#0f172a]/70 hover:border-slate-700 transition space-y-3 shadow-md flex flex-col justify-between"
-                          >
-                            <div className="space-y-2.5">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="space-y-1 min-w-0">
-                                  <h5 className="text-sm font-bold text-white truncate" title={page.title || page.url}>
-                                    {page.title || 'Halaman Web'}
-                                  </h5>
-                                  <a
-                                    href={page.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-xs text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-1 truncate"
-                                  >
-                                    <ExternalLink className="w-3 h-3 shrink-0" />
-                                    <span className="truncate">{page.url}</span>
-                                  </a>
-                                </div>
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 shrink-0">
-                                  {page.chunks?.length || 0} Chunks
-                                </span>
-                              </div>
-
-                              {page.description && (
-                                <p className="text-xs text-slate-400 line-clamp-2">
-                                  {page.description}
-                                </p>
-                              )}
-
-                              <div className="text-[11px] text-slate-500 bg-slate-950/60 p-2.5 rounded-xl border border-slate-850 line-clamp-3 leading-relaxed">
-                                {page.content ? page.content.slice(0, 220) + '...' : 'Tidak ada konten teks.'}
-                              </div>
-                            </div>
-
-                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                              <span className="text-[10px] text-slate-500">
-                                {page.crawledAt ? new Date(page.crawledAt).toLocaleString('id-ID') : 'Baru saja'}
-                              </span>
-
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => setViewingCrawlPage(page)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 font-medium text-xs flex items-center gap-1.5 transition cursor-pointer"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>Lihat Chunk</span>
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteCrawledPage(page.id)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-medium text-xs flex items-center gap-1 transition cursor-pointer"
-                                  title="Hapus dari RAG"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Hapus</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
           {/* TAB: HANDS-OFF CS & AI TAKEOVER */}
           {activeTab === 'handoff' && (() => {
-            const activeHandoffs = (conversations || []).filter((c) => Boolean(c?.isHumanHandoff));
-            const filteredConversations = (conversations || []).filter((c) => {
-              if (!c) return false;
-              if (handoffFilter === 'handoff' && !c.isHumanHandoff) return false;
-              if (handoffFilter === 'ai' && c.isHumanHandoff) return false;
-              if (!handoffSearch.trim()) return true;
-              const q = handoffSearch.toLowerCase();
-              const sName = c.senderName && typeof c.senderName === 'string' ? c.senderName.toLowerCase() : '';
-              const sPhone = c.phone ? String(c.phone).toLowerCase() : '';
-              const sFormatted = c.formattedPhone ? String(c.formattedPhone).toLowerCase() : '';
-              let sLastMsg = '';
-              if (typeof c.lastMessage === 'string') {
-                sLastMsg = c.lastMessage.toLowerCase();
-              } else if (c.lastMessage && typeof c.lastMessage === 'object') {
-                sLastMsg = String(c.lastMessage.text || c.lastMessage.caption || '').toLowerCase();
-              }
-              return (
-                sName.includes(q) ||
-                sPhone.includes(q) ||
-                sFormatted.includes(q) ||
-                sLastMsg.includes(q)
-              );
-            });
-
             return (
               <div className="space-y-6">
-                {/* Header Banner */}
-                <div className="p-6 sm:p-7 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
-                  <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                    <div>
-                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold mb-3">
-                        <Headphones className="w-3.5 h-3.5" />
-                        <span>Sistem Alih Kendali AI ke CS Manusia</span>
-                      </div>
-                      <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                        Hands-Off Customer Service & AI Takeover
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1.5 max-w-2xl leading-relaxed">
-                        Kelola intervensi staf CS manusia saat pelanggan membutuhkan negosiasi harga, komplain mendesak, atau konsultasi khusus. Bot AI otomatis berhenti membalas pada kontak yang diambil alih.
-                      </p>
-                    </div>
+                {/* Top Action Controls */}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  {/* Global Handoff Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newStatus = !handoffConfig.enabled;
+                      handleSaveHandoffConfig({ ...handoffConfig, enabled: newStatus });
+                    }}
+                    disabled={savingHandoffConfig}
+                    className={`py-2 px-4 rounded-xl font-semibold text-xs border flex items-center gap-2 transition cursor-pointer ${
+                      handoffConfig.enabled
+                        ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/60'
+                        : 'bg-rose-950/40 border-rose-500/40 text-rose-300 hover:bg-rose-950/60'
+                    }`}
+                    title="Klik untuk mengaktifkan atau menonaktifkan fitur hands-off otomatis"
+                  >
+                    <span className={`w-2 h-2 rounded-full ${handoffConfig.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                    <span>Hands-Off Otomatis: {handoffConfig.enabled ? 'AKTIF' : 'NONAKTIF'}</span>
+                  </button>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                      {/* Global Handoff Toggle */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newStatus = !handoffConfig.enabled;
-                          handleSaveHandoffConfig({ ...handoffConfig, enabled: newStatus });
-                        }}
-                        disabled={savingHandoffConfig}
-                        className={`py-2 px-4 rounded-xl font-semibold text-xs border flex items-center gap-2 transition cursor-pointer ${
-                          handoffConfig.enabled
-                            ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/60'
-                            : 'bg-rose-950/40 border-rose-500/40 text-rose-300 hover:bg-rose-950/60'
-                        }`}
-                        title="Klik untuk mengaktifkan atau menonaktifkan fitur hands-off otomatis"
-                      >
-                        <span className={`w-2 h-2 rounded-full ${handoffConfig.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
-                        <span>Hands-Off Otomatis: {handoffConfig.enabled ? 'AKTIF' : 'NONAKTIF'}</span>
-                      </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('chats')}
+                    className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700/80 flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                  >
+                    <MessageSquare className="w-4 h-4 text-emerald-400" />
+                    <span>Buka Obrolan WA</span>
+                  </button>
+                </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('chats')}
-                        className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700/80 flex items-center gap-1.5 transition cursor-pointer shadow-sm"
-                      >
-                        <MessageSquare className="w-4 h-4 text-emerald-400" />
-                        <span>Buka Obrolan WA</span>
-                      </button>
+                {/* KPI Metrics */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <div className="flex items-center justify-between text-slate-400 mb-1">
+                      <span className="text-xs font-medium">Auto-Expire Sesi</span>
+                      <Clock className="w-4 h-4 text-blue-400" />
                     </div>
+                    <div className="text-2xl font-bold text-white">
+                      {handoffConfig.auto_expire_hours || 2} <span className="text-sm font-normal text-slate-400">Jam</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">Otomatis kembali ke bot AI</p>
                   </div>
 
-                  {/* 4 KPI Metrics */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mt-6 pt-6 border-t border-slate-800/80">
-                    <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                      <div className="flex items-center justify-between text-slate-400 mb-1">
-                        <span className="text-xs font-medium">Sedang Hands-Off (CS)</span>
-                        <Headphones className="w-4 h-4 text-amber-400" />
-                      </div>
-                      <div className="text-2xl font-bold text-white flex items-center gap-2">
-                        <span>{activeHandoffs.length}</span>
-                        {activeHandoffs.length > 0 && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
-                            Ditangani CS
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1">Kontak dengan AI dimatikan</p>
+                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <div className="flex items-center justify-between text-slate-400 mb-1">
+                      <span className="text-xs font-medium">Kata Kunci Pemicu</span>
+                      <Tag className="w-4 h-4 text-purple-400" />
                     </div>
-
-                    <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                      <div className="flex items-center justify-between text-slate-400 mb-1">
-                        <span className="text-xs font-medium">Mode Bot AI Aktif</span>
-                        <Bot className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div className="text-2xl font-bold text-white">
-                        {Math.max(0, (conversations?.length || 0) - activeHandoffs.length)}
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1">Dijawab otomatis oleh AI</p>
+                    <div className="text-2xl font-bold text-white">
+                      {handoffConfig.keywords?.length || 0} <span className="text-sm font-normal text-slate-400">Pemicu</span>
                     </div>
-
-                    <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                      <div className="flex items-center justify-between text-slate-400 mb-1">
-                        <span className="text-xs font-medium">Auto-Expire Sesi</span>
-                        <Clock className="w-4 h-4 text-blue-400" />
-                      </div>
-                      <div className="text-2xl font-bold text-white">
-                        {handoffConfig.auto_expire_hours || 2} <span className="text-sm font-normal text-slate-400">Jam</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1">Otomatis kembali ke bot AI</p>
-                    </div>
-
-                    <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                      <div className="flex items-center justify-between text-slate-400 mb-1">
-                        <span className="text-xs font-medium">Kata Kunci Pemicu</span>
-                        <Tag className="w-4 h-4 text-purple-400" />
-                      </div>
-                      <div className="text-2xl font-bold text-white">
-                        {handoffConfig.keywords?.length || 0} <span className="text-sm font-normal text-slate-400">Pemicu</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1">Kata panggil CS manusia</p>
-                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">Kata panggil CS manusia</p>
                   </div>
                 </div>
 
                 {/* Sub-Tabs Navigation */}
                 <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-                  <button
-                    type="button"
-                    onClick={() => setHandoffSubTab('contacts')}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
-                      handoffSubTab === 'contacts'
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                    }`}
-                  >
-                    <Headphones className="w-4 h-4" />
-                    <span>Kontak & Live Takeover</span>
-                    <span className="px-1.5 py-0.2 rounded-md bg-black/40 text-[10px]">
-                      {conversations?.length || 0}
-                    </span>
-                  </button>
-
                   <button
                     type="button"
                     onClick={() => setHandoffSubTab('rules')}
@@ -7824,241 +7815,6 @@ export default function Dashboard() {
                     <span>Uji Pemicu Hands-Off</span>
                   </button>
                 </div>
-
-                {/* SUBTAB 1: KONTAK & LIVE TAKEOVER */}
-                {handoffSubTab === 'contacts' && (
-                  <div className="space-y-4">
-                    {/* Manual Takeover Form Bar */}
-                    <div className="p-4 sm:p-5 rounded-2xl border border-slate-800 bg-[#0f172a]/70">
-                      <div className="flex items-center gap-2 mb-3">
-                        <UserCheck className="w-4 h-4 text-amber-400" />
-                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                          Ambil Alih Obrolan Manual (By Phone)
-                        </h4>
-                      </div>
-                      <form onSubmit={handleManualHandoffTakeover} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                        <input
-                          type="text"
-                          value={manualHandoffPhone}
-                          onChange={(e) => setManualHandoffPhone(e.target.value)}
-                          placeholder="Nomor WhatsApp (contoh: 08123456789 atau 62812...)"
-                          className="flex-1 rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                        />
-                        <input
-                          type="text"
-                          value={manualHandoffReason}
-                          onChange={(e) => setManualHandoffReason(e.target.value)}
-                          placeholder="Alasan takeover (contoh: Negosiasi Harga Khusus)"
-                          className="w-full sm:w-64 rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                        />
-                        <button
-                          type="submit"
-                          className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition shadow-md shadow-amber-600/20 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
-                        >
-                          <Headphones className="w-4 h-4" />
-                          <span>Ambil Alih ke CS</span>
-                        </button>
-                      </form>
-                    </div>
-
-                    {/* Filter & Search Controls */}
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                        <button
-                          type="button"
-                          onClick={() => setHandoffFilter('all')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition cursor-pointer ${
-                            handoffFilter === 'all'
-                              ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          Semua ({conversations?.length || 0})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setHandoffFilter('handoff')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
-                            handoffFilter === 'handoff'
-                              ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          <span>Sedang Hands-Off / CS</span>
-                          <span className="px-1.5 py-0.2 rounded-md bg-black/30 text-[10px]">
-                            {activeHandoffs.length}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setHandoffFilter('ai')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
-                            handoffFilter === 'ai'
-                              ? 'bg-emerald-600 text-white shadow-sm'
-                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          <span>Aktif Bot AI</span>
-                          <span className="px-1.5 py-0.2 rounded-md bg-black/30 text-[10px]">
-                            {Math.max(0, (conversations?.length || 0) - activeHandoffs.length)}
-                          </span>
-                        </button>
-                      </div>
-
-                      <div className="relative w-full sm:w-64">
-                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                        <input
-                          type="text"
-                          value={handoffSearch}
-                          onChange={(e) => setHandoffSearch(e.target.value)}
-                          placeholder="Cari nama, nomor, atau pesan..."
-                          className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                        />
-                        {handoffSearch && (
-                          <button
-                            type="button"
-                            onClick={() => setHandoffSearch('')}
-                            className="absolute right-2.5 top-2 text-slate-400 hover:text-white p-0.5 rounded"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Contacts List */}
-                    {filteredConversations.length === 0 ? (
-                      <div className="p-12 text-center rounded-3xl border border-dashed border-slate-800 bg-slate-900/30 space-y-3">
-                        <Headphones className="w-12 h-12 text-slate-600 mx-auto" />
-                        <h4 className="font-semibold text-slate-300 text-sm">Tidak ada kontak yang cocok</h4>
-                        <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                          {handoffFilter === 'handoff'
-                            ? 'Saat ini belum ada kontak yang dalam mode CS Manusia (Hands-off). Semua obrolan dijawab otomatis oleh Bot AI.'
-                            : 'Belum ada data obrolan yang sesuai dengan filter pencarian.'}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                        {filteredConversations.map((c, idx) => {
-                          const isHandoff = Boolean(c.isHumanHandoff);
-                          const rawName = c.senderName && typeof c.senderName === 'string' ? c.senderName.trim() : '';
-                          const contactName = rawName && !/^\+?\d{10,}$/.test(rawName)
-                            ? rawName
-                            : (c.formattedPhone || (c.phone ? `+${c.phone}` : 'Pelanggan'));
-                          const initialChar = (contactName ? String(contactName).trim().charAt(0) : 'P').toUpperCase() || 'P';
-
-                          let lastMsgText = '(Belum ada pesan teks)';
-                          if (typeof c.lastMessage === 'string') {
-                            lastMsgText = c.lastMessage || '(Belum ada pesan teks)';
-                          } else if (c.lastMessage && typeof c.lastMessage === 'object') {
-                            lastMsgText = c.lastMessage.text || c.lastMessage.caption || c.lastMessage.content || (c.lastMessage.type ? `[${c.lastMessage.type}]` : '(Pesan media/pesan masuk)');
-                          }
-
-                          const rawTimestamp = c.updatedAt || c.lastMessage?.timestamp || c.lastTimestamp;
-                          const formattedTime = rawTimestamp
-                            ? new Date(rawTimestamp).toLocaleDateString('id-ID', { hour: '2-digit', minute: '2-digit' })
-                            : 'Terbaru';
-
-                          return (
-                            <div
-                              key={c.jid || c.phone || `conv_${idx}`}
-                              className={`p-4 rounded-2xl border transition-all duration-200 flex flex-col justify-between space-y-3 ${
-                                isHandoff
-                                  ? 'bg-[#1a1505]/70 border-amber-500/40 ring-1 ring-amber-500/20 shadow-lg shadow-amber-950/20'
-                                  : 'bg-[#0f172a]/70 border-slate-800 hover:border-slate-700'
-                              }`}
-                            >
-                              <div className="space-y-2">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex items-center gap-3">
-                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
-                                      isHandoff ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                    }`}>
-                                      {initialChar}
-                                    </div>
-                                    <div>
-                                      <h5 className="font-bold text-white text-sm line-clamp-1">{contactName}</h5>
-                                      <p className="text-[11px] text-slate-400 font-mono">{c.formattedPhone || (c.phone ? `+${c.phone}` : '')}</p>
-                                    </div>
-                                  </div>
-
-                                  {/* Status Badge */}
-                                  <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border flex items-center gap-1.5 shrink-0 ${
-                                    isHandoff
-                                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                                      : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                                  }`}>
-                                    {isHandoff ? (
-                                      <>
-                                        <Headphones className="w-3 h-3 text-amber-400" />
-                                        <span>Mode CS Manusia</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Bot className="w-3 h-3 text-emerald-400" />
-                                        <span>Bot AI Aktif</span>
-                                      </>
-                                    )}
-                                  </span>
-                                </div>
-
-                                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-850 text-xs text-slate-300">
-                                  <p className="line-clamp-2 leading-relaxed">
-                                    {lastMsgText}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {/* Action Row */}
-                              <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                                <span className="text-[11px] text-slate-500">
-                                  {formattedTime}
-                                </span>
-
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleContactAi(c)}
-                                    disabled={togglingAiJid === (c.jid || c.phone)}
-                                    className={`px-3 py-1.5 rounded-xl font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                                      isHandoff
-                                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20'
-                                        : 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30'
-                                    }`}
-                                  >
-                                    {isHandoff ? (
-                                      <>
-                                        <Bot className="w-3.5 h-3.5" />
-                                        <span>Kembalikan ke Bot</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Headphones className="w-3.5 h-3.5" />
-                                        <span>Ambil Alih CS</span>
-                                      </>
-                                    )}
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedChatJid(c.jid || c.phone);
-                                      setActiveTab('chats');
-                                    }}
-                                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <span>Chat</span>
-                                    <ArrowRight className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* SUBTAB 2: ATURAN & KATA KUNCI PEMICU */}
                 {handoffSubTab === 'rules' && (
@@ -8341,131 +8097,110 @@ export default function Dashboard() {
           {/* TAB 12: SETTINGS (ANTI-SPAM, DELAY & PROTECTIONS) */}
           {activeTab === 'settings' && (
             <div className="space-y-8 animate-in fade-in duration-200">
-              {/* Header Hero Banner */}
-              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900/90 to-emerald-950/40 border border-slate-800/80 p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
-                <div className="absolute -right-16 -top-16 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute -left-16 -bottom-16 w-60 h-60 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-                
-                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                  <div className="space-y-2 max-w-2xl">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>SISTEM ANTI-BANNED & PENCEGAHAN SPAM WHATSAPP</span>
-                    </div>
-                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
-                      <span>Pengaturan Delay & Anti-Spam</span>
-                    </h2>
-                    <p className="text-sm text-slate-300 leading-relaxed">
-                      Kelola jeda pengiriman pesan (cooldown), simulasi mengetik manusiawi, batas anti-flood pelanggan, deduplikasi pesan kembar, dan circuit breaker agar nomor WhatsApp Anda tetap sehat dan terhindar dari pemblokiran resmi.
-                    </p>
+              {/* Top Action Controls */}
+              <div className="flex flex-wrap items-center justify-end gap-2.5">
+                <button
+                  onClick={fetchProtections}
+                  disabled={loadingProtections}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 text-xs font-medium border border-slate-700/80 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
+                  title="Muat ulang data statistik & konfigurasi proteksi"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingProtections ? 'animate-spin' : ''}`} />
+                  <span>{loadingProtections ? 'Memuat...' : 'Sinkronkan'}</span>
+                </button>
+
+                <button
+                  onClick={handleResetProtectionsStats}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-rose-300 text-xs font-medium border border-rose-500/20 transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+                  title="Reset angka metrik statistik ke 0"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Metrik</span>
+                </button>
+
+                <button
+                  onClick={handleLoadProtectionsDefaults}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-emerald-300 text-xs font-medium border border-emerald-500/30 transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+                  title="Gunakan konfigurasi delay dan proteksi yang paling direkomendasikan"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Standar Aman</span>
+                </button>
+
+                <button
+                  onClick={() => handleSaveProtections()}
+                  disabled={savingProtections}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold transition-all flex items-center gap-2 shadow-lg shadow-emerald-900/30 disabled:opacity-50 cursor-pointer"
+                >
+                  {savingProtections ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Simpan Pengaturan</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* 5 Real-Time KPI Stats Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wider">Total Diproses</span>
+                    <MessageSquare className="w-4 h-4 text-emerald-400" />
                   </div>
-
-                  {/* Top Action Buttons */}
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <button
-                      onClick={fetchProtections}
-                      disabled={loadingProtections}
-                      className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 text-xs font-medium border border-slate-700/80 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
-                      title="Muat ulang data statistik & konfigurasi proteksi"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${loadingProtections ? 'animate-spin' : ''}`} />
-                      <span>{loadingProtections ? 'Memuat...' : 'Sinkronkan'}</span>
-                    </button>
-
-                    <button
-                      onClick={handleResetProtectionsStats}
-                      className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-rose-300 text-xs font-medium border border-rose-500/20 transition-all flex items-center gap-2 shadow-sm"
-                      title="Reset angka metrik statistik ke 0"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Reset Metrik</span>
-                    </button>
-
-                    <button
-                      onClick={handleLoadProtectionsDefaults}
-                      className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-emerald-300 text-xs font-medium border border-emerald-500/30 transition-all flex items-center gap-2 shadow-sm"
-                      title="Gunakan konfigurasi delay dan proteksi yang paling direkomendasikan"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Standar Aman</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleSaveProtections()}
-                      disabled={savingProtections}
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold transition-all flex items-center gap-2 shadow-lg shadow-emerald-900/30 disabled:opacity-50"
-                    >
-                      {savingProtections ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Menyimpan...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Simpan Pengaturan</span>
-                        </>
-                      )}
-                    </button>
+                  <div className="text-xl sm:text-2xl font-bold text-white">
+                    {(protectionsStats?.totalInboundProcessed || 0).toLocaleString('id-ID')}
                   </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Pesan masuk dievaluasi</div>
                 </div>
 
-                {/* 5 Real-Time KPI Stats Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6 pt-6 border-t border-slate-800/80">
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-slate-400 mb-1">
-                      <span className="text-[11px] font-medium uppercase tracking-wider">Total Diproses</span>
-                      <MessageSquare className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="text-xl sm:text-2xl font-bold text-white">
-                      {(protectionsStats?.totalInboundProcessed || 0).toLocaleString('id-ID')}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-1">Pesan masuk dievaluasi</div>
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wider">Spam Ditangkal</span>
+                    <ShieldAlert className="w-4 h-4 text-rose-400" />
                   </div>
+                  <div className="text-xl sm:text-2xl font-bold text-rose-400">
+                    {(protectionsStats?.floodsBlocked || 0).toLocaleString('id-ID')}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Pesan flood di-cooldown</div>
+                </div>
 
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-slate-400 mb-1">
-                      <span className="text-[11px] font-medium uppercase tracking-wider">Spam Ditangkal</span>
-                      <ShieldAlert className="w-4 h-4 text-rose-400" />
-                    </div>
-                    <div className="text-xl sm:text-2xl font-bold text-rose-400">
-                      {(protectionsStats?.floodsBlocked || 0).toLocaleString('id-ID')}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-1">Pesan flood di-cooldown</div>
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wider">Duplikat Dicegah</span>
+                    <Copy className="w-4 h-4 text-amber-400" />
                   </div>
+                  <div className="text-xl sm:text-2xl font-bold text-amber-400">
+                    {(protectionsStats?.duplicatesBlocked || 0).toLocaleString('id-ID')}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Pesan identik kembar</div>
+                </div>
 
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-slate-400 mb-1">
-                      <span className="text-[11px] font-medium uppercase tracking-wider">Duplikat Dicegah</span>
-                      <Copy className="w-4 h-4 text-amber-400" />
-                    </div>
-                    <div className="text-xl sm:text-2xl font-bold text-amber-400">
-                      {(protectionsStats?.duplicatesBlocked || 0).toLocaleString('id-ID')}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-1">Pesan identik kembar</div>
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wider">Debounce Buffer</span>
+                    <Zap className="w-4 h-4 text-cyan-400" />
                   </div>
+                  <div className="text-xl sm:text-2xl font-bold text-cyan-400">
+                    {(protectionsStats?.burstsAggregated || 0).toLocaleString('id-ID')}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Pesan beruntun digabung</div>
+                </div>
 
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-slate-400 mb-1">
-                      <span className="text-[11px] font-medium uppercase tracking-wider">Debounce Buffer</span>
-                      <Zap className="w-4 h-4 text-cyan-400" />
-                    </div>
-                    <div className="text-xl sm:text-2xl font-bold text-cyan-400">
-                      {(protectionsStats?.burstsAggregated || 0).toLocaleString('id-ID')}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-1">Pesan beruntun digabung</div>
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between col-span-2 sm:col-span-1">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wider">Opt-Out / Stop</span>
+                    <UserCheck className="w-4 h-4 text-purple-400" />
                   </div>
-
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between col-span-2 sm:col-span-1">
-                    <div className="flex items-center justify-between text-slate-400 mb-1">
-                      <span className="text-[11px] font-medium uppercase tracking-wider">Opt-Out / Stop</span>
-                      <UserCheck className="w-4 h-4 text-purple-400" />
-                    </div>
-                    <div className="text-xl sm:text-2xl font-bold text-purple-400">
-                      {(protectionsStats?.optOutUsers || 0).toLocaleString('id-ID')}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-1">Pengguna berhenti pesan</div>
+                  <div className="text-xl sm:text-2xl font-bold text-purple-400">
+                    {(protectionsStats?.optOutUsers || 0).toLocaleString('id-ID')}
                   </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Pengguna berhenti pesan</div>
                 </div>
               </div>
 
@@ -9531,22 +9266,18 @@ export default function Dashboard() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">
-                  <label className="font-semibold text-slate-300">Kategori Topik</label>
-                  <select
-                    value={faqForm.category}
+                  <label className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Kategori Topik</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={faqForm.category || ''}
                     onChange={(e) => setFaqForm({ ...faqForm, category: e.target.value })}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="Karpet Masjid & Musholla">🕌 Karpet Masjid & Musholla</option>
-                    <option value="Pemasangan & Obras">✂️ Pemasangan & Obras</option>
-                    <option value="Survey & Sampel">📏 Survey & Sampel</option>
-                    <option value="Promo & Diskon">🏷️ Promo & Diskon</option>
-                    <option value="Garansi & Keaslian">🛡️ Garansi & Keaslian</option>
-                    <option value="Nego & Pembayaran">💳 Nego & Pembayaran</option>
-                    <option value="Ketersediaan Stok">📦 Ketersediaan Stok</option>
-                    <option value="Komplain & Retur">⚠️ Komplain & Retur</option>
-                    <option value="Umum">📌 Pertanyaan Umum</option>
-                  </select>
+                    placeholder="Ketik kategori topik bebas (contoh: Promo & Diskon, Garansi, dll)..."
+                    autoComplete="off"
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+                  />
                 </div>
 
                 <div className="space-y-1.5">
@@ -9601,6 +9332,8 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+
         </div>
 
         {/* MOBILE BOTTOM NAVIGATION BAR (md:hidden) */}
@@ -10456,7 +10189,7 @@ export default function Dashboard() {
                         if (typeof c.lastMessage === 'string') {
                           snippet = c.lastMessage;
                         } else if (c.lastMessage && typeof c.lastMessage === 'object') {
-                          snippet = c.lastMessage.text || c.lastMessage.caption || (c.lastMessage.type ? `[${c.lastMessage.type}]` : '');
+                          snippet = formatSnippet(c.lastMessage);
                         }
 
                         return (
@@ -11152,99 +10885,68 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODAL: DETAIL & CHUNKS WEBSITE CRAWLER */}
-      {viewingCrawlPage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div className="bg-[#0b1329] border border-slate-700/80 rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            {/* Header */}
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                  <Globe className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-bold text-white text-sm truncate" title={viewingCrawlPage.title}>
-                    {viewingCrawlPage.title || 'Detail Halaman Scraping'}
-                  </h3>
-                  <a
-                    href={viewingCrawlPage.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-indigo-400 hover:underline flex items-center gap-1 truncate"
-                  >
-                    <ExternalLink className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{viewingCrawlPage.url}</span>
-                  </a>
-                </div>
+
+
+      {/* LIGHTBOX IMAGE PREVIEW MODAL (FULLSCREEN) */}
+      {previewImageModal && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setPreviewImageModal(null)}
+        >
+          {/* Header bar */}
+          <div
+            className="w-full max-w-4xl flex items-center justify-between pb-3 text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <ImageIcon className="w-4 h-4" />
               </div>
+              <span className="font-semibold text-sm truncate">{previewImageModal.title || 'Foto WhatsApp'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href={previewImageModal.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                download
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs text-slate-200 flex items-center gap-1.5 border border-slate-700 transition"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Buka Ukuran Asli</span>
+              </a>
               <button
                 type="button"
-                onClick={() => setViewingCrawlPage(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                onClick={() => setPreviewImageModal(null)}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 transition"
+                title="Tutup (Esc)"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-
-            {/* Content / Chunks */}
-            <div className="p-6 space-y-4 overflow-y-auto text-xs flex-1">
-              <div className="flex items-center justify-between text-slate-400 pb-2 border-b border-slate-800/80">
-                <span>
-                  Total <strong>{viewingCrawlPage.chunks?.length || 0}</strong> Potongan Semantik (RAG Chunks)
-                </span>
-                <span className="text-[11px]">
-                  Terakhir discraping: {viewingCrawlPage.crawledAt ? new Date(viewingCrawlPage.crawledAt).toLocaleString('id-ID') : '-'}
-                </span>
-              </div>
-
-              {(!viewingCrawlPage.chunks || viewingCrawlPage.chunks.length === 0) ? (
-                <div className="p-8 text-center text-slate-500">
-                  Tidak ada potongan teks tersimpan.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {viewingCrawlPage.chunks.map((chunk, idx) => (
-                    <div
-                      key={idx}
-                      className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 hover:border-slate-700 transition"
-                    >
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-bold text-indigo-300">
-                          Chunk #{idx + 1} {chunk.heading ? `• ${chunk.heading}` : ''}
-                        </span>
-                        <span className="text-slate-500">{chunk.content?.length || 0} karakter</span>
-                      </div>
-                      <p className="text-slate-200 leading-relaxed font-sans whitespace-pre-wrap bg-slate-950/70 p-3 rounded-lg border border-slate-800/80">
-                        {chunk.content}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between">
-              <button
-                onClick={() => {
-                  const id = viewingCrawlPage.id;
-                  setViewingCrawlPage(null);
-                  handleDeleteCrawledPage(id);
-                }}
-                className="px-3.5 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Hapus Halaman Ini</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewingCrawlPage(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs transition cursor-pointer"
-              >
-                Tutup
-              </button>
-            </div>
           </div>
+
+          {/* Main Image Frame */}
+          <div
+            className="relative max-w-4xl max-h-[78vh] flex items-center justify-center overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={previewImageModal.url}
+              alt="Preview"
+              className="max-h-[75vh] max-w-full object-contain rounded-xl select-none"
+            />
+          </div>
+
+          {/* Optional Caption */}
+          {previewImageModal.caption && (
+            <div
+              className="mt-3 max-w-2xl text-center text-xs text-slate-300 bg-slate-900/90 px-4 py-2.5 rounded-xl border border-slate-800 shadow-md whitespace-pre-wrap leading-relaxed"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {previewImageModal.caption}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -45,7 +45,7 @@ class MessageHandler {
     if (msg.imageMessage) {
       const caption = msg.imageMessage.caption ? msg.imageMessage.caption.trim() : '';
       return {
-        text: caption ? `[Foto: ${caption}]` : '[Foto pelanggan]',
+        text: caption || '',
         mediaType: 'image',
         caption,
         mimetype: msg.imageMessage.mimetype || 'image/jpeg'
@@ -306,6 +306,14 @@ class MessageHandler {
       const cleanPhone = (realPhone && phoneService.isRealPhone(realPhone)) ? realPhone : null;
 
       // Emit incoming message to dashboard
+      let incomingImage = null;
+      if (record.mediaType === 'image' && record.lastMsg) {
+        try {
+          const mediaService = require('../services/mediaService');
+          incomingImage = await mediaService.downloadAndSaveImage(record.lastMsg, sock);
+        } catch (e) {}
+      }
+
       this.emitLog({
         id: msg.key.id,
         direction: 'in',
@@ -315,6 +323,7 @@ class MessageHandler {
         senderName,
         text: rawText,
         mediaType: record.mediaType,
+        image: incomingImage,
         timestamp: new Date().toISOString()
       });
 
@@ -1014,6 +1023,11 @@ class MessageHandler {
         ? candidatePhone
         : (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : null);
 
+      let finalImg = logOptions.image || null;
+      if (finalImg && !finalImg.startsWith('http') && !finalImg.startsWith('/') && !finalImg.startsWith('data:')) {
+        finalImg = '/' + finalImg;
+      }
+
       this.emitLog({
         id: logOptions.id || `out_${Date.now()}`,
         direction: 'out',
@@ -1023,8 +1037,8 @@ class MessageHandler {
         senderName: logOptions.senderName || 'Sultan Carpet Bot',
         text: textContent,
         isAi: !!logOptions.isAi,
-        image: logOptions.image || null,
-        mediaType: logOptions.mediaType || (logOptions.image ? 'image' : 'text'),
+        image: finalImg,
+        mediaType: logOptions.mediaType || (finalImg ? 'image' : 'text'),
         timestamp: new Date().toISOString()
       });
 
@@ -1128,6 +1142,8 @@ class MessageHandler {
       ? { image: imagePayload, caption, mimetype: 'image/jpeg' }
       : { text: caption };
 
+    const catalogImg = product.image ? (product.image.startsWith('/') ? product.image : '/' + product.image) : null;
+
     await this.safeSendMessage(
       sock,
       jid,
@@ -1136,7 +1152,7 @@ class MessageHandler {
       {
         id: `out_cat_${Date.now()}`,
         senderName: 'Sultan Carpet Bot',
-        image: product.image,
+        image: catalogImg,
         mediaType: hasImage ? 'image' : 'text'
       }
     );

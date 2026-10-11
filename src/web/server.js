@@ -505,6 +505,294 @@ app.post('/api/faqs', (req, res) => {
   }
 });
 
+app.post('/api/faqs/batch', (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Data items harus berupa array yang tidak kosong.' });
+    }
+    const config = menuHandler.getConfig();
+    if (!config.faqs) config.faqs = [];
+
+    let addedCount = 0;
+    let updatedCount = 0;
+    const now = Date.now();
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item || typeof item !== 'object') continue;
+
+      const q = String(item.q || item.pertanyaan || item.Pertanyaan || item.question || item.Question || '').trim();
+      const a = String(item.a || item.jawaban || item.Jawaban || item.answer || item.Answer || '').trim();
+      const category = String(item.category || item.kategori || item.Kategori || item.Category || 'Umum').trim();
+      const source = String(item.source || item.sumber || item.Sumber || 'Import Excel').trim();
+
+      if (!q || !a) continue;
+
+      const existingIdx = config.faqs.findIndex(f => (f.q || '').toLowerCase().trim() === q.toLowerCase());
+
+      if (existingIdx !== -1) {
+        config.faqs[existingIdx] = {
+          ...config.faqs[existingIdx],
+          a: a,
+          category: category || config.faqs[existingIdx].category || 'Umum',
+          source: source || config.faqs[existingIdx].source || 'Import Excel',
+          updatedAt: new Date().toISOString()
+        };
+        updatedCount++;
+      } else {
+        const newFaq = {
+          id: `faq-${now}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+          q,
+          a,
+          category: category || 'Umum',
+          source: source || 'Import Excel',
+          updatedAt: new Date().toISOString()
+        };
+        config.faqs.unshift(newFaq);
+        addedCount++;
+      }
+    }
+
+    menuHandler.saveConfig(config);
+    broadcastSSE('faqs_updated', config.faqs);
+    res.json({
+      success: true,
+      addedCount,
+      updatedCount,
+      totalProcessed: addedCount + updatedCount,
+      faqs: config.faqs
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Download template Excel Q&A
+app.get('/api/faqs/template', (req, res) => {
+  try {
+    const XLSX = require('xlsx');
+    const templateData = [
+      {
+        'Pertanyaan': 'Apakah karpet masjid bisa dipotong dan diobras langsung di lokasi masjid?',
+        'Jawaban': 'Ya, betul. Tim teknisi Sultan Carpet membawa mesin obras portable langsung ke lokasi masjid Anda sehingga pemotongan dan obras dilakukan presisi mengikuti pilar dan arah shaf kiblat.',
+        'Kategori': 'Pemasangan & Obras'
+      },
+      {
+        'Pertanyaan': 'Bagaimana ketentuan garansi karpet di Sultan Carpet Gallery?',
+        'Jawaban': 'Kami memberikan garansi keaslian 100% serat benang import Turki dan garansi kerapian jahitan obras selama 1 tahun. Jika ada sambungan obras lepas, tim kami siap servis gratis.',
+        'Kategori': 'Garansi & Keaslian'
+      },
+      {
+        'Pertanyaan': 'Apakah melayani survey lokasi dan membawakan sampel karpet?',
+        'Jawaban': 'Tentu! Kami menyediakan layanan survey gratis untuk wilayah Jabodetabek. Tim kami membawakan sampel ketebalan karpet dan mengukur luas ruangan masjid secara presisi.',
+        'Kategori': 'Survey & Sampel'
+      },
+      {
+        'Pertanyaan': 'Berapa minimal pemesanan karpet custom roll di Sultan Carpet?',
+        'Jawaban': 'Minimal pemesanan karpet custom roll adalah 1 roll (panjang 6 meter x lebar 1.2 meter). Untuk ukuran ruangan khusus dapat dikonsultasikan langsung bersama CS kami.',
+        'Kategori': 'Karpet Masjid & Musholla'
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    worksheet['!cols'] = [
+      { wch: 45 },
+      { wch: 65 },
+      { wch: 25 }
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Template Tanya Jawab AI');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Disposition', 'attachment; filename="template_tanya_jawab_ai.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal membuat template Excel: ' + err.message });
+  }
+});
+
+// Upload file Excel untuk otomatis menambah Tanya & Jawab ke Knowledge Base
+app.post('/api/faqs/upload-excel', (req, res) => {
+  try {
+    const { fileBase64, fileName } = req.body;
+    if (!fileBase64) {
+      return res.status(400).json({ error: 'Data file base64 tidak ditemukan.' });
+    }
+
+    const XLSX = require('xlsx');
+    const fileBuffer = Buffer.from(fileBase64, 'base64');
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      return res.status(400).json({ error: 'File Excel tidak memiliki lembar kerja (worksheet).' });
+    }
+
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rawRows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+
+    if (!rawRows || rawRows.length === 0) {
+      return res.status(400).json({ error: 'File Excel kosong atau tidak memiliki data baris.' });
+    }
+
+    const config = menuHandler.getConfig();
+    if (!config.faqs) config.faqs = [];
+
+    let addedCount = 0;
+    let updatedCount = 0;
+    const now = Date.now();
+
+    for (let i = 0; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      if (!row || typeof row !== 'object') continue;
+
+      let q = '';
+      let a = '';
+      let category = 'Karpet Masjid & Musholla';
+
+      for (const [key, val] of Object.entries(row)) {
+        const cleanKey = String(key || '').trim().toLowerCase();
+        const strVal = String(val !== undefined && val !== null ? val : '').trim();
+
+        if (
+          cleanKey.includes('pertanyaan') ||
+          cleanKey.includes('tanya') ||
+          cleanKey.includes('soal') ||
+          cleanKey === 'q' ||
+          cleanKey === 'question'
+        ) {
+          if (!q) q = strVal;
+        } else if (
+          cleanKey.includes('jawaban') ||
+          cleanKey.includes('jawab') ||
+          cleanKey.includes('balasan') ||
+          cleanKey === 'a' ||
+          cleanKey === 'answer'
+        ) {
+          if (!a) a = strVal;
+        } else if (
+          cleanKey.includes('kategori') ||
+          cleanKey.includes('category') ||
+          cleanKey.includes('topik') ||
+          cleanKey.includes('topic')
+        ) {
+          if (strVal) category = strVal;
+        }
+      }
+
+      // Fallback by column position if column names didn't match
+      if (!q && !a && Object.values(row).length >= 2) {
+        const values = Object.values(row).map(v => String(v || '').trim());
+        if (values[0] && values[1]) {
+          q = values[0];
+          a = values[1];
+          if (values[2]) category = values[2];
+        }
+      }
+
+      if (!q || !a) continue;
+
+      const existingIdx = config.faqs.findIndex(
+        f => (f.q || '').toLowerCase().trim() === q.toLowerCase()
+      );
+
+      if (existingIdx !== -1) {
+        config.faqs[existingIdx] = {
+          ...config.faqs[existingIdx],
+          a: a,
+          category: category || config.faqs[existingIdx].category || 'Umum',
+          source: `Excel: ${fileName || 'Import'}`,
+          updatedAt: new Date().toISOString()
+        };
+        updatedCount++;
+      } else {
+        const newFaq = {
+          id: `faq-${now}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+          q,
+          a,
+          category: category || 'Umum',
+          source: `Excel: ${fileName || 'Import'}`,
+          updatedAt: new Date().toISOString()
+        };
+        config.faqs.unshift(newFaq);
+        addedCount++;
+      }
+    }
+
+    if (addedCount === 0 && updatedCount === 0) {
+      return res.status(400).json({
+        error: 'Tidak ada baris Tanya & Jawab valid yang ditemukan. Pastikan ada kolom "Pertanyaan" dan "Jawaban".'
+      });
+    }
+
+    menuHandler.saveConfig(config);
+    broadcastSSE('faqs_updated', config.faqs);
+
+    res.json({
+      success: true,
+      addedCount,
+      updatedCount,
+      totalProcessed: addedCount + updatedCount,
+      faqs: config.faqs
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal memproses file Excel: ' + err.message });
+  }
+});
+
+// FAQ Categories Management
+app.get('/api/faqs/categories', (req, res) => {
+  const config = menuHandler.getConfig();
+  const defaultCats = [
+    'Karpet Masjid & Musholla',
+    'Pemasangan & Obras',
+    'Survey & Sampel',
+    'Promo & Diskon',
+    'Garansi & Keaslian',
+    'Nego & Pembayaran',
+    'Ketersediaan Stok',
+    'Komplain & Retur',
+    'Umum'
+  ];
+  const stored = config.faq_categories || [];
+  const fromFaqs = (config.faqs || []).map(f => f.category).filter(Boolean);
+  const allUnique = Array.from(new Set([...defaultCats, ...stored, ...fromFaqs]));
+  res.json({ success: true, categories: allUnique, customCategories: stored });
+});
+
+app.post('/api/faqs/categories', (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Nama kategori wajib diisi.' });
+    }
+    const cleanName = name.trim();
+    const config = menuHandler.getConfig();
+    if (!config.faq_categories) {
+      config.faq_categories = [
+        'Karpet Masjid & Musholla',
+        'Pemasangan & Obras',
+        'Survey & Sampel',
+        'Promo & Diskon',
+        'Garansi & Keaslian',
+        'Nego & Pembayaran',
+        'Ketersediaan Stok',
+        'Komplain & Retur',
+        'Umum'
+      ];
+    }
+    if (!config.faq_categories.includes(cleanName)) {
+      config.faq_categories.push(cleanName);
+    }
+    menuHandler.saveConfig(config);
+    broadcastSSE('faq_categories_updated', config.faq_categories);
+    res.json({ success: true, category: cleanName, categories: config.faq_categories });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.put('/api/faqs/:id', (req, res) => {
   try {
     const { id } = req.params;
@@ -1026,7 +1314,9 @@ app.post('/api/gemini/simulate', async (req, res) => {
   }
 });
 
-// Static assets for catalog images
+// Static assets for catalog images and media
+app.use('/media', express.static(path.join(__dirname, '../../public/media')));
+app.use('/catalog', express.static(path.join(__dirname, '../../public/catalog')));
 app.use('/catalog', express.static(path.join(__dirname, '../../assets/catalog')));
 app.use('/assets', express.static(path.join(__dirname, '../../assets')));
 

@@ -1,8 +1,52 @@
 {
-  "123456@s.whatsapp.net": {
-    "name": "Ghost Contact",
-    "unreadCount": 0,
-    "jid": "123456@s.whatsapp.net",
-    "updatedAt": "2026-10-07T16:47:28.454Z"
+  "92011503861900@lid": {
+    "name": "Andre N",
+    "updatedAt": "2026-10-11T13:11:43.000Z",
+    "jid": "92011503861900@lid"
+  },
+  "104307810656307@lid": {
+    "name": "Nadia",
+    "updatedAt": "2026-10-10T03:10:58.000Z",
+    "jid": "104307810656307@lid"
+  },
+  "133939108835460@lid": {
+    "name": null,
+    "updatedAt": "2026-10-10T03:28:41.000Z",
+    "jid": "133939108835460@lid"
+  },
+  "262126199406761@lid": {
+    "name": "Zaenal Arfan",
+    "updatedAt": "2026-10-10T05:22:54.000Z",
+    "jid": "262126199406761@lid"
+  },
+  "80805833494690@lid": {
+    "name": null,
+    "updatedAt": "2026-10-10T05:08:08.000Z",
+    "jid": "80805833494690@lid"
+  },
+  "116196514992366@lid": {
+    "name": "Anda",
+    "updatedAt": "2026-10-11T13:12:54.000Z",
+    "jid": "116196514992366@lid"
+  },
+  "6289696307402@s.whatsapp.net": {
+    "name": "Nopal",
+    "updatedAt": "2026-10-11T13:01:02.862Z",
+    "jid": "6289696307402@s.whatsapp.net"
+  },
+  "6281358383443@s.whatsapp.net": {
+    "name": "Nadia",
+    "updatedAt": "2026-10-11T13:01:03.785Z",
+    "jid": "6281358383443@s.whatsapp.net"
+  },
+  "6289697048388@s.whatsapp.net": {
+    "name": "Mas Zaenal Arfan",
+    "updatedAt": "2026-10-11T13:01:04.086Z",
+    "jid": "6289697048388@s.whatsapp.net"
+  },
+  "6282333893488@s.whatsapp.net": {
+    "name": "Yourself (Ritsu)",
+    "updatedAt": "2026-10-11T13:01:04.329Z",
+    "jid": "6282333893488@s.whatsapp.net"
   }
 }

@@ -4,20 +4,15 @@ const path = require('path');
 const MAPPING_FILE = path.join(__dirname, '../../data/phone_mapping.json');
 
 const INITIAL_MAPPING = {
-  // Kharisma Alung P's verified real phone number from WhatsApp stanza attributes
-  "21453546229779": "6281216526150",
-  "21453546229779@lid": "6281216526150",
-  "names": {
-    "kharisma alung p": "6281216526150"
-  },
-  "contactNames": {
-    "21453546229779": "Kharisma Alung P",
-    "21453546229779@lid": "Kharisma Alung P",
-    "6281216526150": "Kharisma Alung P"
-  }
+  names: {},
+  contactNames: {}
 };
 
-const SYSTEM_NAMES = ['admin', 'harbor bot', 'harbor ai', 'bot', 'gemini', 'cs', 'operator', 'pelanggan', 'saya', 'sultan carpet bot'];
+const SYSTEM_NAMES = [
+  'admin', 'harbor bot', 'harbor ai', 'bot', 'gemini', 'cs', 'operator',
+  'pelanggan', 'saya', 'sultan carpet bot', 'sultan carpet ai', 'sultan carpet',
+  'groq', 'ai', 'assistant'
+];
 
 class PhoneService {
   constructor() {
@@ -88,14 +83,6 @@ class PhoneService {
         }
       }
 
-      // Seed verified initial contacts
-      this.mapping["21453546229779"] = "6281216526150";
-      this.mapping["21453546229779@lid"] = "6281216526150";
-      this.mapping.names["kharisma alung p"] = "6281216526150";
-      this.mapping.contactNames["21453546229779"] = "Kharisma Alung P";
-      this.mapping.contactNames["21453546229779@lid"] = "Kharisma Alung P";
-      this.mapping.contactNames["6281216526150"] = "Kharisma Alung P";
-
       this.saveMapping();
     } catch (err) {
       console.error('[PhoneService] Error loading mapping:', err.message);
@@ -165,23 +152,6 @@ class PhoneService {
       if (!this.mapping.names) this.mapping.names = {};
       this.mapping.names[lower] = mappedPhone;
       if (base) this.mapping.names[base] = mappedPhone;
-
-      // Cross-link any other unmapped LID in contactNames that shares this name
-      for (const [cKey, cName] of Object.entries(this.mapping.contactNames)) {
-        if (this.isLid(cKey) && cName && typeof cName === 'string') {
-          if (cName.trim().toLowerCase() === lower || this.normalizeName(cName) === base) {
-            this.mapping[cKey] = mappedPhone;
-            this.mapping[cKey.split('@')[0]] = mappedPhone;
-          }
-        }
-      }
-    } else {
-      // If this is an LID without phone, check if this name already belongs to a known phone!
-      const existingPhone = this.getPhone(null, cleanName);
-      if (existingPhone && this.isRealPhone(existingPhone)) {
-        this.mapping[rawKey] = existingPhone;
-        this.mapping[shortKey] = existingPhone;
-      }
     }
 
     this.saveMapping();
@@ -245,16 +215,6 @@ class PhoneService {
         this.mapping.contactNames[shortKey] = cleanName;
         this.mapping.contactNames[cleanPhone] = cleanName;
         this.mapping.contactNames[`${cleanPhone}@s.whatsapp.net`] = cleanName;
-
-        // Cross-link any other unmapped LID in contactNames that shares this name
-        for (const [cKey, cName] of Object.entries(this.mapping.contactNames)) {
-          if (this.isLid(cKey) && cName && typeof cName === 'string') {
-            if (cName.trim().toLowerCase() === lowerName || (base && this.normalizeName(cName) === base)) {
-              this.mapping[cKey] = cleanPhone;
-              this.mapping[cKey.split('@')[0]] = cleanPhone;
-            }
-          }
-        }
       }
     }
 
@@ -282,69 +242,21 @@ class PhoneService {
       }
     }
 
-    // 2. Candidate names to search across database
-    const candidates = [];
-    if (senderName && typeof senderName === 'string') candidates.push(senderName);
-    if (rawKey) {
-      const stored = this.getName(rawKey);
-      if (stored && typeof stored === 'string') candidates.push(stored);
-    }
-
-    for (const cand of candidates) {
-      const clean = cand.trim().toLowerCase();
-      if (!clean || SYSTEM_NAMES.some(s => clean.includes(s)) || /^\+?\d+$/.test(clean)) continue;
-
-      // 2a. Check this.mapping.names (exact match)
-      if (this.mapping.names && this.mapping.names[clean] && this.isRealPhone(this.mapping.names[clean])) {
-        const found = this.mapping.names[clean];
-        if (rawKey) this.setMapping(rawKey, found, cand);
-        return found;
-      }
-
-      // 2b. Check this.mapping.names by normalized base name
-      const base = this.normalizeName(cand);
-      if (base && this.mapping.names) {
-        if (this.mapping.names[base] && this.isRealPhone(this.mapping.names[base])) {
-          const found = this.mapping.names[base];
-          if (rawKey) this.setMapping(rawKey, found, cand);
-          return found;
-        }
-        for (const [nKey, pVal] of Object.entries(this.mapping.names)) {
-          if (this.isRealPhone(pVal)) {
-            const nBase = this.normalizeName(nKey);
-            if (nBase === base || (base.length >= 3 && (nBase.includes(base) || base.includes(nBase)))) {
-              if (rawKey) this.setMapping(rawKey, pVal, cand);
-              return pVal;
-            }
-          }
-        }
-      }
-
-      // 2c. Check this.mapping.contactNames (where key is a verified real phone)
-      if (this.mapping.contactNames) {
-        for (const [cKey, cName] of Object.entries(this.mapping.contactNames)) {
-          const cleanPhone = cKey.replace('@s.whatsapp.net', '').replace(/\D/g, '');
-          if (this.isRealPhone(cleanPhone) && cName && typeof cName === 'string') {
-            const cClean = cName.trim().toLowerCase();
-            const cBase = this.normalizeName(cName);
-            if (
-              cClean === clean ||
-              (base && cBase && cBase === base) ||
-              (base && cBase && base.length >= 3 && (cBase.includes(base) || base.includes(cBase)))
-            ) {
-              if (rawKey) this.setMapping(rawKey, cleanPhone, cand);
-              return cleanPhone;
-            }
-          }
-        }
-      }
-    }
-
-    // 3. Fallback: If key itself is purely digits and valid phone
-    if (rawKey) {
+    // 2. Direct fallback if key itself is purely digits and a valid real phone (not a LID)
+    if (rawKey && !this.isLid(rawKey)) {
       const shortKey = rawKey.split('@')[0].replace(/\D/g, '');
       if (this.isRealPhone(shortKey)) {
         return shortKey;
+      }
+    }
+
+    // 3. Fallback by exact senderName match (pure read-only lookup, never mutates mapping)
+    if (senderName && typeof senderName === 'string') {
+      const clean = senderName.trim().toLowerCase();
+      if (clean && !SYSTEM_NAMES.some(s => clean.includes(s)) && !/^\+?\d+$/.test(clean)) {
+        if (this.mapping.names && this.mapping.names[clean] && this.isRealPhone(this.mapping.names[clean])) {
+          return this.mapping.names[clean];
+        }
       }
     }
 
@@ -393,6 +305,64 @@ class PhoneService {
     }
 
     return '-';
+  }
+
+  removeContact(key) {
+    if (!key) return;
+    const rawKey = String(key).trim();
+    const shortKey = rawKey.split('@')[0];
+    const cleanDigits = rawKey.replace(/\D/g, '');
+    const mappedPhone = this.mapping[rawKey] || this.mapping[shortKey];
+
+    const targetPhones = [cleanDigits, mappedPhone].filter(Boolean);
+
+    const keysToRemove = new Set([
+      rawKey,
+      shortKey,
+      cleanDigits,
+      `${cleanDigits}@s.whatsapp.net`,
+      `${cleanDigits}@lid`
+    ]);
+
+    if (mappedPhone) {
+      const p = String(mappedPhone).replace(/\D/g, '');
+      keysToRemove.add(p);
+      keysToRemove.add(`${p}@s.whatsapp.net`);
+      keysToRemove.add(`${p}@lid`);
+    }
+
+    // Also purge any reverse mappings (e.g. LID that mapped to this phone)
+    for (const [k, v] of Object.entries(this.mapping)) {
+      if (k === 'names' || k === 'contactNames') continue;
+      if (targetPhones.includes(v) || targetPhones.includes(String(v).replace(/\D/g, ''))) {
+        keysToRemove.add(k);
+        keysToRemove.add(k.split('@')[0]);
+      }
+    }
+
+    let changed = false;
+    for (const k of keysToRemove) {
+      if (!k) continue;
+      if (this.mapping[k]) {
+        delete this.mapping[k];
+        changed = true;
+      }
+      if (this.mapping.contactNames && this.mapping.contactNames[k]) {
+        const name = this.mapping.contactNames[k];
+        delete this.mapping.contactNames[k];
+        changed = true;
+        if (name && typeof name === 'string' && this.mapping.names) {
+          const lower = name.trim().toLowerCase();
+          const base = this.normalizeName(name);
+          delete this.mapping.names[lower];
+          if (base) delete this.mapping.names[base];
+        }
+      }
+    }
+
+    if (changed) {
+      this.saveMapping();
+    }
   }
 }
 

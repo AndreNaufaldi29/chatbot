@@ -60,17 +60,7 @@ class ProtectionService extends EventEmitter {
     if (this.gcTimer.unref) this.gcTimer.unref();
   }
 
-  // Helper: Retrieve protections config dynamically
-  getConfig() {
-    try {
-      const configPath = path.join(__dirname, '../../config/config.json');
-      if (fs.existsSync(configPath)) {
-        const raw = fs.readFileSync(configPath, 'utf8');
-        const cfg = JSON.parse(raw);
-        return cfg.protections || {};
-      }
-    } catch (e) {}
-
+  getDefaultConfig() {
     return {
       cooldown: { enabled: true, min_delay_ms: 55000, max_delay_ms: 65000, jitter_ms: 8000, typing_simulation: true, typing_speed_cpm: 300, global_max_per_minute: 20 },
       deduplication: { enabled: true, id_ttl_seconds: 300, content_window_ms: 3000, outbound_window_ms: 4000 },
@@ -81,6 +71,35 @@ class ProtectionService extends EventEmitter {
       session_timeout: { inactivity_minutes: 20, gc_interval_minutes: 10 },
       flood_protection: { enabled: true, max_messages_per_minute: 15, cooldown_seconds: 60, warning_message: '⚠️ Mohon maaf, Anda mengirim pesan terlalu cepat. Silakan tunggu 1 menit sebelum mengirim pesan kembali agar layanan kami dapat memproses pertanyaan Anda dengan baik.' }
     };
+  }
+
+  // Helper: Retrieve protections config dynamically
+  getConfig() {
+    const defaults = this.getDefaultConfig();
+    try {
+      const configPath = path.join(__dirname, '../../config/config.json');
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, 'utf8');
+        const cfg = JSON.parse(raw);
+        if (cfg && cfg.protections) {
+          const userProt = cfg.protections;
+          return {
+            ...defaults,
+            ...userProt,
+            cooldown: { ...defaults.cooldown, ...(userProt.cooldown || {}) },
+            deduplication: { ...defaults.deduplication, ...(userProt.deduplication || {}) },
+            conversation_buffer: { ...defaults.conversation_buffer, ...(userProt.conversation_buffer || {}) },
+            retry_limit: { ...defaults.retry_limit, ...(userProt.retry_limit || {}) },
+            opt_in: { ...defaults.opt_in, ...(userProt.opt_in || {}) },
+            human_handoff: { ...defaults.human_handoff, ...(userProt.human_handoff || {}) },
+            session_timeout: { ...defaults.session_timeout, ...(userProt.session_timeout || {}) },
+            flood_protection: { ...defaults.flood_protection, ...(userProt.flood_protection || {}) }
+          };
+        }
+      }
+    } catch (e) {}
+
+    return defaults;
   }
 
   // =========================================================================

@@ -17,6 +17,7 @@ const phoneService = require('./services/phoneService');
 const protectionService = require('./services/protectionService');
 const chatService = require('./services/chatService');
 const dbService = require('./services/dbService');
+const mediaService = require('./services/mediaService');
 
 const AUTH_FOLDER = path.join(__dirname, '../auth_info_baileys');
 
@@ -134,6 +135,8 @@ class WhatsAppBot extends EventEmitter {
       const version = cachedBaileysVersion || [2, 3000, 1043857760];
       console.log(`[WhatsAppBot] Menggunakan WA Web v${version.join('.')}`);
 
+      const isAlreadyRegistered = Boolean(state.creds && (state.creds.registered || state.creds.me));
+
       this.sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
@@ -142,14 +145,16 @@ class WhatsAppBot extends EventEmitter {
         browser: Browsers.windows('Desktop'),
         defaultQueryTimeoutMs: 30000,
         connectTimeoutMs: 30000,
-        syncFullHistory: false, // Nonaktifkan sync history berat agar QR barcode muncul seketika!
+        syncFullHistory: false, // Wajib false agar server WhatsApp tidak memutus koneksi dengan error 428
+        shouldSyncHistoryMessage: () => true, // Izinkan Baileys mengunduh & memproses seluruh paket riwayat obrolan & kontak
         shouldIgnoreJid: (jid) => {
           // Abaikan status cerita & siaran newsletter agar tidak memicu error dekripsi sesi
           return (
             !jid ||
             jid.endsWith('@broadcast') ||
             jid.includes('status@broadcast') ||
-            jid.endsWith('@newsletter')
+            jid.endsWith('@newsletter') ||
+            this.isSelf(jid)
           );
         },
         getMessage: async (key) => {
@@ -331,9 +336,10 @@ class WhatsAppBot extends EventEmitter {
       });
 
       // Helper for syncing contact identity (Name, Phone, LID)
-      // Helper for syncing contact identity (Name, Phone, LID)
       const syncContact = (c) => {
         if (!c || !c.id || c.id === '0@s.whatsapp.net' || c.id.endsWith('@broadcast') || c.id.endsWith('@newsletter')) return;
+        if (this.isSelf(c.id)) return;
+        if (chatService.isChatDeleted(c.id)) return;
         const name = c.name || c.notify || c.verifiedName;
         const lid = c.lid || (c.id.endsWith('@lid') ? c.id : null);
         const pn = (c.jid || c.phoneNumber || (c.id.endsWith('@s.whatsapp.net') ? c.id : null));
@@ -373,7 +379,7 @@ class WhatsAppBot extends EventEmitter {
             if (m.key?.id && m.message) {
               sessionManager.storeMessage(m.key.id, m.message);
             }
-            const parsed = this.parseWAMessage(m);
+            const parsed = await this.parseWAMessage(m);
             if (parsed) {
               parsedList.push(parsed);
               dbService.saveChatMessage(parsed).catch(() => {});
@@ -390,16 +396,15 @@ class WhatsAppBot extends EventEmitter {
         if (Array.isArray(chats)) {
           for (const ch of chats) {
             if (ch.id && ch.id !== '0@s.whatsapp.net' && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
+              if (this.isSelf(ch.id)) continue;
+              if (chatService.isChatDeleted(ch.id)) continue;
               const contactName = phoneService.getName(ch.id);
               const realPhone = phoneService.getPhone(ch.id, ch.name);
-              // Hanya simpan ke syncedChats jika memiliki nama kontak atau nomor telepon valid
-              if (ch.name || contactName || realPhone) {
-                chatService.setSyncedChat(ch.id, {
-                  name: ch.name || contactName || null,
-                  unreadCount: ch.unreadCount || 0,
-                  updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
-                });
-              }
+              chatService.setSyncedChat(ch.id, {
+                name: ch.name || contactName || (realPhone ? phoneService.formatPhone(realPhone) : null),
+                unreadCount: ch.unreadCount || 0,
+                updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
+              });
             }
           }
         }
@@ -413,6 +418,8 @@ class WhatsAppBot extends EventEmitter {
         if (Array.isArray(newChats)) {
           for (const ch of newChats) {
             if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
+              if (this.isSelf(ch.id)) continue;
+              if (chatService.isChatDeleted(ch.id)) continue;
               const contactName = phoneService.getName(ch.id);
               chatService.setSyncedChat(ch.id, {
                 name: ch.name || contactName || null,
@@ -429,6 +436,8 @@ class WhatsAppBot extends EventEmitter {
         if (Array.isArray(updates)) {
           for (const ch of updates) {
             if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
+              if (this.isSelf(ch.id)) continue;
+              if (chatService.isChatDeleted(ch.id)) continue;
               const contactName = phoneService.getName(ch.id);
               chatService.setSyncedChat(ch.id, {
                 name: ch.name || contactName || null,
@@ -466,7 +475,7 @@ class WhatsAppBot extends EventEmitter {
             if (msg.key?.id && msg.message) {
               sessionManager.storeMessage(msg.key.id, msg.message);
             }
-            const parsed = this.parseWAMessage(msg);
+            const parsed = await this.parseWAMessage(msg);
             if (parsed) {
               parsedList.push(parsed);
               dbService.saveChatMessage(parsed).catch(() => {});
@@ -490,6 +499,17 @@ class WhatsAppBot extends EventEmitter {
               sessionManager.storeMessage(msg.key.id, msg.message);
             }
 
+            // Pesan keluar dari HP pengguna langsung (sinkronisasi balasan WhatsApp manual)
+            if (msg.key?.fromMe) {
+              const parsed = await this.parseWAMessage(msg);
+              if (parsed) {
+                chatService.addMessage(parsed);
+                dbService.saveChatMessage(parsed).catch(() => {});
+                this.emit('chat_log', parsed);
+              }
+              continue;
+            }
+
             // Cek apakah pesan ini dikirim sebelum bot terhubung (antrean offline)
             const botConnTime = this.connectedTimestamp || 0;
             const rawTs = msg.messageTimestamp
@@ -500,7 +520,7 @@ class WhatsAppBot extends EventEmitter {
 
             if (isOldMessage) {
               // Simpan dan tampilkan pesan offline di dashboard tanpa memicu auto-reply bot
-              const parsed = this.parseWAMessage(msg);
+              const parsed = await this.parseWAMessage(msg);
               if (parsed) {
                 chatService.addMessage(parsed);
                 dbService.saveChatMessage(parsed).catch(() => {});
@@ -526,7 +546,7 @@ class WhatsAppBot extends EventEmitter {
     }
   }
 
-  parseWAMessage(msg) {
+  async parseWAMessage(msg) {
     if (!msg || !msg.key) return null;
     const jid = msg.key.remoteJid;
     if (!jid || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return null;
@@ -534,17 +554,26 @@ class WhatsAppBot extends EventEmitter {
     const isFromMe = Boolean(msg.key.fromMe);
     const info = messageHandler.extractMessageInfo(msg.message);
     const text = (info.text || '').trim();
-    if (!text && (info.mediaType === 'unknown' || info.mediaType === 'text')) return null;
-    if (text === '[text]' || text === '') return null;
+    if (!text && info.mediaType !== 'image') return null;
+    if (text === '[text]') return null;
 
     let cleanText = text;
     if (!cleanText) {
-      if (info.mediaType === 'image') cleanText = info.caption ? `[Foto: ${info.caption}]` : '[Foto pelanggan]';
-      else if (info.mediaType === 'video') cleanText = info.caption ? `[Video: ${info.caption}]` : '[Video pelanggan]';
+      if (info.mediaType === 'image') cleanText = info.caption || '';
+      else if (info.mediaType === 'video') cleanText = info.caption ? `[Video: ${info.caption}]` : '[Video]';
       else if (info.mediaType === 'audio') cleanText = '[Pesan Suara]';
       else if (info.mediaType === 'sticker') cleanText = '[Stiker WhatsApp]';
       else if (info.mediaType === 'document') cleanText = `[Dokumen: ${info.fileName || 'File'}]`;
       else return null;
+    }
+
+    let downloadedImage = null;
+    if (info.mediaType === 'image') {
+      try {
+        downloadedImage = await mediaService.downloadAndSaveImage(msg, this.sock);
+      } catch (err) {
+        console.warn('[WhatsAppBot] Gagal download gambar:', err.message);
+      }
     }
 
     let timestampIso = new Date().toISOString();
@@ -617,10 +646,21 @@ class WhatsAppBot extends EventEmitter {
       senderName,
       text: cleanText,
       mediaType: info.mediaType || 'text',
-      image: null,
+      image: downloadedImage || null,
       isAi: false,
       timestamp: timestampIso
     };
+  }
+
+  isSelf(jid) {
+    if (!jid) return false;
+    const myJid = this.sock?.user?.id?.split(':')[0]?.replace(/\D/g, '') || this.userInfo?.id?.replace(/\D/g, '');
+    const myLid = this.sock?.user?.lid?.split(':')[0]?.replace(/\D/g, '');
+    const clean = String(jid).split(':')[0].replace(/[@a-zA-Z._-]/g, '');
+    if (clean === '6285189520708' || clean === '90560006230229') return true;
+    if (myJid && clean === myJid) return true;
+    if (myLid && clean === myLid) return true;
+    return false;
   }
 
   getStatus() {
@@ -708,7 +748,11 @@ class WhatsAppBot extends EventEmitter {
       if (imageBuffer) {
         messagePayload = { image: imageBuffer, caption: text || '', mimetype: 'image/jpeg' };
         hasImage = true;
-        imageLog = options.imagePath || imageLog || 'custom_upload.jpg';
+        const savedUrl = mediaService.saveBufferImage(imageBuffer);
+        imageLog = savedUrl || options.imagePath || imageLog || null;
+      }
+      if (imageLog && !imageLog.startsWith('http') && !imageLog.startsWith('/') && !imageLog.startsWith('data:')) {
+        imageLog = '/' + imageLog;
       }
     }
 
@@ -731,7 +775,7 @@ class WhatsAppBot extends EventEmitter {
       jid,
       phone: resolvedPhone,
       senderName,
-      text: text || (hasImage ? '[Foto Terkirim]' : ''),
+      text: text || '',
       mediaType: hasImage ? 'image' : 'text',
       image: imageLog,
       isAi: false,

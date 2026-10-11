@@ -345,6 +345,20 @@ function appendChatMessage(msg) {
     csBadge = '<span class="badge-cs-handover">CS Request</span>';
   }
 
+  const rawText = typeof msg.text === 'string' ? msg.text : '';
+  let cleanText = rawText
+    .replace(/^\[Foto(?::\s*|\s+pelanggan\]?|\]?)/i, '')
+    .replace(/\]$/, '')
+    .trim();
+  if (
+    cleanText.toLowerCase() === 'pelanggan' ||
+    cleanText.toLowerCase() === '[foto pelanggan]' ||
+    cleanText.toLowerCase() === '[foto]' ||
+    cleanText.toLowerCase() === '[foto terkirim]'
+  ) {
+    cleanText = '';
+  }
+
   let bubbleHtml = '';
   if (msg.isListMenu && msg.rows && msg.rows.length > 0) {
     const menuKey = msg.id || `menu_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
@@ -357,7 +371,7 @@ function appendChatMessage(msg) {
 
     bubbleHtml = `
       <div class="chat-bubble wa-list-bubble">
-        <div class="wa-list-text">${escapeHtml(msg.text)}</div>
+        <div class="wa-list-text">${escapeHtml(cleanText || rawText)}</div>
         <button class="wa-list-btn-preview" onclick="openMenuPopup('${menuKey}')" title="Klik untuk membuka pilihan menu">
           <svg class="wa-list-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/>
@@ -366,8 +380,23 @@ function appendChatMessage(msg) {
         </button>
       </div>
     `;
-  } else {
-    bubbleHtml = `<div class="chat-bubble">${formatWhatsAppText(msg.text)}</div>`;
+  } else if (cleanText) {
+    bubbleHtml = `<div class="chat-bubble">${formatWhatsAppText(cleanText)}</div>`;
+  }
+
+  let imageHtml = '';
+  if (msg.image) {
+    const imgSrc = msg.image.startsWith('/') || msg.image.startsWith('http') || msg.image.startsWith('data:')
+      ? msg.image
+      : '/' + msg.image;
+    imageHtml = `
+      <div class="chat-image-wrap" onclick="openImageLightbox('${escapeHtml(imgSrc)}', '${escapeHtml(msg.senderName || '')}')" title="Klik untuk memperbesar gambar">
+        <img src="${escapeHtml(imgSrc)}" alt="Foto" class="chat-image-thumb" onerror="this.parentElement.style.display='none';" />
+        <div class="chat-image-overlay">
+          <span>🔍 Perbesar Foto</span>
+        </div>
+      </div>
+    `;
   }
 
   row.innerHTML = `
@@ -376,12 +405,58 @@ function appendChatMessage(msg) {
       <span>${timeStr}</span>
       ${csBadge}
     </div>
+    ${imageHtml}
     ${bubbleHtml}
   `;
 
   chatLogBox.appendChild(row);
   chatLogBox.scrollTop = chatLogBox.scrollHeight;
 }
+
+// Lightbox Modal Controller for Chat Images
+function openImageLightbox(src, title) {
+  let modal = document.getElementById('image-lightbox-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'image-lightbox-modal';
+    modal.className = 'lightbox-backdrop';
+    modal.innerHTML = `
+      <div class="lightbox-container" onclick="event.stopPropagation()">
+        <div class="lightbox-header">
+          <div class="lightbox-title-wrap">
+            <span class="lightbox-title" id="lightbox-title">Foto WhatsApp</span>
+          </div>
+          <div class="lightbox-actions">
+            <a id="lightbox-download-link" href="#" target="_blank" download class="lightbox-btn-download">Buka Asli ↗</a>
+            <button class="lightbox-btn-close" onclick="closeImageLightbox()">✕</button>
+          </div>
+        </div>
+        <div class="lightbox-body">
+          <img id="lightbox-img" src="" alt="Preview" />
+        </div>
+      </div>
+    `;
+    modal.onclick = closeImageLightbox;
+    document.body.appendChild(modal);
+  }
+
+  const img = document.getElementById('lightbox-img');
+  const titleEl = document.getElementById('lightbox-title');
+  const dlLink = document.getElementById('lightbox-download-link');
+
+  if (img) img.src = src;
+  if (titleEl) titleEl.textContent = title || 'Foto Lampiran WhatsApp';
+  if (dlLink) dlLink.href = src;
+
+  modal.classList.add('active');
+}
+
+function closeImageLightbox() {
+  const modal = document.getElementById('image-lightbox-modal');
+  if (modal) modal.classList.remove('active');
+}
+window.openImageLightbox = openImageLightbox;
+window.closeImageLightbox = closeImageLightbox;
 
 // Load All Synced Chat Messages on Login / Initialization
 async function loadRecentChatLogs() {
@@ -790,6 +865,50 @@ function initQnaModal() {
   const addBtn = document.getElementById('btn-add-faq');
   if (addBtn) addBtn.onclick = openAddFaqModal;
 
+
+
+  const uploadExcelBtn = document.getElementById('btn-upload-faq-excel');
+  const excelFileInput = document.getElementById('faq-excel-file-input');
+
+  if (uploadExcelBtn && excelFileInput) {
+    uploadExcelBtn.onclick = () => excelFileInput.click();
+    excelFileInput.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      excelFileInput.value = '';
+
+      showToast('Mengunggah dan memproses file Excel...', 'info');
+      try {
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+          try {
+            const base64Data = evt.target.result.split(',')[1];
+            const res = await fetch('/api/faqs/upload-excel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fileBase64: base64Data,
+                fileName: file.name
+              })
+            });
+            const data = await res.json();
+            if (data.success) {
+              showToast(`Berhasil menambahkan ${data.addedCount} Tanya-Jawab baru!`, 'success');
+              loadFaqs();
+            } else {
+              showToast(data.error || 'Gagal memproses file Excel', 'error');
+            }
+          } catch (err) {
+            showToast('Error: ' + err.message, 'error');
+          }
+        };
+        reader.readAsDataURL(file);
+      } catch (err) {
+        showToast('Gagal membaca file: ' + err.message, 'error');
+      }
+    };
+  }
+
   const modal = document.getElementById('qna-modal');
   const closeBtn = document.getElementById('modal-qna-close-btn');
   const cancelBtn = document.getElementById('modal-qna-cancel-btn');
@@ -828,7 +947,7 @@ window.openAddFaqModal = function() {
   if (!modal) return;
   document.getElementById('modal-qna-title').textContent = 'Ajari AI: Tambah Tanya-Jawab Baru';
   document.getElementById('modal-qna-id').value = '';
-  document.getElementById('modal-qna-category').value = 'Pemasangan & Obras';
+  document.getElementById('modal-qna-category').value = '';
   document.getElementById('modal-qna-question').value = '';
   document.getElementById('modal-qna-answer').value = '';
   modal.classList.add('active');
@@ -849,7 +968,7 @@ window.editFaq = function(faqId) {
 
   document.getElementById('modal-qna-title').textContent = 'Edit Knowledge Base AI';
   document.getElementById('modal-qna-id').value = faq.id;
-  document.getElementById('modal-qna-category').value = faq.category || 'Pemasangan & Obras';
+  document.getElementById('modal-qna-category').value = faq.category || '';
   document.getElementById('modal-qna-question').value = faq.question || '';
   document.getElementById('modal-qna-answer').value = faq.answer || '';
   modal.classList.add('active');
@@ -885,7 +1004,7 @@ window.closeQnaModal = function() {
 
 async function saveQnaItem() {
   const id = document.getElementById('modal-qna-id').value;
-  const category = document.getElementById('modal-qna-category').value;
+  const category = (document.getElementById('modal-qna-category').value || '').trim() || 'Umum';
   const question = document.getElementById('modal-qna-question').value.trim();
   const answer = document.getElementById('modal-qna-answer').value.trim();
 
