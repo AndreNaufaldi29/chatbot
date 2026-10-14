@@ -3,6 +3,7 @@ const path = require('path');
 const menuHandler = require('../handlers/menuHandler');
 const ragService = require('./ragService');
 const { stripStarsAndEmojis } = require('../utils/textCleaner');
+const timeHelper = require('../utils/timeHelper');
 
 const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 const ACTIVE_GROQ_MODELS = [
@@ -172,8 +173,11 @@ class GroqService {
 
     const customPrompt = config.ai?.system_instructions || '';
     const ragContext = userText ? ragService.retrieveContext(userText, 4) : '';
+    const timeContext = timeHelper.getAiTimeContext();
 
     return `${customPrompt}
+
+${timeContext}
 
 ${ragContext ? `${ragContext}\n\n` : ''}=== INFORMASI RESMI TOKO & PEMILIK ===
 Nama Toko: ${b.name} (${b.tagline})

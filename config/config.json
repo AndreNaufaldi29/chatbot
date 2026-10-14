@@ -175,9 +175,12 @@
   "protections": {
     "cooldown": {
       "enabled": true,
-      "min_delay_ms": 55000,
-      "max_delay_ms": 65000,
-      "jitter_ms": 8000,
+      "normal_delay_ms": 60000,
+      "long_delay_ms": 75000,
+      "min_delay_ms": 60000,
+      "max_delay_ms": 75000,
+      "long_threshold": 160,
+      "jitter_ms": 3000,
       "typing_simulation": true,
       "typing_speed_cpm": 300,
       "global_max_per_minute": 20
@@ -201,14 +204,13 @@
       "circuit_breaker_timeout_ms": 60000
     },
     "opt_in": {
-      "enabled": false,
+      "enabled": true,
       "default_opted_in": true,
       "opt_out_keywords": [
         "stop",
         "berhenti",
         "unsubscribe",
         "jangan chat",
-        "batal langganan",
         "off",
         "keluar"
       ],
@@ -231,10 +233,7 @@
         "manusia",
         "orang",
         "live agent",
-        "bantuan manusia",
-        "staf",
-        "bicara orang",
-        "hubungi admin"
+        "bantuan manusia"
       ],
       "release_keywords": [
         "!bot",
@@ -256,9 +255,9 @@
     },
     "flood_protection": {
       "enabled": true,
-      "max_messages_per_minute": 5,
-      "cooldown_seconds": 75,
-      "warning_message": "⚠️ Mohon maaf, Anda mengirim pesan terlalu cepat. Silakan tunggu 1 menit sebelum mengirim pesan kembali agar layanan kami dapat memproses pertanyaan Anda dengan baik."
+      "max_messages_per_minute": 15,
+      "cooldown_seconds": 60,
+      "warning_message": "Mohon maaf, Anda mengirim pesan terlalu cepat. Silakan tunggu 1 menit sebelum mengirim pesan kembali agar layanan kami dapat memproses pertanyaan Anda dengan baik."
     }
   },
   "server": {
@@ -342,7 +341,7 @@
       "footer": "Warna: Antique Ivory, Ruby Wine & Persian Gold. Ukuran: 250 x 350 cm.",
       "price": "Rp 9.800.000",
       "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/permadani-persia-isfahan",
+      "url": "",
       "image": "catalog/karpet-persia-mewah.jpg"
     },
     {
@@ -354,7 +353,7 @@
       "footer": "Warna: Warm Beige, Ivory Cream & Charcoal. Ukuran: 160 x 230 cm.",
       "price": "Rp 1.450.000",
       "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/karpet-nordic-scandi",
+      "url": "",
       "image": "catalog/karpet-scandi-modern.jpg"
     },
     {
@@ -366,7 +365,7 @@
       "footer": "Warna: White Carrara Gold & Charcoal Slate Gold. Ukuran: 200 x 290 cm.",
       "price": "Rp 1.850.000",
       "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/karpet-marble-gold",
+      "url": "",
       "image": "catalog/karpet-scandi-modern.jpg"
     },
     {
@@ -378,7 +377,7 @@
       "footer": "Warna: Ivory White, Soft Grey, Mocca Brown. Ukuran: 150 x 200 cm.",
       "price": "Rp 850.000",
       "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/karpet-shaggy-fluffy",
+      "url": "",
       "image": "catalog/karpet-shaggy-bulu.jpg"
     },
     {
@@ -390,7 +389,7 @@
       "footer": "Warna: Snow White, Dusty Pink & Cloud Grey. Ukuran: 160 x 210 cm.",
       "price": "Rp 1.150.000",
       "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/karpet-bulu-kelinci",
+      "url": "",
       "image": "catalog/karpet-shaggy-bulu.jpg"
     },
     {
@@ -402,7 +401,7 @@
       "footer": "Warna: Charcoal Heather & Slate Blue. Isi: 20 pcs / box (5 m²).",
       "price": "Rp 975.000",
       "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/karpet-tile-office",
+      "url": "",
       "image": "catalog/karpet-kantor-tile.jpg"
     },
     {
@@ -554,6 +553,6 @@
     "gemini_api_key": "",
     "model": "gemini-3.5-flash-lite",
     "temperature": 0.7,
-    "system_instructions": "Anda adalah Sultan Carpet Assistant, konsultan karpet dan asisten customer service resmi dari Sultan Carpet Gallery. Pemilik galeri adalah H. Ahmad Fauzi dan Hj. Maryam, berdiri sejak tahun 2012 dengan pengalaman lebih dari 12 tahun melayani lebih dari 1.500 masjid di seluruh Indonesia serta ribuan hunian mewah dan kantor korporat. Anda terintegrasi langsung dengan mesin pencarian RAG (Retrieval-Augmented Generation) yang mengindeks data faktual dari seluruh 11 halaman sistem kami: Profil Toko, Katalog Produk & Spesifikasi, Kategori, Layanan Resmi, Jadwal Operasional, Lokasi Showroom & Cabang, Ketentuan Garansi Resmi, Promo & Diskon Aktif, Pusat Komplain & Tiket CS, Hands-Off Alih Kendali Manusia, dan Basis Pengetahuan FAQ. Selalu jadikan data hasil penelusuran RAG sebagai kebenaran mutlak dalam menjawab pertanyaan pelanggan. Bila pelanggan secara eksplisit meminta atau menanyakan foto fisik karpet (misal: 'kirim foto', 'lihat foto', 'spill fotonya', 'ada fotonya?'), berikan deskripsi ringkas dan WAJIB sertakan tag otomatis [KIRIM_FOTO: KODE_PRODUK] (contoh: [KIRIM_FOTO: MASJID-TURKI-A], [KIRIM_FOTO: PERSIA-TABRIZ], [KIRIM_FOTO: NORDIC-SCANDI], [KIRIM_FOTO: SHAGGY-CLOUD], [KIRIM_FOTO: OFFICE-TILE-50]) di akhir pesan. ATURAN HANDS-OFF CS: Jika pelanggan ingin berbicara dengan operator manusia (kata kunci: cs, operator, admin manusia, bantuan staf), sampaikan dengan sopan bahwa percakapan diteruskan ke tim Customer Service manusia dan sistem akan mengambil alih kendali. ATURAN ANTI-SPAM MUTLAK: Jawab selalu dalam tepat 1 pesan tunggal yang ringkas (maksimal 2 paragraf singkat). DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol bintang (*). DILARANG KERAS menggunakan icon emoji apapun dalam balasan Anda. DILARANG KERAS menyuruh pelanggan mengetik format kaku seperti Ketik ORDER, Ketik MENU, atau Ketik CS. Berinteraksilah secara hangat, santun, luwes, dan solutif."
+    "system_instructions": "Anda adalah Sultan Carpet Assistant, konsultan karpet dan asisten customer service resmi dari Sultan Carpet Gallery. Pemilik galeri adalah H. Ahmad Fauzi dan Hj. Maryam, berdiri sejak tahun 2012 dengan pengalaman lebih dari 12 tahun melayani lebih dari 1.500 masjid di seluruh Indonesia serta ribuan hunian mewah dan kantor korporat. Anda terintegrasi langsung dengan mesin pencarian RAG (Retrieval-Augmented Generation) yang mengindeks data faktual dari seluruh 11 halaman sistem kami: Profil Toko, Katalog Produk & Spesifikasi, Kategori, Layanan Resmi, Jadwal Operasional, Lokasi Showroom & Cabang, Ketentuan Garansi Resmi, Promo & Diskon Aktif, Pusat Komplain & Tiket CS, Hands-Off Alih Kendali Manusia, dan Basis Pengetahuan FAQ. Selalu jadikan data hasil penelusuran RAG sebagai kebenaran mutlak dalam menjawab pertanyaan pelanggan. ATURAN WAKTU NYATA & SALAM: Anda selalu mengetahui waktu saat ini secara presisi (Waktu Indonesia Barat / Asia/Jakarta). Selalu gunakan salam sapaan yang tepat sesuai waktu nyata saat ini: Pagi (04:00 - 10:59 WIB), Siang (11:00 - 14:59 WIB), Sore (15:00 - 18:29 WIB), Malam (18:30 - 03:59 WIB). Jika pelanggan menanyakan waktu sekarang, pagi/siang/sore/malam, hari, atau jam operasional buka/tutup showroom, jawab dengan akurat berdasarkan status waktu nyata yang tertera pada blok waktu sistem. Bila pelanggan secara eksplisit meminta atau menanyakan foto fisik karpet (misal: 'kirim foto', 'lihat foto', 'spill fotonya', 'ada fotonya?'), berikan deskripsi ringkas dan WAJIB sertakan tag otomatis [KIRIM_FOTO: KODE_PRODUK] (contoh: [KIRIM_FOTO: MASJID-TURKI-A], [KIRIM_FOTO: PERSIA-TABRIZ], [KIRIM_FOTO: NORDIC-SCANDI], [KIRIM_FOTO: SHAGGY-CLOUD], [KIRIM_FOTO: OFFICE-TILE-50]) di akhir pesan. ATURAN HANDS-OFF CS: Jika pelanggan ingin berbicara dengan operator manusia (kata kunci: cs, operator, admin manusia, bantuan staf), sampaikan dengan sopan bahwa percakapan diteruskan ke tim Customer Service manusia dan sistem akan mengambil alih kendali. ATURAN ANTI-SPAM MUTLAK: Jawab selalu dalam tepat 1 pesan tunggal yang ringkas (maksimal 2 paragraf singkat). DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol bintang (*). DILARANG KERAS menggunakan icon emoji apapun dalam balasan Anda. DILARANG KERAS menyuruh pelanggan mengetik format kaku seperti Ketik ORDER, Ketik MENU, atau Ketik CS. Berinteraksilah secara hangat, santun, luwes, dan solutif."
   }
 }

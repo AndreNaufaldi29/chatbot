@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { stripStarsAndEmojis } = require('../utils/textCleaner');
+const timeHelper = require('../utils/timeHelper');
 
 const CONFIG_PATH = path.join(__dirname, '../../config/config.json');
 
@@ -169,13 +170,14 @@ class MenuHandler {
   getMainMenu(senderName = 'Kak') {
     const config = this.getConfig();
     const b = config.business;
+    const greeting = timeHelper.getGreeting(senderName);
 
-    return stripStarsAndEmojis(`Halo ${senderName}, selamat datang di ${b.name}.
+    return stripStarsAndEmojis(`${greeting}, selamat datang di ${b.name}.
 ${b.tagline}
 
 Layanan dan informasi yang dapat kami bantu:
 1. Katalog Koleksi Karpet
-2. Profil Toko & Nama Pemilik
+2. Profil Toko
 3. Jadwal & Jam Kerja
 4. Lokasi & Alamat Showroom
 5. Ketentuan Garansi Resmi
@@ -190,34 +192,29 @@ Silakan sebutkan kebutuhan Anda atau pilih nomor layanan di atas.`);
     const b = config.business;
     const o = config.owner_info || {};
 
-    return stripStarsAndEmojis(`PROFIL TOKO & NAMA PEMILIK
+    return stripStarsAndEmojis(`PROFIL TOKO
 ${b.name.toUpperCase()}
 
 Nama Toko: ${b.name}
-Pemilik / Founder: ${o.owner_name || b.owner || 'H. Ahmad Fauzi & Hj. Maryam'}
-Jabatan: ${o.role || 'Founder & Managing Director'}
-Tahun Berdiri: Sejak ${b.established || '2012'} (${o.experience || '12+ Tahun Melayani Seluruh Indonesia'})
-Legalitas Usaha: ${b.legal || 'NIB: 9120003481923 / SIUP: 510/089/PK/X/2012'}
+Nomor WhatsApp: ${b.phone || o.phone || '-'}
+Email: ${b.email || o.email || '-'}
 
-Sejarah Singkat:
-${o.story || b.description}
+Deskripsi Toko:
+${b.description || o.story || 'Pusat penyedia karpet berkualitas tinggi bergaransi resmi.'}
 
-Komitmen Kami:
-${o.commitment || 'Menghadirkan karpet bermutu tinggi dengan harga transparan dan bergaransi resmi.'}
-
-Kontak Manajemen:
-- Telepon/WhatsApp: ${o.phone || b.phone}
-- Email: ${o.email || b.email}
-- Website: ${b.website}`);
+Website: ${b.website || '-'}`);
   }
 
   getWorkingHoursMenu() {
     const config = this.getConfig();
     const s = config.schedule_info || {};
     const b = config.business;
+    const status = timeHelper.getStoreStatus();
 
     return stripStarsAndEmojis(`JADWAL DAN JAM KERJA OPERASIONAL
 ${b.name.toUpperCase()}
+
+Status Saat Ini: ${status.statusLabel} (Pukul ${status.timeStr}, Hari ${status.dayName})
 
 1. Jam Operasional Showroom:
 ${s.store_hours || b.hours}

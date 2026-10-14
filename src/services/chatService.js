@@ -13,9 +13,16 @@ class ChatService {
   constructor() {
     this.deletedChats = new Set();
     this.syncedChats = new Map(); // jid -> { name, unreadCount, updatedAt }
+    this.syncedChatsTimeout = null;
     this.ensureFileExists();
     this.loadDeletedChats();
     this.loadSyncedChats();
+
+    process.on('beforeExit', () => {
+      if (this.syncedChatsTimeout) {
+        this.saveSyncedChats();
+      }
+    });
   }
 
   ensureFileExists() {
@@ -52,7 +59,19 @@ class ChatService {
     try {
       const dir = path.dirname(DELETED_CHATS_FILE);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(DELETED_CHATS_FILE, JSON.stringify(Array.from(this.deletedChats), null, 2), 'utf8');
+      const content = JSON.stringify(Array.from(this.deletedChats), null, 2);
+      const tmpFile = `${DELETED_CHATS_FILE}.${Date.now()}.tmp`;
+      let saved = false;
+      try {
+        fs.writeFileSync(tmpFile, content, 'utf8');
+        fs.renameSync(tmpFile, DELETED_CHATS_FILE);
+        saved = true;
+      } catch (_) {
+        try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (e) {}
+      }
+      if (!saved) {
+        fs.writeFileSync(DELETED_CHATS_FILE, content, 'utf8');
+      }
     } catch (e) {
       console.warn('[ChatService] Gagal menyimpan deleted_chats.json:', e.message);
     }
@@ -160,6 +179,10 @@ class ChatService {
   }
 
   saveSyncedChats() {
+    if (this.syncedChatsTimeout) {
+      clearTimeout(this.syncedChatsTimeout);
+      this.syncedChatsTimeout = null;
+    }
     try {
       const obj = {};
       for (const [k, v] of this.syncedChats.entries()) {
@@ -167,10 +190,32 @@ class ChatService {
         if (this.isChatDeleted(k)) continue;
         obj[k] = v;
       }
-      fs.writeFileSync(SYNCED_CHATS_FILE, JSON.stringify(obj, null, 2), 'utf8');
+      const dir = path.dirname(SYNCED_CHATS_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const content = JSON.stringify(obj, null, 2);
+      const tmpFile = `${SYNCED_CHATS_FILE}.${Date.now()}.tmp`;
+      let saved = false;
+      try {
+        fs.writeFileSync(tmpFile, content, 'utf8');
+        fs.renameSync(tmpFile, SYNCED_CHATS_FILE);
+        saved = true;
+      } catch (_) {
+        try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (e) {}
+      }
+      if (!saved) {
+        fs.writeFileSync(SYNCED_CHATS_FILE, content, 'utf8');
+      }
     } catch (e) {
       console.warn('[ChatService] Gagal menyimpan synced_chats.json:', e.message);
     }
+  }
+
+  scheduleSaveSyncedChats(delay = 500) {
+    if (this.syncedChatsTimeout) return;
+    this.syncedChatsTimeout = setTimeout(() => {
+      this.syncedChatsTimeout = null;
+      this.saveSyncedChats();
+    }, delay);
   }
 
   setSyncedChat(jid, chatData = {}) {
@@ -183,7 +228,7 @@ class ChatService {
       jid,
       updatedAt: chatData.updatedAt || existing.updatedAt || new Date().toISOString()
     });
-    this.saveSyncedChats();
+    this.scheduleSaveSyncedChats();
   }
 
   getAllMessages() {
@@ -208,7 +253,19 @@ class ChatService {
       );
       // Keep at most 3000 messages to prevent unbounded growth while keeping rich history
       const trimmed = valid.slice(-3000);
-      fs.writeFileSync(CHATS_FILE, JSON.stringify(trimmed, null, 2), 'utf8');
+      const content = JSON.stringify(trimmed, null, 2);
+      const tmpFile = `${CHATS_FILE}.${Date.now()}.tmp`;
+      let saved = false;
+      try {
+        fs.writeFileSync(tmpFile, content, 'utf8');
+        fs.renameSync(tmpFile, CHATS_FILE);
+        saved = true;
+      } catch (_) {
+        try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (e) {}
+      }
+      if (!saved) {
+        fs.writeFileSync(CHATS_FILE, content, 'utf8');
+      }
       return true;
     } catch (err) {
       console.error('[ChatService] Gagal menyimpan chats.json:', err.message);
@@ -480,8 +537,12 @@ class ChatService {
       // If customer sent this message, prioritize customer's real display name
       if (msg.direction === 'in' && msg.senderName && !phoneService.isLid(msg.senderName) && !/^\+?\d+$/.test(msg.senderName.trim()) && msg.senderName !== 'Pelanggan') {
         conv.senderName = msg.senderName.trim();
-        phoneService.setName(conv.jid, conv.senderName);
-        if (realPhone) phoneService.setName(realPhone, conv.senderName);
+        if (phoneService.getName(conv.jid) !== conv.senderName) {
+          phoneService.setName(conv.jid, conv.senderName);
+        }
+        if (realPhone && phoneService.getName(realPhone) !== conv.senderName) {
+          phoneService.setName(realPhone, conv.senderName);
+        }
       }
 
       // Check if bot message greeted the customer by name (e.g. "Halo Pak Zaenal" or "Halo Kak Andre")
@@ -491,8 +552,12 @@ class ChatService {
           const extracted = greetMatch[1].trim();
           if (!['admin', 'bot', 'gemini', 'groq', 'pelanggan', 'saya', 'sultan carpet bot'].includes(extracted.toLowerCase()) && !/^\d+$/.test(extracted)) {
             conv.senderName = extracted;
-            phoneService.setName(conv.jid, extracted);
-            if (realPhone) phoneService.setName(realPhone, extracted);
+            if (phoneService.getName(conv.jid) !== extracted) {
+              phoneService.setName(conv.jid, extracted);
+            }
+            if (realPhone && phoneService.getName(realPhone) !== extracted) {
+              phoneService.setName(realPhone, extracted);
+            }
           }
         }
       }

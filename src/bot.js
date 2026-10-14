@@ -142,7 +142,7 @@ class WhatsAppBot extends EventEmitter {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false, // We'll handle terminal QR explicitly with qrcode-terminal
         auth: state,
-        browser: Browsers.windows('Desktop'),
+        browser: Browsers.windows('Chrome'),
         defaultQueryTimeoutMs: 30000,
         connectTimeoutMs: 30000,
         syncFullHistory: false, // Wajib false agar server WhatsApp tidak memutus koneksi dengan error 428
@@ -632,11 +632,6 @@ class WhatsAppBot extends EventEmitter {
       }
     }
 
-    // If still missing phone and jid is LID, attempt asynchronous resolution
-    if (!realPhone && phoneService.isLid(jid)) {
-      this.resolveLidPhone(jid, senderName).catch(() => {});
-    }
-
     return {
       id: msg.key.id || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       direction: isFromMe ? 'out' : 'in',
@@ -790,31 +785,8 @@ class WhatsAppBot extends EventEmitter {
   }
 
   async resolveLidPhone(lid, senderName = null) {
-    if (!lid || !phoneService.isLid(lid) || !this.sock) return null;
-    const cleanLid = lid.includes('@') ? lid : `${lid}@lid`;
-    try {
-      const { USyncQuery, USyncUser } = require('@whiskeysockets/baileys');
-      const usyncQuery = new USyncQuery().withContactProtocol();
-      usyncQuery.withUser(new USyncUser().withId(cleanLid));
-      const result = await this.sock.executeUSyncQuery(usyncQuery);
-      if (result && Array.isArray(result.list)) {
-        for (const item of result.list) {
-          const itemJid = item.id;
-          if (itemJid && itemJid.endsWith('@s.whatsapp.net')) {
-            const cleanPn = itemJid.split('@')[0].replace(/\D/g, '');
-            if (phoneService.isRealPhone(cleanPn)) {
-              console.log(`[WhatsAppBot] 🔍 Berhasil menyelesaikan LID ${lid} -> ${cleanPn}`);
-              phoneService.setMapping(cleanLid, cleanPn, senderName);
-              this.emit('chats_updated', { source: 'lid_resolved', lid: cleanLid, phone: cleanPn });
-              return cleanPn;
-            }
-          }
-        }
-      }
-    } catch (err) {
-      // USync query fallback
-    }
-    return null;
+    if (!lid || !phoneService.isLid(lid)) return null;
+    return phoneService.getPhone(lid, senderName);
   }
 
   cleanCorruptedRatchetSessions() {

@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export default function RootLayout({ children }) {
   return (
     <html lang="id">
-      <body className="bg-[#0b1120] text-slate-100 antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
+      <body className="bg-[#F5F6F8] text-[#233858] antialiased selection:bg-[#5A7194] selection:text-white">
         {children}
       </body>
     </html>

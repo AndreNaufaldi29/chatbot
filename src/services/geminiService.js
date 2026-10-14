@@ -3,6 +3,7 @@ const path = require('path');
 const menuHandler = require('../handlers/menuHandler');
 const ragService = require('./ragService');
 const { stripStarsAndEmojis } = require('../utils/textCleaner');
+const timeHelper = require('../utils/timeHelper');
 require('dotenv').config();
 
 const DEFAULT_FAST_MODEL = 'gemini-3.5-flash-lite';
@@ -136,8 +137,11 @@ class GeminiService {
 
     const customPrompt = config.ai?.system_instructions || '';
     const ragContext = userText ? ragService.retrieveContext(userText, 4) : '';
+    const timeContext = timeHelper.getAiTimeContext();
 
     return `${customPrompt}
+
+${timeContext}
 
 ${ragContext ? `${ragContext}\n\n` : ''}=== INFORMASI RESMI TOKO & PEMILIK ===
 Nama Toko: ${b.name} (${b.tagline})

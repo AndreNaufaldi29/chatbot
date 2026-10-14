@@ -38,5 +38,25 @@
     "active": false,
     "requestedAt": 0,
     "reason": "CS requested"
+  },
+  "16415549591602@lid": {
+    "active": false,
+    "requestedAt": 0,
+    "reason": "CS requested"
+  },
+  "16415549591602": {
+    "active": false,
+    "requestedAt": 0,
+    "reason": "CS requested"
+  },
+  "6283815445988": {
+    "active": false,
+    "requestedAt": 0,
+    "reason": "CS requested"
+  },
+  "6283815445988@s.whatsapp.net": {
+    "active": false,
+    "requestedAt": 0,
+    "reason": "CS requested"
   }
 }

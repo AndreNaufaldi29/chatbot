@@ -35,6 +35,9 @@ import {
   Search,
   Sliders,
   ChevronRight,
+  ChevronLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
   ChevronDown,
   ChevronUp,
   ArrowRight,
@@ -74,6 +77,7 @@ import {
   ToggleRight,
   Power,
   Globe,
+  Palette,
   Link as LinkIcon
 } from 'lucide-react';
 
@@ -83,6 +87,30 @@ export default function Dashboard() {
   // Mobile Navigation & View States
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+
+  // Desktop Collapsible Sidebar State
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [hoveredNav, setHoveredNav] = useState(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('dashboard_sidebar_collapsed');
+      if (saved !== null) {
+        setSidebarCollapsed(saved === 'true');
+      }
+    } catch (e) {}
+  }, []);
+
+  const toggleSidebar = () => {
+    setHoveredNav(null);
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('dashboard_sidebar_collapsed', String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   // Prisma Database State
   const [dbStatus, setDbStatus] = useState({
@@ -438,6 +466,7 @@ export default function Dashboard() {
   const [showProductModal, setShowProductModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showCategoryCards, setShowCategoryCards] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
   const [savingCategory, setSavingCategory] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -522,9 +551,12 @@ export default function Dashboard() {
   const [protectionsConfig, setProtectionsConfig] = useState({
     cooldown: {
       enabled: true,
-      min_delay_ms: 55000,
-      max_delay_ms: 65000,
-      jitter_ms: 8000,
+      normal_delay_ms: 60000,
+      long_delay_ms: 75000,
+      min_delay_ms: 60000,
+      max_delay_ms: 75000,
+      long_threshold: 160,
+      jitter_ms: 3000,
       typing_simulation: true,
       typing_speed_cpm: 300,
       global_max_per_minute: 20,
@@ -1411,6 +1443,50 @@ export default function Dashboard() {
     }
   };
 
+  const handleSaveStoreProfile = async () => {
+    if (!config) return;
+    const updatedBusiness = {
+      ...(config.business || {}),
+      name: (businessSettings.name || '').trim(),
+      phone: (businessSettings.phone || '').trim(),
+      email: (businessSettings.email || '').trim(),
+      description: (businessSettings.description || '').trim()
+    };
+    const updatedOwner = {
+      ...(config.owner_info || {}),
+      owner_name: (businessSettings.name || '').trim() || config.owner_info?.owner_name,
+      phone: (businessSettings.phone || '').trim(),
+      email: (businessSettings.email || '').trim(),
+      story: (businessSettings.description || '').trim()
+    };
+    const updated = {
+      ...config,
+      business: updatedBusiness,
+      owner_info: updatedOwner
+    };
+    setSavingStoreInfo(true);
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConfig(updated);
+        setBusinessSettings(updatedBusiness);
+        setOwnerSettings(updatedOwner);
+        showToastMsg('Profil toko berhasil disimpan!', 'success');
+      } else {
+        showToastMsg(data.error || 'Gagal menyimpan profil toko', 'error');
+      }
+    } catch (err) {
+      showToastMsg('Error: ' + err.message, 'error');
+    } finally {
+      setSavingStoreInfo(false);
+    }
+  };
+
   const handleCreateComplaintTicket = async (e) => {
     if (e) e.preventDefault();
     if (!complaintForm.name.trim() || !complaintForm.description.trim()) {
@@ -2278,7 +2354,7 @@ export default function Dashboard() {
 
   // Dynamic Carpet Categories (Without Icons & 100% Flexible)
   const carpetCategoriesList = React.useMemo(() => {
-    const configuredCategories = (config?.carpet_categories && config.carpet_categories.length > 0)
+    const configuredCategories = Array.isArray(config?.carpet_categories)
       ? config.carpet_categories
       : [
           { id: "kat-masjid", slug: "karpet-masjid", name: "Karpet Masjid & Musholla", description: "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi, empuk & nyaman untuk ibadah berjamaah." },
@@ -2290,7 +2366,7 @@ export default function Dashboard() {
 
     const extraCategories = (config?.catalog || [])
       .map((p) => (p.category || '').trim())
-      .filter((catName) => catName && !configuredCategories.some((c) => c.name.toLowerCase() === catName.toLowerCase()))
+      .filter((catName) => catName && catName !== 'Umum' && !configuredCategories.some((c) => c.name.toLowerCase() === catName.toLowerCase()))
       .filter((val, idx, arr) => arr.indexOf(val) === idx)
       .map((catName, idx) => ({
         id: `extra-cat-${idx}`,
@@ -2420,36 +2496,65 @@ export default function Dashboard() {
   };
 
   const handleOpenAddCategory = () => {
+    setEditingCategory(null);
     setCategoryForm({ name: '', description: '' });
+    setShowCategoryModal(true);
+  };
+
+  const handleOpenEditCategory = (cat) => {
+    setEditingCategory(cat);
+    setCategoryForm({
+      name: cat.name || '',
+      description: cat.description || ''
+    });
     setShowCategoryModal(true);
   };
 
   const handleSaveCategory = async (e) => {
     e.preventDefault();
-    if (!categoryForm.name.trim()) {
+    const cleanName = categoryForm.name.trim();
+    if (!cleanName) {
       showToastMsg('Nama kategori wajib diisi!', 'error');
       return;
     }
 
     setSavingCategory(true);
     try {
+      const payload = {
+        name: cleanName,
+        description: categoryForm.description.trim() || `Koleksi karpet pilihan ${cleanName} Sultan Carpet Gallery.`
+      };
+      if (editingCategory?.id) {
+        payload.id = editingCategory.id;
+      }
+
       const res = await fetch('/api/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: categoryForm.name.trim(),
-          description: categoryForm.description.trim() || `Koleksi karpet pilihan ${categoryForm.name.trim()} Sultan Carpet Gallery.`
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.success) {
-        showToastMsg(`Kategori "${categoryForm.name.trim()}" berhasil ditambahkan!`, 'success');
+        showToastMsg(
+          editingCategory 
+            ? `Kategori "${cleanName}" berhasil diperbarui!` 
+            : `Kategori "${cleanName}" berhasil ditambahkan!`, 
+          'success'
+        );
         setShowCategoryModal(false);
+        setEditingCategory(null);
         if (data.categories) {
-          setConfig((prev) => prev ? { ...prev, carpet_categories: data.categories } : prev);
+          setConfig((prev) => prev ? { 
+            ...prev, 
+            carpet_categories: data.categories,
+            catalog: data.catalog || prev.catalog
+          } : prev);
+        }
+        if (editingCategory && selectedCatalogCategory === editingCategory.name) {
+          setSelectedCatalogCategory(cleanName);
         }
         if (showProductModal) {
-          setProductForm((prev) => ({ ...prev, category: categoryForm.name.trim() }));
+          setProductForm((prev) => ({ ...prev, category: cleanName }));
         }
       } else {
         showToastMsg(data.error || 'Gagal menyimpan kategori', 'error');
@@ -2464,7 +2569,7 @@ export default function Dashboard() {
   const handleDeleteCategory = async (catId, catName) => {
     const ok = await askConfirmation({
       title: `Hapus Kategori "${catName}"?`,
-      message: 'Kategori ini akan dihapus dari pilihan katalog. Produk yang menggunakan kategori ini tidak akan terhapus.',
+      message: 'Kategori ini akan dihapus dari sistem. Produk yang sebelumnya menggunakan kategori ini akan dialihkan ke kategori "Umum".',
       confirmText: 'Hapus Kategori',
       cancelText: 'Batal',
       type: 'danger'
@@ -2472,12 +2577,16 @@ export default function Dashboard() {
     if (!ok) return;
 
     try {
-      const res = await fetch(`/api/categories/${catId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/categories/${catId}?name=${encodeURIComponent(catName || '')}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         showToastMsg(`Kategori "${catName}" berhasil dihapus`, 'success');
         if (data.categories) {
-          setConfig((prev) => prev ? { ...prev, carpet_categories: data.categories } : prev);
+          setConfig((prev) => prev ? { 
+            ...prev, 
+            carpet_categories: data.categories,
+            catalog: data.catalog || prev.catalog
+          } : prev);
         }
         if (selectedCatalogCategory === catName) {
           setSelectedCatalogCategory('Semua');
@@ -2500,11 +2609,9 @@ export default function Dashboard() {
       '',
       `🕌 *${product.title || 'Produk Karpet'}*`,
       product.price ? `💰 *Harga:* ${product.price}` : '',
-      product.code ? `📌 *Kode SKU:* ${product.code}` : '',
       product.category ? `✨ *Kategori:* ${product.category}` : '',
       product.subtitle ? `📝 *Deskripsi:* ${product.subtitle}` : '',
       product.footer ? `🎨 *Keunggulan / Motif:* ${product.footer}` : '',
-      product.url ? `🔗 *Link Katalog:* ${product.url}` : '',
       '',
       `Bila Anda berminat atau ingin konsultasi ukuran, survei motif, dan jadwal pemasangan, silakan balas pesan ini ya! Terima kasih. 🙏`
     ].filter((line) => line !== null && line !== undefined && line !== '').join('\n');
@@ -3316,9 +3423,9 @@ export default function Dashboard() {
     });
     s = s.replace(/\[Pesan Suara \/ Audio\]/g, '<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-950/80 border border-teal-500/40 text-teal-300 text-xs font-medium my-0.5"><span class="w-2 h-2 rounded-full bg-teal-400"></span>Pesan Suara / Audio</div>');
 
-    s = s.replace(/\*([^*\n]+)\*/g, '<strong class="font-bold text-emerald-300">$1</strong>');
-    s = s.replace(/_([^_\n]+)_/g, '<em class="italic text-slate-300">$1</em>');
-    s = s.replace(/~([^~\n]+)~/g, '<del class="line-through text-slate-500">$1</del>');
+    s = s.replace(/\*([^*\n]+)\*/g, '<strong class="font-bold">$1</strong>');
+    s = s.replace(/_([^_\n]+)_/g, '<em class="italic opacity-90">$1</em>');
+    s = s.replace(/~([^~\n]+)~/g, '<del class="line-through opacity-75">$1</del>');
     return s.trim();
   };
 
@@ -3370,22 +3477,203 @@ export default function Dashboard() {
     }
   };
 
+  const navigationSections = [
+    {
+      title: null,
+      items: [
+        {
+          id: 'chats',
+          label: 'Obrolan WhatsApp',
+          icon: MessageSquare,
+          iconColor: 'text-emerald-400',
+          activeClass: 'bg-gradient-to-r from-emerald-500/20 via-emerald-500/10 to-transparent border-l-2 border-l-emerald-400 border-y border-r border-emerald-500/30 text-emerald-200 font-semibold shadow-sm shadow-emerald-950/30',
+          hasNotification: conversations.length > 0,
+          badge: conversations.length > 0 ? (
+            <span className="sidebar-badge sidebar-badge-blue text-xs px-2.5 py-0.5 rounded-full font-bold font-mono shadow-xs">
+              {conversations.length}
+            </span>
+          ) : null,
+        },
+        {
+          id: 'gemini',
+          label: 'AI Studio',
+          icon: Sparkles,
+          iconColor: 'text-purple-400',
+          activeClass: 'bg-gradient-to-r from-purple-500/20 via-purple-500/10 to-transparent border-l-2 border-l-purple-400 border-y border-r border-purple-500/30 text-purple-200 font-semibold shadow-sm shadow-purple-950/30',
+          hasNotification: false,
+          badge: (
+            <span className="sidebar-badge sidebar-badge-ivory text-[9px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">
+              {activeSavedAiProvider === 'groq' ? '⚡ Groq' : '🔮 Gemini'}
+            </span>
+          ),
+        },
+        {
+          id: 'qr',
+          label: 'Koneksi WhatsApp',
+          icon: QrCode,
+          iconColor: 'text-cyan-400',
+          activeClass: 'bg-gradient-to-r from-cyan-500/20 via-cyan-500/10 to-transparent border-l-2 border-l-cyan-400 border-y border-r border-cyan-500/30 text-cyan-200 font-semibold shadow-sm shadow-cyan-950/30',
+          hasNotification: !isConnected,
+          badge: (
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isConnected ? 'bg-emerald-400 shadow-sm shadow-emerald-400' : 'bg-amber-400 animate-pulse'
+              }`}
+            />
+          ),
+        },
+      ]
+    },
+    {
+      title: 'INFORMASI TOKO',
+      items: [
+        {
+          id: 'store_profile',
+          label: 'Profil Toko',
+          icon: Building,
+          iconColor: 'text-emerald-400',
+          activeClass: 'bg-gradient-to-r from-emerald-500/20 via-emerald-500/10 to-transparent border-l-2 border-l-emerald-400 border-y border-r border-emerald-500/30 text-emerald-200 font-semibold shadow-sm shadow-emerald-950/30',
+          badge: null,
+        },
+        {
+          id: 'catalog',
+          label: 'Katalog Produk',
+          icon: ShoppingBag,
+          iconColor: 'text-amber-400',
+          activeClass: 'bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent border-l-2 border-l-amber-400 border-y border-r border-amber-500/30 text-amber-200 font-semibold shadow-sm shadow-amber-950/30',
+          badge: (
+            <span className="sidebar-badge sidebar-badge-ivory text-xs px-2.5 py-0.5 rounded-full font-bold font-mono shadow-xs">
+              {config?.catalog?.length || 5}
+            </span>
+          ),
+        },
+        {
+          id: 'schedule',
+          label: 'Jadwal & Jam Kerja',
+          icon: Clock,
+          iconColor: 'text-sky-400',
+          activeClass: 'bg-gradient-to-r from-sky-500/20 via-sky-500/10 to-transparent border-l-2 border-l-sky-400 border-y border-r border-sky-500/30 text-sky-200 font-semibold shadow-sm shadow-sky-950/30',
+          badge: null,
+        },
+        {
+          id: 'location',
+          label: 'Lokasi & Alamat',
+          icon: MapPin,
+          iconColor: 'text-rose-400',
+          activeClass: 'bg-gradient-to-r from-rose-500/20 via-rose-500/10 to-transparent border-l-2 border-l-rose-400 border-y border-r border-rose-500/30 text-rose-200 font-semibold shadow-sm shadow-rose-950/30',
+          badge: null,
+        },
+        {
+          id: 'warranty',
+          label: 'Ketentuan Garansi',
+          icon: ShieldCheck,
+          iconColor: 'text-indigo-400',
+          activeClass: 'bg-gradient-to-r from-indigo-500/20 via-indigo-500/10 to-transparent border-l-2 border-l-indigo-400 border-y border-r border-indigo-500/30 text-indigo-200 font-semibold shadow-sm shadow-indigo-950/30',
+          badge: null,
+        },
+        {
+          id: 'promo',
+          label: 'Promo & Diskon',
+          icon: Tag,
+          iconColor: 'text-rose-400',
+          activeClass: 'bg-gradient-to-r from-rose-500/20 via-rose-500/10 to-transparent border-l-2 border-l-rose-400 border-y border-r border-rose-500/30 text-rose-200 font-semibold shadow-sm shadow-rose-950/30',
+          badge: null,
+        },
+        {
+          id: 'tickets',
+          label: 'Pusat Komplain & CS',
+          icon: Headphones,
+          iconColor: 'text-purple-400',
+          activeClass: 'bg-gradient-to-r from-purple-500/20 via-purple-500/10 to-transparent border-l-2 border-l-purple-400 border-y border-r border-purple-500/30 text-purple-200 font-semibold shadow-sm shadow-purple-950/30',
+          isActive: activeTab === 'tickets' || activeTab === 'complaint',
+          hasNotification: tickets.filter(t => (t.priority || '').toLowerCase().includes('urgent') || (t.status || '').toLowerCase() === 'open').length > 0,
+          badge: (
+            <div className="flex items-center gap-1.5">
+              {tickets.filter(t => (t.priority || '').toLowerCase().includes('urgent') || (t.status || '').toLowerCase() === 'open').length > 0 && (
+                <span className="w-2 h-2 rounded-full bg-[#C53030] animate-pulse"></span>
+              )}
+              <span className="sidebar-badge sidebar-badge-red text-xs px-2.5 py-0.5 rounded-full font-bold font-mono shadow-xs">
+                {tickets.length}
+              </span>
+            </div>
+          ),
+        },
+      ]
+    },
+    {
+      title: 'AI KNOWLEDGE',
+      items: [
+        {
+          id: 'qna',
+          label: 'Knowledge Base',
+          icon: Brain,
+          iconColor: 'text-teal-400',
+          activeClass: 'bg-gradient-to-r from-teal-500/20 via-teal-500/10 to-transparent border-l-2 border-l-teal-400 border-y border-r border-teal-500/30 text-teal-200 font-semibold shadow-sm shadow-teal-950/30',
+          badge: faqs.length > 0 ? (
+            <span className="sidebar-badge sidebar-badge-ivory text-xs px-2.5 py-0.5 rounded-full font-bold font-mono shadow-xs">
+              {faqs.length}
+            </span>
+          ) : null,
+        },
+        {
+          id: 'handoff',
+          label: 'Hands-Off CS & AI',
+          icon: UserCheck,
+          iconColor: 'text-amber-400',
+          activeClass: 'bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent border-l-2 border-l-amber-400 border-y border-r border-amber-500/30 text-amber-200 font-semibold shadow-sm shadow-amber-950/30',
+          hasNotification: activeHandoffCount > 0,
+          badge: (
+            <div className="flex items-center gap-1.5">
+              {activeHandoffCount > 0 && (
+                <span className="w-2 h-2 rounded-full bg-[#D69E2E] animate-ping"></span>
+              )}
+              <span className={`sidebar-badge ${activeHandoffCount > 0 ? 'sidebar-badge-amber' : 'sidebar-badge-neutral'} text-xs px-2.5 py-0.5 rounded-full font-bold font-mono shadow-xs`}>
+                {activeHandoffCount}
+              </span>
+            </div>
+          ),
+        },
+        {
+          id: 'settings',
+          label: 'Anti-Spam & Delay',
+          icon: ShieldAlert,
+          iconColor: 'text-emerald-400',
+          activeClass: 'bg-gradient-to-r from-emerald-500/20 via-emerald-500/10 to-transparent border-l-2 border-l-emerald-400 border-y border-r border-emerald-500/30 text-emerald-200 font-semibold shadow-sm shadow-emerald-950/30',
+          badge: (
+            <span className="sidebar-badge sidebar-badge-neutral text-[10px] px-2 py-0.5 rounded-md font-semibold text-[#E8E6DB]">
+              Proteksi
+            </span>
+          ),
+        },
+      ]
+    }
+  ];
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0b1120] text-slate-100">
+    <div className="flex h-screen h-[100dvh] w-screen overflow-hidden bg-[#F5F6F8] text-[#233858] relative antialiased font-sans">
+      {/* Ambient Radial Lights in Background */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div className="absolute -top-32 -left-32 w-96 h-96 bg-[#A6AFC1]/20 rounded-full blur-[100px]" />
+        <div className="absolute top-1/4 -right-32 w-96 h-96 bg-[#5A7194]/15 rounded-full blur-[120px]" />
+        <div className="absolute -bottom-32 left-1/3 w-[500px] h-[350px] bg-[#A6AFC1]/20 rounded-full blur-[120px]" />
+      </div>
       {/* Toast Notification */}
       {toast && (
         <div
           className={`fixed top-6 right-6 z-50 flex items-center gap-3 rounded-xl px-5 py-3.5 shadow-2xl backdrop-blur-md transition-all duration-300 border ${
             toast.type === 'success'
-              ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200'
+              ? 'bg-[#2F855A] border-[#2F855A] text-white shadow-lg shadow-[#2F855A]/30'
               : toast.type === 'error'
-              ? 'bg-rose-950/90 border-rose-500/40 text-rose-200'
-              : 'bg-sky-950/90 border-sky-500/40 text-sky-200'
+              ? 'bg-[#C53030] border-[#C53030] text-white shadow-lg shadow-[#C53030]/30'
+              : toast.type === 'warning' || toast.type === 'process'
+              ? 'bg-[#D69E2E] border-[#D69E2E] text-white shadow-lg shadow-[#D69E2E]/30'
+              : 'bg-[#3182CE] border-[#3182CE] text-white shadow-lg shadow-[#3182CE]/30'
           }`}
         >
-          {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-          {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-400" />}
-          {toast.type === 'info' && <Zap className="w-5 h-5 text-sky-400" />}
+          {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-white" />}
+          {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-white" />}
+          {toast.type === 'info' && <Zap className="w-5 h-5 text-white" />}
+          {(toast.type === 'warning' || toast.type === 'process') && <Clock className="w-5 h-5 text-white" />}
           <span className="text-sm font-medium">{toast.message}</span>
         </div>
       )}
@@ -3394,7 +3682,7 @@ export default function Dashboard() {
       {confirmModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div 
-            className="w-full max-w-md bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 sm:p-7 shadow-2xl shadow-black/90 flex flex-col gap-5 transform animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md bg-white border border-[#A6AFC1]/50 rounded-3xl p-6 sm:p-7 shadow-2xl text-[#233858] shadow-black/90 flex flex-col gap-5 transform animate-in zoom-in-95 duration-200"
             role="dialog"
             aria-modal="true"
           >
@@ -3437,10 +3725,10 @@ export default function Dashboard() {
                 onClick={confirmModal.onConfirm}
                 className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition flex items-center gap-2 shadow-lg ${
                   confirmModal.type === 'danger'
-                    ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-600/30'
+                    ? 'bg-[#C53030] hover:bg-[#9B2C2C] text-white shadow-lg shadow-[#C53030]/30'
                     : confirmModal.type === 'info'
-                    ? 'bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 text-white shadow-sky-600/30'
-                    : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-amber-600/30'
+                    ? 'bg-[#3182CE] hover:bg-[#2B6CB0] text-white shadow-lg shadow-[#3182CE]/30'
+                    : 'bg-[#D69E2E] hover:bg-[#B7791F] text-white shadow-lg shadow-[#D69E2E]/30'
                 }`}
               >
                 {confirmModal.confirmText || 'Ya, Lanjutkan'}
@@ -3453,359 +3741,314 @@ export default function Dashboard() {
       {/* MOBILE DRAWER NAVIGATION */}
       {mobileDrawerOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm md:hidden flex animate-in fade-in duration-200">
-          <div className="w-4/5 max-w-xs bg-[#0f172a] border-r border-slate-800 p-5 flex flex-col justify-between shadow-2xl h-full animate-in slide-in-from-left duration-200">
-            <div>
-              {/* Drawer Header */}
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 text-white font-bold text-lg">
-                    <Bot className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="font-bold text-base text-white">Dashboard Chatbot</h1>
-                    <p className="text-[11px] text-slate-400">WhatsApp AI & Customer Service</p>
-                  </div>
+          <div className="w-4/5 max-w-xs bg-[#233858] border-r border-[#5A7194]/40 shadow-2xl flex flex-col h-[100dvh] max-h-screen animate-in slide-in-from-left duration-200 z-50">
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between p-4 border-b border-[#5A7194]/40 shrink-0 bg-[#233858]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#5A7194] to-[#233858] flex items-center justify-center shadow-lg shadow-[#182840]/60 text-white border border-[#5A7194]/40 font-bold text-lg">
+                  <Bot className="w-5 h-5 text-white" />
                 </div>
-                <button
-                  onClick={() => setMobileDrawerOpen(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div>
+                  <h1 className="font-bold text-base text-white">Dashboard Chatbot</h1>
+                  <p className="text-[11px] text-[#A6AFC1] font-semibold">WhatsApp AI & Customer Service</p>
+                </div>
               </div>
+              <button
+                onClick={() => setMobileDrawerOpen(false)}
+                className="p-1.5 rounded-xl text-[#A6AFC1] hover:text-white hover:bg-[#182840] border border-transparent hover:border-[#5A7194]/40 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
+            {/* Scrollable Drawer Body: Nav + Footer */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 [scrollbar-width:thin] overscroll-contain">
               {/* Navigation Items */}
-              <nav className="space-y-1 overflow-y-auto max-h-[calc(100vh-210px)] pr-1">
-                <button
-                  onClick={() => {
-                    setActiveTab('chats');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'chats'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm">💬</span>
-                    <span>Obrolan WhatsApp</span>
-                  </div>
-                  {conversations.length > 0 && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
-                      {conversations.length}
-                    </span>
-                  )}
-                </button>
+              <nav className="space-y-1">
+                {navigationSections.map((sec, sIdx) => (
+                  <React.Fragment key={sIdx}>
+                    {sec.title && (
+                      <div className="pt-3 pb-1 px-3">
+                        <p className="text-[10px] uppercase font-extrabold tracking-wider text-[#A6AFC1]">{sec.title}</p>
+                      </div>
+                    )}
+                    {sec.items.map((item) => {
+                      const isCurrent = item.isActive ?? activeTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setActiveTab(item.id);
+                            setMobileDrawerOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                            isCurrent
+                              ? item.activeClass
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <item.icon className={`w-4 h-4 ${item.iconColor}`} />
+                            <span className="nav-label">{item.label}</span>
+                          </div>
+                          {item.badge}
+                        </button>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
+              </nav>
 
-                <button
+              {/* Mobile Drawer Footer */}
+              <div className="pt-4 border-t border-[#5A7194]/40 space-y-2.5 pb-8 shrink-0">
+                {/* Active AI Engine Indicator Card (Mobile) - Solid #182840, NO gradient */}
+                <div
                   onClick={() => {
                     setActiveTab('gemini');
                     setMobileDrawerOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'gemini'
-                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
+                  title="Klik untuk membuka AI Studio & ganti mesin AI"
+                  className="p-2.5 rounded-2xl border border-[#5A7194]/40 hover:border-[#5A7194] bg-[#182840] hover:bg-[#1b2d48] transition-all duration-200 cursor-pointer group select-none shadow-sm"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm">✨</span>
-                    <span>AI Studio</span>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="relative flex h-2 w-2">
+                        {isAiActive && (
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-[#2F855A]" />
+                        )}
+                        <span className={`relative inline-flex rounded-full h-2 w-2 ${!isAiActive ? 'bg-[#8A94A6]' : 'bg-[#2F855A]'}`} />
+                      </span>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-[#A6AFC1]">
+                        Mesin AI Chatbot
+                      </span>
+                    </div>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md border uppercase font-mono tracking-wider bg-[#5A7194]/25 text-[#E8E6DB] border-[#5A7194]/40">
+                      {!isAiActive ? 'OFF' : activeSavedAiProvider === 'gemini' ? '🔮 GEMINI' : '⚡ GROQ LPU'}
+                    </span>
                   </div>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                    activeSavedAiProvider === 'groq' ? 'bg-amber-500/30 text-amber-200' : 'bg-purple-500/30 text-purple-200'
-                  }`}>
-                    {activeSavedAiProvider === 'groq' ? '⚡ Groq' : '🔮 Gemini'}
-                  </span>
-                </button>
 
-                <button
-                  onClick={() => {
-                    setActiveTab('qr');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'qr'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-mono">▦</span>
-                    <span>Koneksi WhatsApp</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border border-[#5A7194]/30 bg-[#233858] text-[#E8E6DB] transition-transform group-hover:scale-105">
+                      {!isAiActive ? (
+                        <Bot className="w-3.5 h-3.5" />
+                      ) : activeSavedAiProvider === 'gemini' ? (
+                        <Sparkles className="w-3.5 h-3.5" />
+                      ) : (
+                        <Zap className="w-3.5 h-3.5" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-white truncate">
+                        {!isAiActive
+                          ? 'AI Dinonaktifkan'
+                          : activeSavedAiProvider === 'gemini'
+                            ? 'Google Gemini AI'
+                            : 'Groq LPU Engine'}
+                      </p>
+                      <p className="text-[10px] text-[#A6AFC1] font-mono truncate">
+                        {!isAiActive
+                          ? 'Mode Manual'
+                          : getModelDisplayName(activeSavedAiProvider, activeSavedModel)}
+                      </p>
+                    </div>
                   </div>
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      isConnected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
-                    }`}
-                  />
-                </button>
-
-                <div className="pt-2 pb-1 px-3">
-                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">INFORMASI TOKO</p>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setActiveTab('store_profile');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'store_profile'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <span className="text-sm">♙</span>
-                  <span>Profil & Pemilik Toko</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('catalog');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'catalog'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm">🛍️</span>
-                    <span>Katalog Produk</span>
-                  </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                    {config?.catalog?.length || 5}
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('schedule');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'schedule'
-                      ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <span className="text-sm">🕐</span>
-                  <span>Jadwal & Jam Kerja</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('location');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'location'
-                      ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <span className="text-sm">📍</span>
-                  <span>Lokasi & Alamat</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('warranty');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'warranty'
-                      ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <span className="text-sm">🛡️</span>
-                  <span>Ketentuan Garansi</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('promo');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'promo'
-                      ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <span className="text-sm">🏷️</span>
-                  <span>Promo & Diskon</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('tickets');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'tickets' || activeTab === 'complaint'
-                      ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm">⚙️</span>
-                    <span>Pusat Komplain & CS</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {tickets.filter(t => (t.priority || '').toLowerCase().includes('urgent') || (t.status || '').toLowerCase() === 'open').length > 0 && (
-                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                    )}
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                      {tickets.length}
+                {/* WA Connection Status */}
+                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-[#182840] border border-[#5A7194]/60 transition shadow-sm">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="relative flex h-2.5 w-2.5 shrink-0">
+                      {isConnected && (
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      )}
+                      <span
+                        className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                          isConnected ? 'bg-[#2F855A]' : 'bg-[#D69E2E]'
+                        }`}
+                      ></span>
                     </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-200 truncate">
+                        {isConnected ? 'WA Terhubung' : 'WA Offline'}
+                      </p>
+                      <p className="text-[10px] text-[#A6AFC1] truncate font-mono">
+                        {botStatus.user?.name || botStatus.user?.id || 'Bot Server'}
+                      </p>
+                    </div>
                   </div>
-                </button>
-
-                <div className="pt-2 pb-1 px-3">
-                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">AI KNOWLEDGE</p>
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded bg-[#233858] text-[#E8E6DB] border border-[#5A7194]/40">
+                    <Database className={`w-3 h-3 ${dbStatus.connected ? "text-[#2F855A]" : "text-[#8A94A6]"}`} />
+                    <span>{dbStatus.connected ? 'PG OK' : 'No DB'}</span>
+                  </div>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setActiveTab('qna');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'qna'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm">🧠</span>
-                    <span>Knowledge Base</span>
-                  </div>
-                  {faqs.length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold">
-                      {faqs.length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('handoff');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'handoff'
-                      ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm">🎧</span>
-                    <span>Hands-Off CS & AI</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {activeHandoffCount > 0 && (
-                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                    )}
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
-                      activeHandoffCount > 0
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}>
-                      {activeHandoffCount}
-                    </span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab('settings');
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    activeTab === 'settings'
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm">🛡️</span>
-                    <span>Anti-Spam & Delay</span>
-                  </div>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
-                    Proteksi
-                  </span>
-                </button>
-              </nav>
+                {/* Action Buttons: Restart & Logout */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleRestart}
+                    className="flex-1 py-2.5 rounded-xl bg-[#182840] hover:bg-[#5A7194] text-xs font-semibold text-slate-200 hover:text-white transition border border-[#5A7194]/40 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Restart</span>
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="px-4 py-2.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-semibold transition border border-rose-500/40 flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              </div>
             </div>
+          </div>
+          <div className="flex-1" onClick={() => setMobileDrawerOpen(false)} />
+        </div>
+      )}
 
-            {/* Mobile Drawer Footer */}
-            <div className="pt-4 border-t border-slate-800 space-y-2.5">
-              {/* Active AI Engine Indicator Card (Mobile) */}
+      {/* DESKTOP SIDEBAR NAVIGATION */}
+      <aside
+        className={`hidden md:flex ${
+          sidebarCollapsed ? 'md:w-20 px-2 py-3.5' : 'md:w-72 p-3.5'
+        } shrink-0 border-r border-[#5A7194]/40 bg-[#233858]/95 backdrop-blur-xl shadow-xl flex-col justify-between transition-all duration-300 ease-in-out select-none overflow-hidden overflow-x-hidden`}
+      >
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* Logo & Brand Header */}
+          {!sidebarCollapsed ? (
+            <div className="flex items-center justify-between px-3 py-2.5 mb-4 rounded-2xl bg-[#182840] border border-[#5A7194]/60 shrink-0 shadow-sm">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#5A7194] to-[#233858] flex items-center justify-center shadow-lg shadow-[#233858]/30 text-white border border-[#5A7194]/40 font-bold text-lg shrink-0">
+                  <Bot className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="font-bold text-sm tracking-wide text-white truncate">Dashboard Chatbot</h1>
+                  <p className="text-[11px] text-[#A6AFC1] font-semibold truncate">WhatsApp AI & CS</p>
+                </div>
+              </div>
+              <button
+                onClick={toggleSidebar}
+                className="p-1.5 rounded-xl bg-[#233858] hover:bg-[#5A7194] text-[#A6AFC1] hover:text-white border border-[#5A7194]/40 transition cursor-pointer shrink-0 ml-1.5 shadow-sm"
+                title="Minimize / Perkecil Sidebar"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center mb-4 shrink-0">
+              <button
+                onClick={toggleSidebar}
+                className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#5A7194] to-[#233858] hover:from-[#5A7194] hover:to-[#5A7194] flex items-center justify-center shadow-lg shadow-[#233858]/30 text-white border border-[#5A7194]/60 font-bold text-lg shrink-0 cursor-pointer hover:scale-105 transition group"
+                title="Buka / Perluas Sidebar"
+              >
+                <PanelLeftOpen className="w-5 h-5 text-white transition-transform group-hover:scale-110" />
+              </button>
+            </div>
+          )}
+
+          {/* Navigation Items */}
+          <nav
+            onScroll={() => setHoveredNav(null)}
+            className="space-y-1 overflow-y-auto overflow-x-hidden pr-0.5 flex-1 min-h-0 [scrollbar-width:thin]"
+          >
+            {navigationSections.map((sec, sIdx) => (
+              <React.Fragment key={sIdx}>
+                {sec.title && (
+                  !sidebarCollapsed ? (
+                    <div className="pt-3 pb-1 px-3">
+                      <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">{sec.title}</p>
+                    </div>
+                  ) : (
+                    <div className="my-2 mx-2 border-t border-slate-800/80" />
+                  )
+                )}
+                {sec.items.map((item) => {
+                  const isCurrent = item.isActive ?? activeTab === item.id;
+                  if (!sidebarCollapsed) {
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setActiveTab(item.id)}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                          isCurrent
+                            ? item.activeClass
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <item.icon className={`w-4 h-4 shrink-0 ${isCurrent ? "text-white" : "text-[#A6AFC1]"}`} />
+                          <span className="truncate nav-label">{item.label}</span>
+                        </div>
+                        {item.badge}
+                      </button>
+                    );
+                  } else {
+                    return (
+                      <div key={item.id} className="relative flex justify-center py-0.5 w-full">
+                        <button
+                          onClick={() => {
+                            setActiveTab(item.id);
+                            setHoveredNav(null);
+                          }}
+                          onMouseEnter={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setHoveredNav({
+                              label: item.label,
+                              badge: item.badge,
+                              subtext: null,
+                              top: rect.top + rect.height / 2
+                            });
+                          }}
+                          onMouseLeave={() => setHoveredNav(null)}
+                          className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all relative cursor-pointer shrink-0 ${
+                            isCurrent
+                              ? `${item.activeClass} shadow-md`
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                          }`}
+                          title={item.label}
+                        >
+                          <item.icon className={`w-4 h-4 shrink-0 ${item.iconColor}`} />
+                          {item.hasNotification && (
+                            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-400"></span>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  }
+                })}
+              </React.Fragment>
+            ))}
+          </nav>
+        </div>
+
+        {/* Status Pill in Footer */}
+        <div className="shrink-0 pt-2.5 pb-2 border-t border-slate-800/80 space-y-2">
+          {!sidebarCollapsed ? (
+            <>
+              {/* Active AI Engine Indicator Card (Desktop Expanded) - Solid No Gradient */}
               <div
-                onClick={() => {
-                  setActiveTab('gemini');
-                  setMobileDrawerOpen(false);
-                }}
-                className={`p-2.5 rounded-xl border transition-all cursor-pointer group select-none ${
-                  !isAiActive
-                    ? 'bg-slate-900/60 border-slate-800'
-                    : activeSavedAiProvider === 'gemini'
-                      ? 'bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-slate-900/90 border-purple-500/40 shadow-sm shadow-purple-900/20'
-                      : 'bg-gradient-to-r from-amber-950/70 via-orange-950/50 to-slate-900/90 border-amber-500/40 shadow-sm shadow-amber-900/20'
-                }`}
+                onClick={() => setActiveTab('gemini')}
+                title="Klik untuk membuka AI Studio & ganti mesin AI"
+                className="p-2.5 rounded-2xl border border-[#5A7194]/40 hover:border-[#5A7194] bg-[#182840] hover:bg-[#1b2d48] transition-all duration-200 cursor-pointer group select-none shadow-sm"
               >
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="relative flex h-2 w-2">
                       {isAiActive && (
-                        <span
-                          className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                            activeSavedAiProvider === 'gemini' ? 'bg-purple-400' : 'bg-amber-400'
-                          }`}
-                        />
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-[#2F855A]" />
                       )}
-                      <span
-                        className={`relative inline-flex rounded-full h-2 w-2 ${
-                          !isAiActive
-                            ? 'bg-slate-500'
-                            : activeSavedAiProvider === 'gemini'
-                              ? 'bg-purple-400'
-                              : 'bg-amber-400'
-                        }`}
-                      />
+                      <span className={`relative inline-flex rounded-full h-2 w-2 ${!isAiActive ? 'bg-[#8A94A6]' : 'bg-[#2F855A]'}`} />
                     </span>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-[#A6AFC1]">
                       Mesin AI Chatbot
                     </span>
                   </div>
-                  <span
-                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase font-mono ${
-                      !isAiActive
-                        ? 'bg-slate-800 text-slate-400 border-slate-700'
-                        : activeSavedAiProvider === 'gemini'
-                          ? 'bg-purple-500/25 text-purple-200 border-purple-500/40'
-                          : 'bg-amber-500/25 text-amber-200 border-amber-500/40'
-                    }`}
-                  >
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md border uppercase font-mono tracking-wider bg-[#5A7194]/25 text-[#E8E6DB] border-[#5A7194]/40">
                     {!isAiActive ? 'OFF' : activeSavedAiProvider === 'gemini' ? '🔮 GEMINI' : '⚡ GROQ LPU'}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <div
-                    className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
-                      !isAiActive
-                        ? 'bg-slate-800 border-slate-700 text-slate-400'
-                        : activeSavedAiProvider === 'gemini'
-                          ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
-                          : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                    }`}
-                  >
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border border-[#5A7194]/30 bg-[#233858] text-[#E8E6DB] transition-transform group-hover:scale-105">
                     {!isAiActive ? (
                       <Bot className="w-3.5 h-3.5" />
                     ) : activeSavedAiProvider === 'gemini' ? (
@@ -3815,14 +4058,14 @@ export default function Dashboard() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-slate-200 truncate">
+                    <p className="text-xs font-bold text-white truncate">
                       {!isAiActive
                         ? 'AI Dinonaktifkan'
                         : activeSavedAiProvider === 'gemini'
                           ? 'Google Gemini AI'
                           : 'Groq LPU Engine'}
                     </p>
-                    <p className="text-[10px] text-slate-400 font-mono truncate">
+                    <p className="text-[10px] text-[#A6AFC1] font-mono truncate">
                       {!isAiActive
                         ? 'Mode Manual'
                         : getModelDisplayName(activeSavedAiProvider, activeSavedModel)}
@@ -3830,415 +4073,132 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-                <div className="flex items-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                  <div>
-                    <p className="text-xs font-semibold text-slate-200">
-                      {isConnected ? 'WA Terhubung' : 'WA Offline'}
+
+              <div className="flex items-center justify-between p-2.5 rounded-2xl bg-[#182840] border border-[#5A7194]/60 transition shadow-sm">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                    {isConnected && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    )}
+                    <span
+                      className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                        isConnected ? 'bg-[#2F855A]' : 'bg-[#D69E2E]'
+                      }`}
+                    ></span>
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-200 truncate">
+                      {isConnected ? 'Terhubung' : 'Menunggu Koneksi'}
                     </p>
-                    <p className="text-[10px] text-slate-400 truncate max-w-[130px]">
+                    <p className="text-[11px] text-[#A6AFC1] truncate font-mono">
                       {botStatus.user?.name || botStatus.user?.id || 'Bot Server'}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                  <Database className="w-3 h-3 text-emerald-400" />
-                  <span>{dbStatus.connected ? 'PG OK' : 'No DB'}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
                 <button
                   onClick={handleRestart}
-                  className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition border border-slate-700 flex items-center justify-center gap-1.5"
+                  title="Restart Bot"
+                  className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition shrink-0 cursor-pointer"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Restart</span>
+                  <RefreshCw className="w-4 h-4" />
                 </button>
+              </div>
+            </>
+          ) : (
+            /* Collapsed Footer */
+            <div className="flex flex-col items-center gap-2 w-full">
+              {/* Collapsed AI Icon */}
+              <div className="relative flex justify-center w-full">
                 <button
-                  onClick={handleLogout}
-                  className="px-3 py-2 rounded-xl bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 text-xs font-medium transition border border-rose-900/40 flex items-center gap-1.5"
+                  onClick={() => {
+                    setActiveTab('gemini');
+                    setHoveredNav(null);
+                  }}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHoveredNav({
+                      label: !isAiActive ? 'AI Dinonaktifkan' : activeSavedAiProvider === 'gemini' ? 'Google Gemini AI' : 'Groq LPU Engine',
+                      badge: null,
+                      subtext: !isAiActive ? 'Mode Manual' : getModelDisplayName(activeSavedAiProvider, activeSavedModel),
+                      top: rect.top + rect.height / 2
+                    });
+                  }}
+                  onMouseLeave={() => setHoveredNav(null)}
+                  className={`w-10 h-10 rounded-xl border flex items-center justify-center transition cursor-pointer shrink-0 ${
+                    !isAiActive
+                      ? 'bg-[#182840] border-[#5A7194]/30 text-[#8A94A6] hover:border-[#5A7194]'
+                      : 'bg-[#182840] border-[#5A7194]/40 text-[#E8E6DB] hover:border-[#5A7194] shadow-sm'
+                  }`}
+                  title="Mesin AI Chatbot"
                 >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Logout</span>
+                  {activeSavedAiProvider === 'gemini' ? (
+                    <Sparkles className="w-4 h-4" />
+                  ) : (
+                    <Zap className="w-4 h-4" />
+                  )}
+                  {isAiActive && (
+                    <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400"></span>
+                  )}
                 </button>
               </div>
-            </div>
-          </div>
-          <div className="flex-1" onClick={() => setMobileDrawerOpen(false)} />
-        </div>
-      )}
 
-      {/* DESKTOP SIDEBAR NAVIGATION */}
-      <aside className="hidden md:flex md:w-72 shrink-0 border-r border-slate-800/80 bg-[#0f172a]/70 backdrop-blur-xl flex-col justify-between p-4">
-        <div className="flex flex-col h-[calc(100vh-130px)]">
-          {/* Logo & Brand */}
-          <div className="flex items-center gap-3.5 px-3 py-3 mb-4 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-transparent border border-emerald-500/30 shrink-0 shadow-sm">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 text-white font-bold text-lg">
-              <Bot className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <h1 className="font-bold text-base tracking-wide text-white">Dashboard Chatbot</h1>
-              </div>
-              <p className="text-xs text-slate-400">WhatsApp AI & Customer Service</p>
-            </div>
-          </div>
-
-          {/* Navigation Items */}
-          <nav className="space-y-1 overflow-y-auto pr-1 flex-1">
-            <button
-              onClick={() => setActiveTab('chats')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'chats'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm">💬</span>
-                <span>Obrolan WhatsApp</span>
-              </div>
-              {conversations.length > 0 && (
-                <span className="text-[11px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
-                  {conversations.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('gemini')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'gemini'
-                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm shadow-purple-500/10'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm">✨</span>
-                <span>AI Studio</span>
-              </div>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                activeSavedAiProvider === 'groq' ? 'bg-amber-500/30 text-amber-200' : 'bg-purple-500/30 text-purple-200'
-              }`}>
-                {activeSavedAiProvider === 'groq' ? '⚡ Groq' : '🔮 Gemini'}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('qr')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'qr'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm font-mono">▦</span>
-                <span>Koneksi WhatsApp</span>
-              </div>
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isConnected ? 'bg-emerald-400 shadow-sm shadow-emerald-400' : 'bg-amber-400 animate-pulse'
-                }`}
-              />
-            </button>
-
-            <div className="pt-2 pb-1 px-3">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">INFORMASI TOKO</p>
-            </div>
-
-            <button
-              onClick={() => setActiveTab('store_profile')}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'store_profile'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <span className="text-sm">♙</span>
-              <span>Profil & Pemilik Toko</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('catalog')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'catalog'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm">🛍️</span>
-                <span>Katalog Produk</span>
-              </div>
-              <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                {config?.catalog?.length || 5}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('schedule')}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'schedule'
-                  ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <span className="text-sm">🕐</span>
-              <span>Jadwal & Jam Kerja</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('location')}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'location'
-                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <span className="text-sm">📍</span>
-              <span>Lokasi & Alamat</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('warranty')}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'warranty'
-                  ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <span className="text-sm">🛡️</span>
-              <span>Ketentuan Garansi</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('promo')}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'promo'
-                  ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <span className="text-sm">🏷️</span>
-              <span>Promo & Diskon</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('tickets')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'tickets' || activeTab === 'complaint'
-                  ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm">⚙️</span>
-                <span>Pusat Komplain & CS</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {tickets.filter(t => (t.priority || '').toLowerCase().includes('urgent') || (t.status || '').toLowerCase() === 'open').length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                )}
-                <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 font-semibold">
-                  {tickets.length}
-                </span>
-              </div>
-            </button>
-
-            <div className="pt-2 pb-1 px-3">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">AI KNOWLEDGE</p>
-            </div>
-
-            <button
-              onClick={() => setActiveTab('qna')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'qna'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm">🧠</span>
-                <span>Knowledge Base</span>
-              </div>
-              {faqs.length > 0 && (
-                <span className="text-[11px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
-                  {faqs.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('handoff')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'handoff'
-                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm">🎧</span>
-                <span>Hands-Off CS & AI</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {activeHandoffCount > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                )}
-                <span className={`text-[11px] px-2 py-0.2 rounded-full font-semibold ${
-                  activeHandoffCount > 0
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                    : 'bg-slate-800 text-slate-400'
-                }`}>
-                  {activeHandoffCount}
-                </span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'settings'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm">🛡️</span>
-                <span>Anti-Spam & Delay</span>
-              </div>
-              <span className="text-[11px] px-2 py-0.2 rounded-full font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Proteksi
-              </span>
-            </button>
-          </nav>
-        </div>
-
-        {/* Status Pill in Footer */}
-        <div className="pt-4 border-t border-slate-800/80 space-y-2.5">
-          {/* Active AI Engine Indicator Card (Desktop) */}
-          <div
-            onClick={() => setActiveTab('gemini')}
-            title="Klik untuk membuka AI Studio & ganti mesin AI"
-            className={`p-2.5 rounded-xl border transition-all cursor-pointer group select-none ${
-              !isAiActive
-                ? 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
-                : activeSavedAiProvider === 'gemini'
-                  ? 'bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-slate-900/90 border-purple-500/40 hover:border-purple-400/80 shadow-sm shadow-purple-900/20'
-                  : 'bg-gradient-to-r from-amber-950/70 via-orange-950/50 to-slate-900/90 border-amber-500/40 hover:border-amber-400/80 shadow-sm shadow-amber-900/20'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className="relative flex h-2 w-2">
-                  {isAiActive && (
+              {/* Collapsed WA Status */}
+              <div className="relative flex justify-center w-full">
+                <div
+                  onClick={() => {
+                    setActiveTab('qr');
+                    setHoveredNav(null);
+                  }}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHoveredNav({
+                      label: isConnected ? 'WhatsApp Terhubung' : 'WhatsApp Menunggu Koneksi',
+                      badge: null,
+                      subtext: botStatus.user?.name || botStatus.user?.id || 'Bot Server',
+                      top: rect.top + rect.height / 2
+                    });
+                  }}
+                  onMouseLeave={() => setHoveredNav(null)}
+                  className="w-10 h-10 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-center cursor-pointer hover:border-slate-700 transition shrink-0"
+                  title={isConnected ? 'WhatsApp Terhubung' : 'WhatsApp Menunggu Koneksi'}
+                >
+                  <span className="relative flex h-2.5 w-2.5">
+                    {isConnected && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    )}
                     <span
-                      className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                        activeSavedAiProvider === 'gemini' ? 'bg-purple-400' : 'bg-amber-400'
+                      className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                        isConnected ? 'bg-[#2F855A]' : 'bg-[#D69E2E]'
                       }`}
-                    />
-                  )}
-                  <span
-                    className={`relative inline-flex rounded-full h-2 w-2 ${
-                      !isAiActive
-                        ? 'bg-slate-500'
-                        : activeSavedAiProvider === 'gemini'
-                          ? 'bg-purple-400'
-                          : 'bg-amber-400'
-                    }`}
-                  />
-                </span>
-                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                  Mesin AI Chatbot
-                </span>
-              </div>
-              <span
-                className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase font-mono ${
-                  !isAiActive
-                    ? 'bg-slate-800 text-slate-400 border-slate-700'
-                    : activeSavedAiProvider === 'gemini'
-                      ? 'bg-purple-500/25 text-purple-200 border-purple-500/40'
-                      : 'bg-amber-500/25 text-amber-200 border-amber-500/40'
-                }`}
-              >
-                {!isAiActive ? 'OFF' : activeSavedAiProvider === 'gemini' ? '🔮 GEMINI' : '⚡ GROQ LPU'}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border transition-transform group-hover:scale-105 ${
-                  !isAiActive
-                    ? 'bg-slate-800 border-slate-700 text-slate-400'
-                    : activeSavedAiProvider === 'gemini'
-                      ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
-                      : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                }`}
-              >
-                {!isAiActive ? (
-                  <Bot className="w-3.5 h-3.5" />
-                ) : activeSavedAiProvider === 'gemini' ? (
-                  <Sparkles className="w-3.5 h-3.5" />
-                ) : (
-                  <Zap className="w-3.5 h-3.5" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition">
-                  {!isAiActive
-                    ? 'AI Dinonaktifkan'
-                    : activeSavedAiProvider === 'gemini'
-                      ? 'Google Gemini AI'
-                      : 'Groq LPU Engine'}
-                </p>
-                <p className="text-[10px] text-slate-400 font-mono truncate">
-                  {!isAiActive
-                    ? 'Mode Manual'
-                    : getModelDisplayName(activeSavedAiProvider, activeSavedModel)}
-                </p>
+                    ></span>
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-            <div className="flex items-center gap-2.5">
-              <span
-                className={`relative flex h-2.5 w-2.5`}
-              >
-                {isConnected && (
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                )}
-                <span
-                  className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                    isConnected ? 'bg-emerald-500' : 'bg-amber-500'
-                  }`}
-                ></span>
-              </span>
-              <div>
-                <p className="text-xs font-semibold text-slate-200">
-                  {isConnected ? 'Terhubung' : 'Menunggu Koneksi'}
-                </p>
-                <p className="text-[11px] text-slate-400 truncate max-w-[130px]">
-                  {botStatus.user?.name || botStatus.user?.id || 'Bot Server'}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleRestart}
-              title="Restart Bot"
-              className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
+          )}
         </div>
       </aside>
 
+      {/* Floating Tooltip Portal for Collapsed Sidebar */}
+      {sidebarCollapsed && hoveredNav && (
+        <div
+          style={{ top: hoveredNav.top }}
+          className="fixed left-20 ml-2.5 -translate-y-1/2 px-3 py-1.5 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 text-white text-xs font-medium shadow-2xl pointer-events-none whitespace-nowrap z-[9999] flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-100">{hoveredNav.label}</span>
+            {hoveredNav.badge}
+          </div>
+          {hoveredNav.subtext && (
+            <span className="text-[10px] text-slate-400 font-mono">{hoveredNav.subtext}</span>
+          )}
+        </div>
+      )}
+
       {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col min-w-0 bg-[#0b1120] overflow-hidden">
+      <main className={`flex-1 flex flex-col min-w-0 bg-[#F5F6F8] overflow-hidden ${!mobileChatOpen ? 'pb-16 md:pb-0' : ''}`}>
         {/* MOBILE TOPBAR (Hidden on md+) */}
-        <header className="h-14 md:hidden shrink-0 border-b border-slate-800/80 bg-[#0f172a]/95 backdrop-blur-md px-3.5 flex items-center justify-between z-30">
+        <header className="h-14 md:hidden shrink-0 border-b border-[#5A7194]/40 bg-[#233858]/95 backdrop-blur-md px-3.5 flex items-center justify-between z-30">
           <div className="flex items-center gap-2.5">
             <button
               onClick={() => setMobileDrawerOpen(true)}
@@ -4257,16 +4217,16 @@ export default function Dashboard() {
             {/* WA Status Dot */}
             <div
               onClick={() => setActiveTab('qr')}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-[10px] text-slate-300 cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs text-white cursor-pointer transition"
             >
-              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
-              <span>{isConnected ? 'WA' : 'Scan'}</span>
+              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-[#2F855A]' : 'bg-[#D69E2E] animate-pulse'}`} />
+              <span>{isConnected ? 'WA Terhubung' : 'Pindai QR'}</span>
             </div>
 
             {/* Quick Restart */}
             <button
               onClick={handleRestart}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+              className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition cursor-pointer"
               title="Restart Bot"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -4275,7 +4235,7 @@ export default function Dashboard() {
         </header>
 
         {/* DESKTOP TOPBAR */}
-        <header className="hidden md:flex h-16 shrink-0 border-b border-slate-800/80 bg-[#0f172a]/50 backdrop-blur-md px-6 items-center justify-between">
+        <header className="hidden md:flex h-16 shrink-0 border-b border-[#5A7194]/40 bg-[#233858]/95 backdrop-blur-md px-6 items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-bold text-white capitalize">
               {activeTab === 'chats' && 'Live Chat Log Real-Time'}
@@ -4283,7 +4243,7 @@ export default function Dashboard() {
               {activeTab === 'qr' && 'Koneksi & QR Code WhatsApp'}
               {(activeTab === 'tickets' || activeTab === 'complaint') && 'Pusat Komplain & Customer Service (CS)'}
               {activeTab === 'catalog' && 'Katalog Karpet Sultan & Koleksi Lengkap'}
-              {activeTab === 'store_profile' && 'Profil Toko & Pemilik Karpet'}
+              {activeTab === 'store_profile' && 'Profil Toko'}
               {activeTab === 'schedule' && 'Jadwal & Jam Operasional Toko'}
               {activeTab === 'location' && 'Alamat & Lokasi Showroom'}
               {activeTab === 'warranty' && 'Garansi & Kebijakan Klaim Karpet'}
@@ -4298,7 +4258,7 @@ export default function Dashboard() {
             {/* Restart Button */}
             <button
               onClick={handleRestart}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition border border-slate-700"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition border border-white/20 cursor-pointer shadow-sm"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Restart</span>
@@ -4307,7 +4267,7 @@ export default function Dashboard() {
             {/* Logout Button */}
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 text-xs font-medium transition border border-rose-900/40"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#C53030]/20 hover:bg-[#C53030]/30 text-rose-100 text-xs font-medium transition border border-[#C53030]/40 cursor-pointer shadow-sm"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Logout</span>
@@ -4319,29 +4279,37 @@ export default function Dashboard() {
         <div className={`flex-1 min-h-0 flex flex-col ${['chats', 'gemini'].includes(activeTab) ? 'p-2 sm:p-4 lg:p-5 h-full overflow-hidden' : 'overflow-y-auto p-4 sm:p-6'}`}>
           {/* TAB 1: 1 USER 1 CHAT WHATSAPP WEB LAYOUT */}
           {activeTab === 'chats' && (
-            <div className="h-full flex-1 flex flex-col md:flex-row rounded-2xl border border-slate-800/80 bg-[#0b101b] overflow-hidden shadow-2xl">
+            <div className="h-full flex-1 flex flex-col md:flex-row rounded-2xl border border-[#A6AFC1]/40 bg-white overflow-hidden shadow-sm">
               {/* LEFT COLUMN: LIST OF CONVERSATIONS (1 User 1 Chat) */}
-              <div className={`w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-800/80 bg-[#0f172a]/95 shrink-0 h-full ${
+              <div className={`w-full md:w-80 lg:w-96 flex flex-col border-r border-[#A6AFC1]/40 bg-white shrink-0 h-full ${
                 mobileChatOpen ? 'hidden md:flex' : 'flex'
               }`}>
                 {/* Left Header */}
-                <div className="p-3.5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between">
+                <div className="p-4 border-b border-[#A6AFC1]/30 bg-[#233858] text-white flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm">
-                      <MessageCircle className="w-4 h-4" />
+                    <div className="w-9 h-9 rounded-2xl bg-white/10 text-white border border-white/15 flex items-center justify-center font-bold text-sm shadow-sm">
+                      <MessageCircle className="w-4 h-4 text-white" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-white text-sm">Obrolan WhatsApp</h3>
-                      <p className="text-[11px] text-slate-400">
+                      <div className="flex items-center gap-2">
+                        <span
+                          style={{ color: '#FFFFFF' }}
+                          className="font-bold text-white !text-white text-sm tracking-tight"
+                        >
+                          Obrolan WhatsApp
+                        </span>
+                        <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-[#2F855A]' : 'bg-[#D69E2E] animate-pulse'}`} />
+                      </div>
+                      <p style={{ color: '#E8E6DB' }} className="text-[11px] font-mono text-[#E8E6DB] font-medium">
                         {conversations.length} kontak pelanggan
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <button
                       onClick={fetchChats}
                       title="Perbarui Obrolan"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+                      className="p-2 rounded-xl text-white/80 hover:text-white hover:bg-white/15 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                     </button>
@@ -4349,7 +4317,7 @@ export default function Dashboard() {
                       <button
                         onClick={handleClearAllChats}
                         title="Bersihkan Semua Obrolan"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition"
+                        className="p-2 rounded-xl text-white/80 hover:text-[#C53030] hover:bg-[#C53030]/20 border border-white/10 hover:border-[#C53030]/30 transition-all cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -4358,73 +4326,75 @@ export default function Dashboard() {
                 </div>
 
                 {/* Search & Filter Bar */}
-                <div className="p-3 border-b border-slate-800/60 space-y-2 bg-slate-900/30">
+                <div className="p-3 border-b border-[#A6AFC1]/40 space-y-2.5 bg-white">
                   <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                    <Search className="w-4 h-4 text-[#5A7194] absolute left-3.5 top-2.5" />
                     <input
                       type="text"
                       value={chatSearch}
                       onChange={(e) => setChatSearch(e.target.value)}
-                      placeholder="Cari atau mulai obrolan..."
-                      className="w-full rounded-xl bg-slate-950 border border-slate-800 pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      placeholder="Cari kontak, nomor atau isi obrolan..."
+                      className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 pl-9 pr-8 py-2 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:ring-1 focus:ring-[#5A7194]/30 transition shadow-inner font-medium"
                     />
                     {chatSearch && (
                       <button
                         onClick={() => setChatSearch('')}
-                        className="absolute right-2.5 top-2 text-slate-500 hover:text-slate-300"
+                        className="absolute right-2.5 top-2.5 text-[#5A7194] hover:text-[#233858] p-0.5"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
 
-                  {/* Filter chips */}
-                  <div className="flex items-center gap-1.5 text-[11px]">
+                  {/* Filter chips - Consistent Slate Blue #5A7194 active & Lavender Grey #A6AFC1 border */}
+                  <div className="flex items-center gap-1.5 text-[11px] overflow-x-auto no-scrollbar">
                     <button
                       onClick={() => setChatFilter('all')}
-                      className={`px-2.5 py-0.5 rounded-full transition font-medium ${
+                      className={`px-3.5 py-1.5 rounded-xl transition-all font-semibold cursor-pointer shrink-0 border ${
                         chatFilter === 'all'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : 'bg-slate-800/60 text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#5A7194] text-white border-[#5A7194] shadow-sm'
+                          : 'bg-white text-[#233858] border-[#A6AFC1]/60 hover:bg-[#5A7194]/10 hover:border-[#5A7194]'
                       }`}
                     >
                       Semua
                     </button>
                     <button
                       onClick={() => setChatFilter('unread')}
-                      className={`px-2.5 py-0.5 rounded-full transition font-medium ${
+                      className={`px-3.5 py-1.5 rounded-xl transition-all font-semibold cursor-pointer shrink-0 border ${
                         chatFilter === 'unread'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : 'bg-slate-800/60 text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#5A7194] text-white border-[#5A7194] shadow-sm'
+                          : 'bg-white text-[#233858] border-[#A6AFC1]/60 hover:bg-[#5A7194]/10 hover:border-[#5A7194]'
                       }`}
                     >
                       Pesan Masuk
                     </button>
                     <button
                       onClick={() => setChatFilter('ai')}
-                      className={`px-2.5 py-0.5 rounded-full transition font-medium ${
+                      className={`px-3.5 py-1.5 rounded-xl transition-all font-semibold cursor-pointer shrink-0 flex items-center gap-1.5 border ${
                         chatFilter === 'ai'
-                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
-                          : 'bg-slate-800/60 text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#5A7194] text-white border-[#5A7194] shadow-sm'
+                          : 'bg-white text-[#233858] border-[#A6AFC1]/60 hover:bg-[#5A7194]/10 hover:border-[#5A7194]'
                       }`}
                     >
-                      AI Aktif
+                      <Sparkles className={`w-3.5 h-3.5 ${chatFilter === 'ai' ? 'text-white' : 'text-[#5A7194]'}`} />
+                      <span>AI Aktif</span>
                     </button>
                     <button
                       onClick={() => setChatFilter('cs')}
-                      className={`px-2.5 py-0.5 rounded-full transition font-medium ${
+                      className={`px-3.5 py-1.5 rounded-xl transition-all font-semibold cursor-pointer shrink-0 flex items-center gap-1.5 border ${
                         chatFilter === 'cs'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                          : 'bg-slate-800/60 text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#5A7194] text-white border-[#5A7194] shadow-sm'
+                          : 'bg-white text-[#233858] border-[#A6AFC1]/60 hover:bg-[#5A7194]/10 hover:border-[#5A7194]'
                       }`}
                     >
-                      CS Manusia
+                      <UserCheck className={`w-3.5 h-3.5 ${chatFilter === 'cs' ? 'text-white' : 'text-[#5A7194]'}`} />
+                      <span>CS Manusia</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Conversation List */}
-                <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+                <div className="flex-1 overflow-y-auto divide-y divide-[#A6AFC1]/25 pb-12 custom-scrollbar">
                   {(() => {
                     const filtered = conversations.filter((c) => {
                       if (chatFilter === 'unread' && c.lastMessage?.direction !== 'in') return false;
@@ -4452,12 +4422,14 @@ export default function Dashboard() {
 
                     if (uniqueFiltered.length === 0) {
                       return (
-                        <div className="p-8 text-center text-slate-500 space-y-2">
-                          <MessageSquare className="w-8 h-8 text-slate-600 mx-auto opacity-40" />
-                          <p className="text-xs text-slate-400 font-medium">
+                        <div className="p-8 text-center text-slate-500 space-y-3">
+                          <div className="w-12 h-12 rounded-2xl bg-[#F5F6F8]/80 border border-[#A6AFC1]/60 flex items-center justify-center mx-auto text-slate-600">
+                            <MessageSquare className="w-6 h-6 opacity-60" />
+                          </div>
+                          <p className="text-xs text-slate-400 font-semibold">
                             {chatSearch ? 'Kontak tidak ditemukan' : 'Belum ada obrolan'}
                           </p>
-                          <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                          <p className="text-[11px] text-slate-500 max-w-xs mx-auto leading-relaxed">
                             Kirim pesan dari nomor WhatsApp ke bot untuk memulai obrolan baru.
                           </p>
                         </div>
@@ -4504,57 +4476,68 @@ export default function Dashboard() {
                             setSelectedChatJid(conv.jid || conv.phone);
                             setMobileChatOpen(true);
                           }}
-                          className={`p-3.5 flex items-center gap-3 cursor-pointer transition relative group ${
+                          className={`p-3.5 flex items-center gap-3 cursor-pointer transition-all duration-200 relative group border-l-[3px] ${
                             isSelected
-                              ? 'bg-slate-800/90 border-l-4 border-emerald-400'
-                              : 'hover:bg-slate-800/40 border-l-4 border-transparent'
+                              ? 'bg-[#E8E6DB] border-[#5A7194] shadow-sm'
+                              : 'hover:bg-[#F5F6F8] border-transparent'
                           }`}
                         >
                           {/* Avatar with initials & online dot */}
                           <div className="relative shrink-0">
                             <div
-                              className={`w-11 h-11 rounded-full bg-gradient-to-br ${avatarBg} flex items-center justify-center text-white font-bold text-xs shadow hover:scale-105 transition`}
+                              className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${avatarBg} flex items-center justify-center text-white font-bold text-xs shadow-md transition-transform duration-200 group-hover:scale-105 ${
+                                isSelected ? 'ring-2 ring-emerald-400/60 shadow-emerald-950/50' : ''
+                              }`}
                             >
                               {initials}
                             </div>
-                            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-900"></span>
+                            <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm" />
                           </div>
 
                           {/* Contact Info & Snippet */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-1 mb-0.5">
-                              <h4 className="font-semibold text-xs text-slate-100 truncate">
+                              <h4 className={`font-semibold text-xs truncate transition-colors ${
+                                isSelected ? 'text-[#233858] font-bold' : 'text-[#233858] font-semibold group-hover:text-[#233858]'
+                              }`}>
                                 {displayName}
                               </h4>
-                              <span className="text-[10px] text-slate-500 shrink-0 font-mono">
+                              <span className="text-[10px] text-[#5A7194] shrink-0 font-mono font-medium">
                                 {lastMsgTime}
                               </span>
                             </div>
 
-                            <p className="text-[11px] text-slate-400 font-mono mb-1 truncate">
+                            <p
+                              style={{ color: '#5A7194' }}
+                              className="text-xs font-mono mb-1 truncate font-semibold text-[#5A7194]"
+                            >
                               {conv.formattedPhone && !conv.formattedPhone.includes('LID') && conv.formattedPhone !== '-'
                                 ? conv.formattedPhone
                                 : (conv.phone && !conv.phone.includes('@lid') ? `+${conv.phone}` : '-')}
                             </p>
 
                             <div className="flex items-center justify-between gap-1">
-                              <div className="flex items-center gap-1 min-w-0 text-slate-400 text-xs">
+                              <div className="flex items-center gap-1.5 min-w-0 text-xs">
                                 {isOutbound && (
-                                  <CheckCheck className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                  <CheckCheck className="w-3.5 h-3.5 text-[#5A7194] shrink-0" />
                                 )}
-                                <span className="truncate text-[11px] text-slate-400">
+                                <span
+                                  style={{ color: '#233858' }}
+                                  className="truncate text-xs text-[#233858] !text-[#233858] font-bold"
+                                >
                                   {formatSnippet(conv.lastMessage)}
                                 </span>
                               </div>
 
                               {conv.isHumanHandoff ? (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold shrink-0 flex items-center gap-0.5 shadow-sm" title="Mode CS Manusia Aktif (Chat AI nonaktif)">
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold shrink-0 flex items-center gap-1 shadow-sm" title="Mode CS Manusia Aktif (Chat AI nonaktif)">
                                   <UserCheck className="w-2.5 h-2.5" />
                                   <span>CS</span>
                                 </span>
                               ) : isAi ? (
-                                <span className="text-[9px] px-1 py-0.2 rounded bg-purple-950 border border-purple-500/40 text-purple-300 font-semibold shrink-0">
-                                  AI
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 font-semibold shrink-0 flex items-center gap-0.5">
+                                  <Sparkles className="w-2 h-2 text-amber-300" />
+                                  <span>AI</span>
                                 </span>
                               ) : null}
                             </div>
@@ -4565,7 +4548,7 @@ export default function Dashboard() {
                             <button
                               onClick={(e) => handleDeleteConversation(e, conv)}
                               title={`Hapus obrolan dengan ${displayName}`}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                              className="p-1.5 rounded-lg text-[#A6AFC1] hover:text-[#C53030] hover:bg-[#C53030]/10 transition cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -4581,14 +4564,14 @@ export default function Dashboard() {
               {(() => {
                 if (!activeConversation) {
                   return (
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#090d16] text-slate-500">
-                      <div className="w-16 h-16 rounded-full bg-slate-800/40 border border-slate-800 flex items-center justify-center mb-3">
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#F5F6F8] text-[#5A7194]">
+                      <div className="w-16 h-16 rounded-3xl bg-slate-800/40 border border-slate-800 flex items-center justify-center mb-4 shadow-xl">
                         <MessageSquare className="w-8 h-8 text-slate-600" />
                       </div>
-                      <h4 className="font-bold text-sm text-slate-300 mb-1">
-                        WhatsApp Web untuk Layanan Pelanggan
+                      <h4 className="font-bold text-base text-slate-200 mb-1.5">
+                        WhatsApp Web Layanan Pelanggan Sultan Carpet
                       </h4>
-                      <p className="text-xs text-slate-500 max-w-sm">
+                      <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
                         Pilih salah satu obrolan pelanggan di sebelah kiri untuk melihat percakapan lengkap atau membalas pesan secara langsung.
                       </p>
                     </div>
@@ -4617,46 +4600,47 @@ export default function Dashboard() {
                   : (activeConversation.phone && !activeConversation.phone.includes('@lid') ? `+${activeConversation.phone}` : '-');
 
                 return (
-                  <div className={`flex-1 flex flex-col bg-[#0b101b] min-w-0 h-full relative ${
+                  <div className={`flex-1 flex flex-col bg-[#F5F6F8] min-w-0 h-full relative ${
                     mobileChatOpen ? 'flex' : 'hidden md:flex'
                   }`}>
                     {/* Active Chat Topbar */}
-                    <div className="h-16 px-3 md:px-6 border-b border-slate-800 bg-[#0f172a]/80 backdrop-blur-md flex items-center justify-between shrink-0">
-                      <div className="flex items-center gap-1.5 md:gap-3 min-w-0">
+                    <div className="h-16 px-4 md:px-6 border-b border-[#A6AFC1]/30 bg-[#233858] flex items-center justify-between shrink-0 shadow-sm z-10 text-white">
+                      <div className="flex items-center gap-2 md:gap-3.5 min-w-0">
                         {/* Mobile Back Button */}
                         <button
                           onClick={() => setMobileChatOpen(false)}
-                          className="md:hidden p-2 -ml-1 text-slate-300 hover:text-white rounded-lg hover:bg-slate-800 transition shrink-0"
+                          className="md:hidden p-2 -ml-1 text-white hover:text-white rounded-xl hover:bg-white/10 transition shrink-0 cursor-pointer"
                           title="Kembali ke daftar kontak"
                         >
-                          <ArrowLeft className="w-5 h-5 text-emerald-400" />
+                          <ArrowLeft className="w-5 h-5 text-white" />
                         </button>
 
                         <div
                           onClick={() => handleOpenProfileModal(activeConversation)}
-                          className="flex items-center gap-2.5 min-w-0 cursor-pointer p-1 rounded-xl hover:bg-slate-800/70 transition group select-none"
+                          className="flex items-center gap-3 min-w-0 cursor-pointer p-1.5 rounded-2xl hover:bg-white/10 transition group select-none"
                           title="Klik untuk melihat & ubah profil pelanggan"
                         >
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-600 to-teal-800 flex items-center justify-center text-white font-bold text-xs shadow shrink-0 group-hover:ring-2 group-hover:ring-emerald-400/50 group-hover:scale-105 transition">
+                          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-800 flex items-center justify-center text-white font-bold text-xs shadow-md shrink-0 group-hover:ring-2 group-hover:ring-emerald-400/50 group-hover:scale-105 transition-all">
                             {activeInitials}
                           </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-bold text-sm text-white truncate group-hover:text-emerald-400 transition flex items-center gap-1">
-                                <span>{activeDisplayName}</span>
-                                <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 transition" />
-                              </h3>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold hidden sm:inline-block ${
-                                activeConversation.isHumanHandoff
-                                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                              }`}>
-                                {activeConversation.isHumanHandoff ? 'Mode CS Manusia' : 'WhatsApp Aktif'}
-                              </span>
+                          <div className="min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div
+                                style={{ color: '#FFFFFF' }}
+                                className="font-bold text-sm text-white !text-white truncate transition flex items-center gap-1.5"
+                              >
+                                <span style={{ color: '#FFFFFF' }} className="!text-white text-white font-bold">{activeDisplayName}</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-white/70 group-hover:text-white transition shrink-0" />
+                              </div>
+                              {activeSubtitle && activeSubtitle !== '-' && activeSubtitle !== activeDisplayName && (
+                                <span
+                                  style={{ color: '#E8E6DB' }}
+                                  className="text-xs font-mono font-medium text-[#E8E6DB] group-hover:text-white transition"
+                                >
+                                  ({activeSubtitle})
+                                </span>
+                              )}
                             </div>
-                            <p className="text-xs text-slate-400 font-mono group-hover:text-slate-300 transition">
-                              {activeSubtitle}
-                            </p>
                           </div>
                         </div>
                       </div>
@@ -4667,10 +4651,10 @@ export default function Dashboard() {
                           type="button"
                           onClick={() => handleToggleContactAi(activeConversation)}
                           disabled={togglingAiJid === (activeConversation.jid || activeConversation.phone)}
-                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-all duration-200 flex items-center gap-2 shadow-sm ${
+                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-all duration-200 flex items-center gap-2 shadow-sm cursor-pointer ${
                             activeConversation.isHumanHandoff
-                              ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/40 text-amber-300 hover:border-amber-500/60'
-                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:border-emerald-500/60'
+                              ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 hover:border-amber-500/60'
+                              : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300 hover:border-emerald-500/60'
                           } ${togglingAiJid === (activeConversation.jid || activeConversation.phone) ? 'opacity-50 cursor-wait' : ''}`}
                           title={
                             activeConversation.isHumanHandoff
@@ -4713,15 +4697,15 @@ export default function Dashboard() {
                             setTicketCategoryUpdate('Layanan Umum');
                             setTicketPriorityUpdate('Normal');
                           }}
-                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition flex items-center gap-1.5 hidden sm:flex"
+                          className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-semibold transition flex items-center gap-1.5 hidden sm:flex cursor-pointer shadow-sm"
                         >
-                          <Ticket className="w-3.5 h-3.5 text-emerald-400" />
+                          <Ticket className="w-3.5 h-3.5 text-[#2F855A]" />
                           <span>Buat Tiket</span>
                         </button>
 
                         <button
                           onClick={(e) => handleDeleteConversation(e, activeConversation)}
-                          className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                          className="p-2 rounded-xl text-white/80 hover:text-[#C53030] hover:bg-[#C53030]/20 border border-white/10 transition cursor-pointer"
                           title="Hapus riwayat obrolan pelanggan ini"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -4741,7 +4725,7 @@ export default function Dashboard() {
                         <button
                           type="button"
                           onClick={() => handleToggleContactAi(activeConversation)}
-                          className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-semibold transition ml-2 shrink-0"
+                          className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-semibold transition ml-2 shrink-0 cursor-pointer"
                         >
                           Nyalakan AI Kembali
                         </button>
@@ -4751,11 +4735,11 @@ export default function Dashboard() {
                     {/* Messages Canvas */}
                     <div
                       ref={activeChatScrollRef}
-                      className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3 font-sans text-sm bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] bg-[#090d16]"
+                      className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3 font-sans text-sm bg-chat-mesh custom-scrollbar"
                     >
                       {/* Centered Date Badge */}
                       <div className="flex justify-center my-2">
-                        <span className="px-3 py-1 rounded-full bg-slate-800/90 text-slate-400 text-[11px] font-medium border border-slate-700/50 shadow-sm">
+                        <span className="px-3.5 py-1 rounded-full bg-[#F5F6F8] text-slate-400 text-[11px] font-medium border border-[#A6AFC1]/60 shadow-md backdrop-blur-md">
                           Hari ini
                         </span>
                       </div>
@@ -4780,26 +4764,30 @@ export default function Dashboard() {
                             className={`flex flex-col ${isUser ? 'items-start' : 'items-end'}`}
                           >
                             <div
-                              className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-4 py-3 shadow-md whitespace-pre-wrap leading-relaxed relative group ${
+                              className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-4 py-3 shadow-md whitespace-pre-wrap leading-relaxed relative group transition-all duration-200 ${
                                 isUser
-                                  ? 'bg-[#1e293b] text-slate-100 rounded-tl-sm border border-slate-700/60'
-                                  : isAi
-                                  ? 'bg-gradient-to-br from-purple-950/90 via-[#064e3b]/90 to-[#064e3b]/90 text-white rounded-tr-sm border border-purple-500/40 shadow-purple-500/10'
-                                  : 'bg-[#064e3b] text-white rounded-tr-sm border border-emerald-500/40'
+                                  ? 'bg-white text-[#111B21] rounded-tl-xs border-2 border-[#A6AFC1]/80 shadow-sm'
+                                  : 'bg-[#233858] text-white rounded-tr-xs border border-[#182840] shadow-md'
                               }`}
                             >
                               {/* Message Header Tag */}
                               {!isUser && (
-                                <div className="flex items-center gap-1.5 mb-1.5 pb-1 border-b border-white/10 text-[10px] font-semibold">
+                                <div className="flex items-center gap-1.5 mb-1.5 pb-1 border-b border-white/15 text-[11px] font-semibold">
                                   {isAi ? (
-                                    <span className="text-purple-300 flex items-center gap-1">
-                                      <Sparkles className="w-3 h-3 text-purple-400" />
-                                      {msg.senderName || 'Sultan Carpet AI'}
+                                    <span className="text-emerald-300 flex items-center gap-1.5 font-bold">
+                                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>{msg.senderName || 'Sultan Carpet AI'}</span>
                                     </span>
                                   ) : isAdmin ? (
-                                    <span className="text-sky-300">Admin (Balasan Manual)</span>
+                                    <span className="text-sky-300 flex items-center gap-1.5 font-bold">
+                                      <User className="w-3.5 h-3.5 text-sky-400" />
+                                      <span>Admin (Balasan Manual)</span>
+                                    </span>
                                   ) : (
-                                    <span className="text-emerald-300">Sultan Carpet Bot</span>
+                                    <span className="text-emerald-300 flex items-center gap-1.5 font-bold">
+                                      <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>Sultan Carpet Bot</span>
+                                    </span>
                                   )}
                                 </div>
                               )}
@@ -4820,7 +4808,7 @@ export default function Dashboard() {
                                         caption: cleanCap
                                       });
                                     }}
-                                    className="mb-2 rounded-xl overflow-hidden border border-slate-700/60 bg-slate-950/80 max-w-xs shadow-md cursor-pointer group/img relative"
+                                    className="mb-2 rounded-2xl overflow-hidden border border-[#A6AFC1]/60/60 bg-[#F5F6F8]/80 max-w-xs shadow-md cursor-pointer group/img relative"
                                     title="Klik untuk memperbesar gambar"
                                   >
                                     <img
@@ -4840,13 +4828,16 @@ export default function Dashboard() {
                               {/* Message Content */}
                               {Boolean(formatWaText(msg.text)) && (
                                 <div
-                                  className="text-xs leading-relaxed"
+                                  style={{ color: isUser ? '#111B21' : '#FFFFFF' }}
+                                  className={`text-[13px] leading-relaxed ${isUser ? 'text-[#111B21] font-semibold' : 'text-white font-normal'}`}
                                   dangerouslySetInnerHTML={{ __html: formatWaText(msg.text) }}
                                 />
                               )}
 
                               {/* Timestamp & Status */}
-                              <div className="flex items-center justify-end gap-1 mt-1.5 pt-0.5 text-[10px] text-slate-400">
+                              <div className={`flex items-center justify-end gap-1 mt-1.5 pt-0.5 text-[10px] font-mono ${
+                                isUser ? 'text-[#5A7194]' : 'text-white/80'
+                              }`}>
                                 <span>
                                   {msg.timestamp
                                     ? new Date(msg.timestamp).toLocaleTimeString('id-ID', {
@@ -4856,7 +4847,7 @@ export default function Dashboard() {
                                     : ''}
                                 </span>
                                 {!isUser && (
-                                  <CheckCheck className="w-3.5 h-3.5 text-sky-400 ml-0.5" />
+                                  <CheckCheck className="w-3.5 h-3.5 text-white/90 ml-0.5" />
                                 )}
                               </div>
                             </div>
@@ -4866,23 +4857,24 @@ export default function Dashboard() {
                     </div>
 
                     {/* Quick Reply Suggestions */}
-                    <div className="px-4 py-2 border-t border-slate-800/60 bg-[#0f172a]/60 flex items-center gap-1.5 overflow-x-auto text-[11px] shrink-0">
-                      <span className="text-slate-500 text-[10px] uppercase font-bold shrink-0 mr-1">
-                        Template:
+                    <div className="px-4 py-2.5 bg-[#F5F6F8] border-t border-[#A6AFC1]/40 flex items-center gap-2 overflow-x-auto text-[11px] shrink-0 no-scrollbar">
+                      <span className="text-[#233858] text-[10px] uppercase font-extrabold shrink-0 mr-1 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-[#5A7194]" />
+                        <span>Template:</span>
                       </span>
                       {[
-                        { label: 'Sapa Pelanggan', text: 'Halo Kak, selamat datang di Sultan Carpet Gallery. Ada yang bisa kami bantu seputar koleksi karpet kami?' },
-                        { label: 'Kirim Info Katalog', text: 'Berikut tautan katalog karpet impor Turki, Persia, dan modern kami. Silakan pilih motif atau ukuran yang diminati agar dapat kami buatkan penawaran terbaik.' },
-                        { label: 'Lokasi Showroom', text: 'Showroom fisik kami berlokasi di Jl. Fatmawati Raya No. 45 Jakarta Selatan, Bandung Riau, dan Surabaya HR Muhammad.' },
-                        { label: 'Garansi Karpet', text: 'Seluruh karpet Sultan Carpet bergaransi 100% benang impor asli, garansi obras & pasang 1 tahun, serta garansi tukar cacat pabrik 14 hari.' },
-                        { label: 'Survey Gratis', text: 'Kami menyediakan layanan survey dan bawa sampel bahan gratis langsung ke lokasi Anda se-Jabodetabek.' },
-                        { label: 'Hubungkan CS', text: 'Baik Kak, pesan Anda sedang kami teruskan ke tim Customer Service kami.' },
+                        { label: '👋 Sapa Pelanggan', text: 'Halo Kak, selamat datang di Sultan Carpet Gallery. Ada yang bisa kami bantu seputar koleksi karpet kami?' },
+                        { label: '📦 Info Katalog', text: 'Berikut tautan katalog karpet impor Turki, Persia, dan modern kami. Silakan pilih motif atau ukuran yang diminati agar dapat kami buatkan penawaran terbaik.' },
+                        { label: '📍 Lokasi Showroom', text: 'Showroom fisik kami berlokasi di Jl. Fatmawati Raya No. 45 Jakarta Selatan, Bandung Riau, dan Surabaya HR Muhammad.' },
+                        { label: '🛡️ Garansi Karpet', text: 'Seluruh karpet Sultan Carpet bergaransi 100% benang impor asli, garansi obras & pasang 1 tahun, serta garansi tukar cacat pabrik 14 hari.' },
+                        { label: '📐 Survey Gratis', text: 'Kami menyediakan layanan survey dan bawa sampel bahan gratis langsung ke lokasi Anda se-Jabodetabek.' },
+                        { label: '🤝 Hubungkan CS', text: 'Baik Kak, pesan Anda sedang kami teruskan ke tim Customer Service kami.' },
                       ].map((chip, i) => (
                         <button
                           key={i}
                           type="button"
                           onClick={() => handleInsertQuickTemplate(chip.text)}
-                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 whitespace-nowrap border border-slate-700/60 transition shrink-0"
+                          className="px-3 py-1 rounded-xl bg-white hover:bg-[#5A7194] hover:text-white text-[#233858] whitespace-nowrap border border-[#5A7194]/40 transition-all duration-200 shrink-0 cursor-pointer shadow-xs active:scale-95 font-medium"
                         >
                           {chip.label}
                         </button>
@@ -4890,33 +4882,37 @@ export default function Dashboard() {
                     </div>
 
                     {/* Bottom Chat Composer (Direct Reply to WhatsApp) */}
-                    <div className="p-3 md:p-4 border-t border-slate-800 bg-[#0f172a]/95 shrink-0">
-                      <form onSubmit={handleSendDirectReply} className="flex items-center gap-2">
+                    <div className="p-3.5 md:p-4 border-t border-[#A6AFC1]/40 bg-white shrink-0">
+                      <form onSubmit={handleSendDirectReply} className="flex items-center gap-2.5">
                         <div className="relative flex-1">
                           <input
                             type="text"
                             value={chatInputText}
                             onChange={(e) => setChatInputText(e.target.value)}
                             placeholder={`Ketik balasan WhatsApp untuk ${activeDisplayName}...`}
-                            className="w-full rounded-2xl bg-slate-900 border border-slate-700/80 px-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 pr-10"
+                            className="w-full rounded-2xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-4 py-3 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:ring-1 focus:ring-[#5A7194]/30 transition shadow-inner font-medium"
                           />
                         </div>
                         <button
                           type="submit"
                           disabled={!chatInputText.trim() || sendingDirectReply || !isConnected}
-                          className="p-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition shadow-lg shadow-emerald-600/20 disabled:opacity-40 shrink-0 flex items-center justify-center"
+                          className="py-3 px-5 rounded-2xl bg-[#5A7194] hover:bg-[#485E7E] text-white border border-[#5A7194] font-semibold text-xs transition shadow-md shadow-[#5A7194]/25 disabled:opacity-40 shrink-0 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                           title="Kirim Pesan WhatsApp"
                         >
                           {sendingDirectReply ? (
                             <RefreshCw className="w-4 h-4 animate-spin" />
                           ) : (
-                            <Send className="w-4 h-4" />
+                            <>
+                              <Send className="w-4 h-4" />
+                              <span className="hidden sm:inline">Kirim</span>
+                            </>
                           )}
                         </button>
                       </form>
                       {!isConnected && (
-                        <p className="text-[11px] text-amber-400 mt-1 text-center">
-                          ⚠️ Bot WhatsApp belum terhubung. Silakan pindai QR code terlebih dahulu.
+                        <p className="text-[11px] text-amber-400 mt-1.5 text-center flex items-center justify-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span>Bot WhatsApp belum terhubung. Silakan pindai QR code terlebih dahulu di tab Koneksi WhatsApp.</span>
                         </p>
                       )}
                     </div>
@@ -4931,20 +4927,20 @@ export default function Dashboard() {
           {activeTab === 'gemini' && (
             <div className="flex flex-col h-full min-h-0">
               {/* MOBILE SEGMENTED VIEW SWITCHER (< lg) */}
-              <div className="lg:hidden flex items-center p-1 bg-slate-900/90 rounded-2xl border border-slate-800 shrink-0 mb-2.5 gap-1 shadow-lg backdrop-blur-md">
+              <div className="lg:hidden flex items-center p-1 bg-[#F5F6F8] rounded-2xl border border-[#A6AFC1]/60 shrink-0 mb-2.5 gap-1 shadow-lg backdrop-blur-md">
                 <button
                   type="button"
                   onClick={() => setAiStudioMobileView('simulator')}
                   className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                     aiStudioMobileView === 'simulator'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-900/40'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-[#5A7194] text-white shadow-md'
+                      : 'text-[#5A7194] hover:text-[#233858] hover:bg-white'
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <Sparkles className="w-3.5 h-3.5" />
                   <span>Simulator Chat</span>
                   {simHistory.length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/35 text-purple-200 font-mono font-semibold">
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#E8E6DB] text-[#233858] font-mono font-semibold">
                       {simHistory.length}
                     </span>
                   )}
@@ -4954,13 +4950,13 @@ export default function Dashboard() {
                   onClick={() => setAiStudioMobileView('config')}
                   className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                     aiStudioMobileView === 'config'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-900/40'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-[#5A7194] text-white shadow-md'
+                      : 'text-[#5A7194] hover:text-[#233858] hover:bg-white'
                   }`}
                 >
-                  <Sliders className="w-3.5 h-3.5 text-purple-300" />
+                  <Sliders className="w-3.5 h-3.5" />
                   <span>Pengaturan AI</span>
-                  <span className={`w-2 h-2 rounded-full ${geminiEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                  <span className={`w-2 h-2 rounded-full ${geminiEnabled ? 'bg-[#2F855A] animate-pulse' : 'bg-[#8A94A6]'}`} />
                 </button>
               </div>
 
@@ -4968,23 +4964,23 @@ export default function Dashboard() {
               <div className="flex-1 min-h-0 lg:grid lg:grid-cols-12 gap-5 h-full">
                 {/* Left Column: AI Configuration Control Center */}
                 <div
-                  className={`lg:col-span-5 xl:col-span-5 flex-col h-full min-h-0 rounded-3xl border border-slate-800 bg-[#0f172a]/85 backdrop-blur-xl shadow-2xl overflow-hidden ${
+                  className={`lg:col-span-5 xl:col-span-5 flex-col h-full min-h-0 rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl shadow-2xl overflow-hidden ${
                     aiStudioMobileView === 'config' ? 'flex' : 'hidden lg:flex'
                   }`}
                 >
                   {/* Panel Header */}
-                  <div className="p-3.5 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between shrink-0">
+                  <div className="p-3.5 sm:p-5 border-b border-[#A6AFC1]/30 bg-[#F5F6F8] flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-2.5 sm:gap-3">
-                      <div className="p-2 sm:p-2.5 rounded-2xl bg-gradient-to-tr from-purple-500/20 to-indigo-500/20 text-purple-400 border border-purple-500/30">
+                      <div className="p-2 sm:p-2.5 rounded-2xl bg-[#5A7194]/15 text-[#5A7194] border border-[#5A7194]/30">
                         <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
                       </div>
                       <div>
-                        <h3 className="font-bold text-white text-xs sm:text-base">Konfigurasi AI Layanan</h3>
-                        <p className="text-[11px] sm:text-xs text-slate-400">Pilih mesin & persona bot</p>
+                        <h3 className="font-bold text-[#233858] text-xs sm:text-base">Konfigurasi AI Layanan</h3>
+                        <p className="text-[11px] sm:text-xs text-[#5A7194]">Pilih mesin & persona bot</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 bg-slate-950/60 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-slate-800">
-                      <span className={`text-[11px] sm:text-xs font-semibold ${geminiEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    <div className="flex items-center gap-2 bg-[#F5F6F8] px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-[#A6AFC1]/60">
+                      <span className={`text-[11px] sm:text-xs font-semibold ${geminiEnabled ? 'text-[#2F855A]' : 'text-[#8A94A6]'}`}>
                         {geminiEnabled ? 'AI Aktif' : 'Nonaktif'}
                       </span>
                       <label className="relative inline-flex items-center cursor-pointer">
@@ -4994,7 +4990,7 @@ export default function Dashboard() {
                           onChange={(e) => setGeminiEnabled(e.target.checked)}
                           className="sr-only peer"
                         />
-                        <div className="w-8 h-4.5 sm:w-9 sm:h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 sm:after:h-4 sm:after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                        <div className="w-8 h-4.5 sm:w-9 sm:h-5 bg-[#8A94A6] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 sm:after:h-4 sm:after:w-4 after:transition-all peer-checked:bg-[#2F855A]"></div>
                       </label>
                     </div>
                   </div>
@@ -5002,42 +4998,42 @@ export default function Dashboard() {
                   {/* Panel Scrollable Content */}
                   <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 min-h-0 custom-scrollbar">
                     {/* Card 1: Engine & Model Selection */}
-                    <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3 sm:space-y-3.5 shadow-sm">
+                    <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F5F6F8]/60 border border-[#A6AFC1]/60 space-y-3 sm:space-y-3.5 shadow-sm">
                       {/* Provider Toggle Tabs */}
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                            <Zap className="w-3.5 h-3.5 text-amber-400" />
+                          <label className="text-xs font-semibold text-[#233858] font-semibold flex items-center gap-1.5">
+                            <Zap className="w-3.5 h-3.5 text-[#5A7194]" />
                             <span>Penyedia AI Utama (Primary Engine)</span>
                           </label>
-                          <span className="text-[10px] text-slate-400 font-mono">Pilih Mesin</span>
+                          <span className="text-[10px] text-[#8A94A6] font-mono">Pilih Mesin</span>
                         </div>
-                        <div className="grid grid-cols-2 p-1 bg-slate-950/80 rounded-xl border border-slate-800 gap-1.5">
+                        <div className="grid grid-cols-2 p-1 bg-white rounded-xl border border-[#A6AFC1]/60 gap-1.5">
                           <button
                             type="button"
                             onClick={() => setAiProvider('groq')}
                             className={`py-2 px-2.5 sm:px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
                               aiProvider === 'groq'
-                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/25 border border-amber-400/30'
-                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                                ? 'bg-[#5A7194] text-white shadow-md border border-[#5A7194]'
+                                : 'text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] border border-transparent'
                             }`}
                           >
                             <Zap className="w-3.5 h-3.5 shrink-0" />
                             <span>Groq LPU</span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/25 text-white/95 font-mono hidden xs:inline">~300ms</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/15 font-mono hidden xs:inline">~300ms</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => setAiProvider('gemini')}
                             className={`py-2 px-2.5 sm:px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
                               aiProvider === 'gemini'
-                                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/25 border border-purple-400/30'
-                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                                ? 'bg-[#5A7194] text-white shadow-md border border-[#5A7194]'
+                                : 'text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] border border-transparent'
                             }`}
                           >
                             <Sparkles className="w-3.5 h-3.5 shrink-0" />
                             <span>Gemini AI</span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/25 text-white/95 font-mono hidden xs:inline">Flash</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/15 font-mono hidden xs:inline">Flash</span>
                           </button>
                         </div>
                       </div>
@@ -5045,10 +5041,10 @@ export default function Dashboard() {
                       {/* Model Dropdown */}
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-medium text-slate-300">
+                          <label className="text-xs font-medium text-[#233858] font-semibold">
                             {aiProvider === 'groq' ? 'Model Groq LPU' : 'Model Google Gemini'}
                           </label>
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-[10px] text-[#5A7194]">
                             {aiProvider === 'groq' ? '⚡ LPU Ultra-Speed' : '🔮 Google DeepMind'}
                           </span>
                         </div>
@@ -5056,7 +5052,7 @@ export default function Dashboard() {
                           <select
                             value={groqModel}
                             onChange={(e) => setGroqModel(e.target.value)}
-                            className="w-full rounded-xl bg-slate-950 border border-slate-700/80 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500 font-medium cursor-pointer"
+                            className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2.5 text-xs text-[#233858] focus:outline-none focus:border-[#5A7194] font-medium cursor-pointer"
                           >
                             <option value="openai/gpt-oss-120b">OpenAI GPT-OSS 120B (Sangat Cerdas ~750ms - Rekomendasi)</option>
                             <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Ultra Cepat ~500ms)</option>
@@ -5067,7 +5063,7 @@ export default function Dashboard() {
                           <select
                             value={geminiModel}
                             onChange={(e) => setGeminiModel(e.target.value)}
-                            className="w-full rounded-xl bg-slate-950 border border-slate-700/80 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-purple-500 font-medium cursor-pointer"
+                            className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2.5 text-xs text-[#233858] focus:outline-none focus:border-[#5A7194] font-medium cursor-pointer"
                           >
                             <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Super Cepat ~1.8s - Rekomendasi)</option>
                             <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Sangat Ringan & Cepat)</option>
@@ -5079,13 +5075,13 @@ export default function Dashboard() {
                     </div>
 
                     {/* Card 2: System Instruction / Persona Editor */}
-                    <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3 shadow-sm">
+                    <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F5F6F8]/60 border border-[#A6AFC1]/60 space-y-3 shadow-sm">
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                          <Bot className="w-3.5 h-3.5 text-purple-400" />
+                        <label className="text-xs font-semibold text-[#233858] font-semibold flex items-center gap-1.5">
+                          <Bot className="w-3.5 h-3.5 text-[#5A7194]" />
                           <span>Instruksi Sistem & Persona Karakter</span>
                         </label>
-                        <span className="text-[10px] text-slate-400 font-mono bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800">
+                        <span className="text-[10px] text-[#233858] font-mono font-semibold bg-white px-2 py-0.5 rounded-md border border-[#A6AFC1]/60">
                           {systemPrompt.length} karakter
                         </span>
                       </div>
@@ -5096,21 +5092,21 @@ export default function Dashboard() {
                         value={systemPrompt}
                         onChange={(e) => setSystemPrompt(e.target.value)}
                         placeholder="Tuliskan instruksi sistem, persona, dan aturan khusus balasan AI..."
-                        className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 leading-relaxed font-sans resize-y min-h-[160px] sm:min-h-[200px]"
+                        className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] leading-relaxed font-sans resize-y min-h-[160px] sm:min-h-[200px]"
                       />
 
-                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                      <p className="text-[11px] text-[#5A7194] leading-relaxed">
                         💡 Instruksi ini memandu gaya bicara, etika, dan pengetahuan katalog produk yang dipakai AI saat membalas pesan WhatsApp pelanggan.
                       </p>
                     </div>
                   </div>
 
                   {/* Panel Footer: Action Buttons */}
-                  <div className="p-3.5 sm:p-4 border-t border-slate-800 bg-slate-900/95 shrink-0 flex items-center gap-2.5">
+                  <div className="p-3.5 sm:p-4 border-t border-[#A6AFC1]/60 bg-[#F5F6F8]/95 shrink-0 flex items-center gap-2.5">
                     <button
                       type="button"
                       onClick={handleSaveAiSettings}
-                      className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs transition shadow-lg shadow-purple-600/25 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                      className="flex-1 py-3 px-4 rounded-2xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-bold text-xs transition shadow-md shadow-[#5A7194]/25 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                     >
                       <Check className="w-4 h-4" />
                       <span>Simpan Pengaturan AI</span>
@@ -5118,10 +5114,10 @@ export default function Dashboard() {
                     <button
                       type="button"
                       onClick={() => setAiStudioMobileView('simulator')}
-                      className="lg:hidden py-3 px-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95"
+                      className="lg:hidden py-3 px-3.5 rounded-2xl bg-white hover:bg-[#F5F6F8] text-[#233858] font-bold text-xs border border-[#A6AFC1]/60 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95"
                       title="Uji langsung balasan AI di simulator chat"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <Sparkles className="w-3.5 h-3.5 text-[#5A7194]" />
                       <span>Uji Chat →</span>
                     </button>
                   </div>
@@ -5129,32 +5125,30 @@ export default function Dashboard() {
 
                 {/* Right Column: Live AI Simulator / Playground */}
                 <div
-                  className={`lg:col-span-7 xl:col-span-7 flex-col h-full min-h-0 rounded-3xl border border-slate-800/80 bg-[#0f172a]/85 backdrop-blur-xl shadow-2xl overflow-hidden ${
+                  className={`lg:col-span-7 xl:col-span-7 flex-col h-full min-h-0 rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl shadow-2xl overflow-hidden ${
                     aiStudioMobileView === 'simulator' ? 'flex' : 'hidden lg:flex'
                   }`}
                 >
                   {/* Simulator Header */}
-                  <div className="p-3.5 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between shrink-0 gap-2">
+                  <div className="p-3.5 sm:p-5 border-b border-[#A6AFC1]/30 bg-[#F5F6F8] flex items-center justify-between shrink-0 gap-2">
                     <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                       <div
                         className={`w-8 h-8 sm:w-9 sm:h-9 rounded-2xl flex items-center justify-center shrink-0 ${
-                          aiProvider === 'groq' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                          'bg-[#5A7194]/15 text-[#5A7194] border border-[#5A7194]/30'
                         }`}
                       >
                         <Sparkles className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-bold text-xs sm:text-base text-white truncate">
-                            Simulator Percakapan AI
-                          </h3>
+                          <h3 className="font-bold text-xs sm:text-base text-[#233858] truncate">Simulator Percakapan AI</h3>
                           <button
                             type="button"
                             onClick={() => setAiStudioMobileView('config')}
                             className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition flex items-center gap-1 cursor-pointer ${
                               aiProvider === 'groq'
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30'
-                                : 'bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30'
+                                ? 'bg-[#E8E6DB] text-[#233858] border border-[#A6AFC1]/60 hover:border-[#5A7194]'
+                                : 'bg-[#E8E6DB] text-[#233858] border border-[#A6AFC1]/60 hover:border-[#5A7194]'
                             }`}
                             title="Klik untuk ubah model atau persona AI"
                           >
@@ -5162,7 +5156,7 @@ export default function Dashboard() {
                             <span className="lg:hidden text-[9px] opacity-75 underline">(Ganti)</span>
                           </button>
                         </div>
-                        <p className="text-[11px] text-slate-400 truncate hidden sm:block">
+                        <p className="text-[11px] text-[#5A7194] truncate hidden sm:block">
                           Uji respons langsung dengan pengetahuan katalog karpet & showroom Sultan Carpet Gallery
                         </p>
                       </div>
@@ -5170,7 +5164,7 @@ export default function Dashboard() {
                     <button
                       type="button"
                       onClick={() => setSimHistory([])}
-                      className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl hover:bg-slate-800/80 transition cursor-pointer border border-transparent hover:border-slate-800 shrink-0"
+                      className="text-xs font-semibold text-[#5A7194] hover:text-[#C53030] flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-white hover:bg-[#C53030]/10 transition cursor-pointer border border-[#A6AFC1]/60 hover:border-[#C53030]/40 shrink-0"
                       title="Bersihkan riwayat obrolan simulasi"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -5188,21 +5182,19 @@ export default function Dashboard() {
                         <div
                           className={`w-12 h-12 sm:w-14 sm:h-14 rounded-3xl flex items-center justify-center mb-3 shadow-xl ${
                             aiProvider === 'groq'
-                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-amber-500/10'
-                              : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-purple-500/10'
+                              ? 'bg-[#5A7194]/15 text-[#5A7194] border border-[#5A7194]/30'
+                              : 'bg-[#5A7194]/15 text-[#5A7194] border border-[#5A7194]/30'
                           }`}
                         >
                           <Sparkles className="w-6 h-6 sm:w-7 sm:h-7" />
                         </div>
-                        <h4 className="text-sm sm:text-base font-bold text-white mb-1.5">
-                          Simulator Percakapan AI Sultan Carpet
-                        </h4>
-                        <p className="text-xs text-slate-400 max-w-md mb-4 sm:mb-6 leading-relaxed">
+                        <h4 className="text-sm sm:text-base font-bold text-[#233858] mb-1.5">Simulator Percakapan AI Sultan Carpet</h4>
+                        <p className="text-xs text-[#5A7194] max-w-md mb-4 sm:mb-6 leading-relaxed">
                           Ketik pertanyaan atau klik salah satu topik pengujian di bawah untuk menguji kecerdasan balasan AI secara instan.
                         </p>
 
                         <div className="w-full max-w-lg space-y-2">
-                          <p className="text-xs font-semibold text-slate-300 text-left px-1 flex items-center gap-1.5">
+                          <p className="text-xs font-semibold text-[#233858] text-left px-1 flex items-center gap-1.5">
                             <span>💡 Klik Cepat untuk Menguji Skenario:</span>
                           </p>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -5217,10 +5209,10 @@ export default function Dashboard() {
                                 key={idx}
                                 type="button"
                                 onClick={() => handleSimulateAiWithText(promptText)}
-                                className="text-left text-xs p-2.5 sm:p-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition flex items-center justify-between group shadow-sm cursor-pointer"
+                                className="text-left text-xs p-2.5 sm:p-3 rounded-2xl bg-[#F5F6F8] hover:bg-[#5A7194]/10 text-[#233858] border border-[#A6AFC1]/60 hover:border-[#5A7194] transition flex items-center justify-between group shadow-sm cursor-pointer"
                               >
                                 <span className="line-clamp-2 pr-2">{promptText}</span>
-                                <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 shrink-0 transition" />
+                                <ArrowRight className="w-3.5 h-3.5 text-[#5A7194] group-hover:translate-x-0.5 shrink-0 transition" />
                               </button>
                             ))}
                           </div>
@@ -5233,12 +5225,12 @@ export default function Dashboard() {
                             key={idx}
                             className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'}`}
                           >
-                            <div className="text-[10px] text-slate-500 mb-1 px-1 flex items-center gap-1.5">
+                            <div className="text-[10px] text-[#8A94A6] mb-1 px-1 flex items-center gap-1.5">
                               {item.role === 'user' ? (
                                 <span>Simulasi Pelanggan • {item.time}</span>
                               ) : (
                                 <>
-                                  <span className={`font-semibold ${item.provider === 'groq' ? 'text-amber-400' : 'text-purple-400'}`}>
+                                  <span className={`font-semibold ${'text-[#5A7194]'}`}>
                                     Sultan Carpet AI ({item.provider === 'groq' ? '⚡ Groq' : '🔮 Gemini'})
                                   </span>
                                   <span>• {item.time}</span>
@@ -5247,12 +5239,10 @@ export default function Dashboard() {
                             </div>
                             <div className="relative group max-w-[92%] sm:max-w-[85%]">
                               <div
-                                className={`rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs leading-relaxed whitespace-pre-wrap shadow-md ${
+                                className={`rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs leading-relaxed whitespace-pre-wrap shadow-sm ${
                                   item.role === 'user'
-                                    ? 'bg-slate-800 text-slate-100 rounded-tr-none'
-                                    : item.provider === 'groq'
-                                    ? 'bg-gradient-to-br from-amber-950/60 via-slate-900 to-slate-900 text-amber-50 border border-amber-500/30 rounded-tl-none'
-                                    : 'bg-gradient-to-br from-purple-950/60 via-slate-900 to-slate-900 text-purple-50 border border-purple-500/30 rounded-tl-none'
+                                    ? 'bg-[#5A7194] text-white rounded-tr-none'
+                                    : 'bg-[#F5F6F8] text-[#233858] border border-[#A6AFC1]/60 rounded-tl-none'
                                 }`}
                                 dangerouslySetInnerHTML={{ __html: formatWaText(item.text) }}
                               />
@@ -5264,7 +5254,7 @@ export default function Dashboard() {
                                     showToastMsg('Balasan disalin!', 'success');
                                   }}
                                   title="Salin balasan"
-                                  className="absolute right-2 -top-2 opacity-0 group-hover:opacity-100 transition p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 shadow-sm cursor-pointer"
+                                  className="absolute right-2 -top-2 opacity-0 group-hover:opacity-100 transition p-1 rounded-md bg-white hover:bg-[#F5F6F8] text-[#5A7194] hover:text-[#233858] border border-[#A6AFC1]/60 shadow-sm cursor-pointer"
                                 >
                                   <Copy className="w-3 h-3" />
                                 </button>
@@ -5272,14 +5262,14 @@ export default function Dashboard() {
                             </div>
                             {item.role === 'ai' && item.ragDocs && item.ragDocs.length > 0 && (
                               <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                                <span className="text-[10px] text-purple-300 font-semibold flex items-center gap-1">
-                                  <Brain className="w-3 h-3 text-purple-400" />
+                                <span className="text-[10px] text-[#5A7194] font-semibold flex items-center gap-1">
+                                  <Brain className="w-3 h-3 text-[#5A7194]" />
                                   <span>RAG:</span>
                                 </span>
                                 {item.ragDocs.map((doc, docIdx) => (
                                   <span
                                     key={docIdx}
-                                    className="text-[9px] px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/30 text-purple-200"
+                                    className="text-[9px] px-2 py-0.5 rounded-full bg-[#E8E6DB] border border-[#A6AFC1]/60 text-[#233858] font-medium"
                                     title={doc.title}
                                   >
                                     {doc.page}
@@ -5291,8 +5281,8 @@ export default function Dashboard() {
                         ))}
 
                         {simulating && (
-                          <div className="flex items-center gap-2 text-xs text-purple-400 italic py-2">
-                            <Sparkles className="w-4 h-4 animate-spin text-purple-400" />
+                          <div className="flex items-center gap-2 text-xs text-[#D69E2E] font-medium italic py-2">
+                            <Sparkles className="w-4 h-4 animate-spin text-[#D69E2E]" />
                             <span>{aiProvider === 'groq' ? 'Groq LPU sedang memproses (~300ms)...' : 'Gemini sedang menyusun balasan...'}</span>
                           </div>
                         )}
@@ -5301,10 +5291,10 @@ export default function Dashboard() {
                   </div>
 
                   {/* Quick Prompts Bar (Always Available Above Input) */}
-                  <div className="px-2.5 sm:px-4 py-2 border-t border-slate-800/80 bg-slate-900/50 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
-                    <span className="text-[10px] text-slate-400 font-semibold shrink-0 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-amber-400" />
-                      <span className="hidden xs:inline">Uji Cepat:</span>
+                  <div className="px-2.5 sm:px-4 py-2 border-t border-[#A6AFC1]/60 bg-[#F5F6F8]/50 flex flex-wrap items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] text-[#5A7194] font-semibold shrink-0 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-[#5A7194]" />
+                      <span>Uji Cepat:</span>
                     </span>
                     {[
                       'Apakah bisa survey & pasang di tempat?',
@@ -5316,7 +5306,7 @@ export default function Dashboard() {
                         key={chipIdx}
                         type="button"
                         onClick={() => handleSimulateAiWithText(chipText)}
-                        className="text-[10px] px-2.5 py-1 rounded-full bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 hover:border-slate-600 transition shrink-0 cursor-pointer whitespace-nowrap active:scale-95"
+                        className="text-[10px] px-2.5 py-1 rounded-full bg-white hover:bg-[#5A7194] hover:text-white text-[#233858] border border-[#A6AFC1]/60 hover:border-[#5A7194] transition shrink-0 cursor-pointer whitespace-nowrap active:scale-95 font-medium"
                       >
                         {chipText}
                       </button>
@@ -5326,7 +5316,7 @@ export default function Dashboard() {
                   {/* Input Form */}
                   <form
                     onSubmit={handleSimulateAi}
-                    className="p-2.5 sm:p-4 border-t border-slate-800 bg-slate-900/70 shrink-0 space-y-1 sm:space-y-1.5"
+                    className="p-2.5 sm:p-4 border-t border-[#A6AFC1]/60 bg-[#F5F6F8]/70 shrink-0 space-y-1 sm:space-y-1.5"
                   >
                     <div className="flex items-center gap-2">
                       <input
@@ -5334,22 +5324,18 @@ export default function Dashboard() {
                         value={simPrompt}
                         onChange={(e) => setSimPrompt(e.target.value)}
                         placeholder="Ketik pertanyaan uji AI (misal: 'Apakah ada survey gratis?')..."
-                        className="flex-1 rounded-2xl bg-slate-950 border border-slate-700/80 px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 shadow-inner"
+                        className="flex-1 rounded-2xl bg-white border border-[#A6AFC1]/60 px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:ring-1 focus:ring-[#5A7194]/30 shadow-inner font-medium"
                       />
                       <button
                         type="submit"
                         disabled={simulating || !simPrompt.trim()}
-                        className={`p-2.5 sm:p-3 rounded-2xl text-white transition disabled:opacity-50 shrink-0 shadow-lg cursor-pointer ${
-                          aiProvider === 'groq'
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 shadow-amber-500/25'
-                            : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/25'
-                        }`}
+                        className="p-2.5 sm:p-3 rounded-2xl bg-[#5A7194] hover:bg-[#485E7E] text-white transition disabled:opacity-50 shrink-0 shadow-md cursor-pointer"
                         title="Kirim Pertanyaan Simulasi"
                       >
                         <Send className="w-4 h-4" />
                       </button>
                     </div>
-                    <div className="flex items-center justify-between px-1.5 text-[10px] text-slate-500">
+                    <div className="flex items-center justify-between px-1.5 text-[10px] text-[#8A94A6]">
                       <span>Tekan Enter ↵ untuk mengirim</span>
                       <span className="hidden sm:inline">Simulasi langsung menggunakan data katalog resmi & RAG</span>
                     </div>
@@ -5361,94 +5347,107 @@ export default function Dashboard() {
 
           {/* TAB 3: QR CODE & CONNECTION */}
           {activeTab === 'qr' && (
-            <div className="max-w-3xl mx-auto space-y-6">
-              <div className="p-8 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-2xl flex flex-col items-center text-center">
+            <div className="w-full max-w-lg mx-auto py-4 sm:py-6 px-3 sm:px-4">
+              <div className="rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm p-6 sm:p-8 flex flex-col items-center text-center">
+                {/* Status Badge */}
                 <div className="mb-4">
                   <span
-                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                    className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider shadow-xs ${
                       isConnected
-                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                        ? 'bg-[#2F855A]/15 text-[#2F855A] border border-[#2F855A]/40'
+                        : 'bg-[#D69E2E]/15 text-[#D69E2E] border border-[#D69E2E]/40'
                     }`}
                   >
                     <span
                       className={`w-2 h-2 rounded-full ${
-                        isConnected ? 'bg-emerald-400' : 'bg-amber-400 animate-ping'
+                        isConnected ? 'bg-[#2F855A]' : 'bg-[#D69E2E] animate-ping'
                       }`}
                     />
-                    {isConnected ? 'WhatsApp Terhubung & Aktif' : 'Menunggu Scan QR Code'}
+                    {isConnected ? 'WhatsApp Terhubung' : 'Menunggu Pindai QR'}
                   </span>
                 </div>
 
-                <h3 className="text-xl font-bold text-white mb-2">
-                  {isConnected ? 'Sesi WhatsApp Siap Digunakan' : 'Pindai QR Code Menggunakan WhatsApp'}
-                </h3>
-                <p className="text-xs text-slate-400 max-w-md mb-6">
-                  {isConnected
-                    ? `Bot saat ini aktif melayani pelanggan melalui nomor +${botStatus.user?.id || 'Aktif'}.`
-                    : 'Buka WhatsApp di HP Anda > Menu Titik Tiga / Pengaturan > Perangkat Tertaut > Tautkan Perangkat.'}
-                </p>
-
-                {/* QR Code Container */}
+                {/* QR Code Frame or Connected State */}
                 {isConnected ? (
-                  <div className="p-6 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 max-w-md w-full text-left space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
-                        WA
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-400">Akun Terhubung</p>
-                        <p className="text-sm font-bold text-emerald-300">
-                          {botStatus.user?.name || 'WhatsApp CS Bot'}
-                        </p>
-                      </div>
+                  <div className="p-6 rounded-2xl bg-[#F5F6F8] border border-[#A6AFC1]/50 shadow-inner max-w-sm w-full text-center space-y-3.5 my-2">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2F855A] to-teal-700 text-white flex items-center justify-center mx-auto shadow-md shadow-[#2F855A]/25">
+                      <CheckCircle2 className="w-8 h-8 text-white" />
                     </div>
-                    <div className="text-xs text-slate-400 pt-2 border-t border-emerald-500/20 flex justify-between">
-                      <span>Nomor Telepon:</span>
-                      <span className="font-mono text-slate-200">+{botStatus.user?.id || '-'}</span>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-[#2F855A]">Koneksi Berhasil</p>
+                      <h4 className="font-bold text-lg text-[#233858] truncate">{botStatus.user?.name || 'Sultan Carpet Bot'}</h4>
+                      <p className="font-mono text-sm text-[#5A7194] font-semibold mt-0.5">+{botStatus.user?.id || 'Aktif'}</p>
                     </div>
-                    <div className="text-xs text-slate-400 flex justify-between">
-                      <span>Waktu Terhubung:</span>
-                      <span className="text-slate-200">
-                        {botStatus.connectedAt
-                          ? new Date(botStatus.connectedAt).toLocaleTimeString('id-ID')
-                          : 'Baru saja'}
-                      </span>
+                    <div className="pt-2 border-t border-[#A6AFC1]/30 text-xs text-[#5A7194]">
+                      Sesi WhatsApp siap melayani calon pembeli secara otomatis.
                     </div>
                   </div>
                 ) : botStatus.qrDataUrl ? (
-                  <div className="p-4 bg-white rounded-2xl shadow-2xl mb-4">
+                  <div className="p-4 bg-white rounded-3xl shadow-xl border-2 border-[#5A7194]/30 my-3 transition-transform duration-300 hover:scale-[1.02] relative group">
                     <img
                       src={botStatus.qrDataUrl}
                       alt="WhatsApp QR Code"
-                      className="w-64 h-64 object-contain"
+                      className="w-56 h-56 sm:w-64 sm:h-64 object-contain rounded-xl"
                     />
+                    <div className="absolute inset-0 rounded-3xl border border-[#2F855A]/20 pointer-events-none" />
                   </div>
                 ) : (
-                  <div className="w-64 h-64 rounded-2xl bg-slate-800/50 flex flex-col items-center justify-center gap-3 border border-slate-700 mb-4">
-                    <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
-                    <p className="text-xs text-slate-400">Sedang memuat QR Code...</p>
+                  <div className="w-56 h-56 sm:w-64 sm:h-64 rounded-3xl bg-[#F5F6F8] flex flex-col items-center justify-center gap-3 border border-[#A6AFC1]/60 my-3 shadow-inner">
+                    <RefreshCw className="w-8 h-8 text-[#5A7194] animate-spin" />
+                    <p className="text-xs text-[#5A7194] font-medium px-4">Sedang memuat QR Code WhatsApp...</p>
                   </div>
                 )}
 
-                {/* Controls */}
-                <div className="flex items-center gap-3 mt-6">
-                  <button
-                    onClick={handleRestart}
-                    disabled={restartingConn}
-                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${restartingConn ? 'animate-spin text-emerald-400' : ''}`} />
-                    <span>{restartingConn ? 'Memproses...' : 'Muat Ulang Koneksi'}</span>
-                  </button>
-                  <button
-                    onClick={handleLogout}
-                    disabled={restartingConn}
-                    className="px-4 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-xs font-semibold text-rose-300 border border-rose-800/40 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Reset Sesi / Scan Ulang</span>
-                  </button>
+                {/* QR Caption / Hint */}
+                <p className="text-xs text-[#5A7194] font-medium mt-1 mb-5 flex items-center gap-1.5">
+                  <QrCode className="w-3.5 h-3.5 text-[#5A7194]" />
+                  <span>{isConnected ? 'Sesi terhubung & aktif' : 'Arahkan kamera WhatsApp ke barcode di atas'}</span>
+                </p>
+
+                {/* Action Buttons Row */}
+                <div className="w-full pt-4 border-t border-[#A6AFC1]/30 flex flex-wrap items-center justify-center gap-3">
+                  {isConnected ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('chats')}
+                        className="flex-1 sm:flex-initial py-2.5 px-5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        <span>Buka Live Chat WhatsApp Sekarang →</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        disabled={restartingConn}
+                        className="py-2.5 px-4 rounded-xl bg-[#C53030]/15 hover:bg-[#C53030]/25 text-[#C53030] font-semibold text-xs border border-[#C53030]/40 transition flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Putuskan Sesi</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleRestart}
+                        disabled={restartingConn}
+                        className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${restartingConn ? 'animate-spin' : ''}`} />
+                        <span>{restartingConn ? 'Memproses...' : 'Muat Ulang Koneksi'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        disabled={restartingConn}
+                        className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl bg-[#C53030]/15 hover:bg-[#C53030]/25 text-[#C53030] font-semibold text-xs border border-[#C53030]/40 transition flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Reset Sesi / Scan Ulang</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -5580,29 +5579,29 @@ export default function Dashboard() {
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-1">
                   <div>
                     <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400">
+                      <div className="p-2 rounded-xl bg-[#5A7194]/15 border border-[#5A7194]/30 text-[#5A7194]">
                         <ShieldAlert className="w-5 h-5" />
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-lg font-bold text-white">Pusat Komplain & Layanan Pelanggan (CS)</h3>
-                        <span className="px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 font-semibold text-xs">
+                        <h3 className="text-lg font-bold text-[#233858]">Pusat Komplain & Layanan Pelanggan (CS)</h3>
+                        <span className="px-3 py-1 rounded-full bg-[#5A7194]/15 border border-[#5A7194]/40 text-[#233858] font-bold text-xs shadow-xs">
                           {totalCount} Total Pengaduan & Layanan
                         </span>
                         {urgentCount > 0 && (
-                          <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-300 font-semibold text-xs animate-pulse">
+                          <span className="px-3 py-1 rounded-full bg-[#C53030]/15 border border-[#C53030]/40 text-[#C53030] font-bold text-xs shadow-xs animate-pulse">
                             {urgentCount} Butuh Atensi Segera
                           </span>
                         )}
                       </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">
+                    <p className="text-xs text-[#5A7194] mt-1">
                       Pusat kendali penanganan komplain, keluhan kualitas, klaim garansi presisi, dan respon cepat layanan pelanggan (CS) terintegrasi WhatsApp
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setShowCreateTicketModal(true)}
-                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-900/30 transition flex items-center gap-1.5 cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs shadow-md shadow-[#5A7194]/25 transition flex items-center gap-1.5 cursor-pointer border border-[#5A7194]"
                     >
                       <Plus className="w-4 h-4" />
                       <span>Buat Tiket Komplain / CS</span>
@@ -5610,7 +5609,7 @@ export default function Dashboard() {
                     <button
                       onClick={fetchTickets}
                       title="Segarkan data tiket & komplain"
-                      className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl bg-white hover:bg-[#F5F6F8] text-[#233858] border border-[#A6AFC1]/60 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                     >
                       <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
                       <span className="hidden sm:inline">Refresh</span>
@@ -5623,101 +5622,101 @@ export default function Dashboard() {
                   {/* Total */}
                   <button
                     onClick={() => { resetAllFilters(); }}
-                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                    className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
                       ticketStatusFilter === 'Semua' && ticketPriorityFilter === 'Semua' && ticketCategoryFilter === 'Semua'
-                        ? 'bg-slate-800/90 border-slate-600 shadow-md ring-1 ring-slate-500/50'
-                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-slate-800/50'
+                        ? 'border-2 border-[#5A7194] bg-[#5A7194]/10 ring-2 ring-[#5A7194]/20 shadow-md'
+                        : 'bg-white border-[#A6AFC1]/50 shadow-xs hover:border-[#5A7194] hover:shadow-md'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-400 font-medium">Semua Tiket & Komplain</span>
-                      <Ticket className="w-4 h-4 text-slate-400" />
+                      <span className="text-xs text-[#5A7194] font-semibold">Semua Tiket & Komplain</span>
+                      <Ticket className="w-4 h-4 text-[#5A7194]" />
                     </div>
-                    <div className="mt-2 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-white">{totalCount}</span>
-                      <span className="text-[11px] text-slate-500">laporan</span>
+                    <div className="mt-2.5 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-[#233858] font-mono">{totalCount}</span>
+                      <span className="text-[11px] text-[#5A7194] font-medium">laporan</span>
                     </div>
                   </button>
 
                   {/* Open */}
                   <button
                     onClick={() => { setTicketStatusFilter('Open'); setTicketPriorityFilter('Semua'); }}
-                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                    className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
                       ticketStatusFilter === 'Open'
-                        ? 'bg-sky-500/20 border-sky-500/60 shadow-md ring-1 ring-sky-500/50'
-                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-sky-500/10'
+                        ? 'border-2 border-[#3182CE] bg-[#3182CE]/10 ring-2 ring-[#3182CE]/20 shadow-md'
+                        : 'bg-white border-[#A6AFC1]/50 shadow-xs hover:border-[#3182CE] hover:shadow-md'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-sky-400 font-medium">Menunggu Respon (Open)</span>
-                      <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse"></span>
+                      <span className="text-xs text-[#3182CE] font-semibold">Menunggu Respon (Open)</span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#3182CE] animate-pulse"></span>
                     </div>
-                    <div className="mt-2 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-sky-300">{openCount}</span>
-                      <span className="text-[11px] text-sky-400/70">perlu respon CS</span>
+                    <div className="mt-2.5 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-[#3182CE] font-mono">{openCount}</span>
+                      <span className="text-[11px] text-[#3182CE]/80 font-medium">perlu respon CS</span>
                     </div>
                   </button>
 
                   {/* In Progress */}
                   <button
                     onClick={() => { setTicketStatusFilter('In Progress'); setTicketPriorityFilter('Semua'); }}
-                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                    className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
                       ticketStatusFilter === 'In Progress'
-                        ? 'bg-amber-500/20 border-amber-500/60 shadow-md ring-1 ring-amber-500/50'
-                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-amber-500/10'
+                        ? 'border-2 border-[#D69E2E] bg-[#D69E2E]/10 ring-2 ring-[#D69E2E]/20 shadow-md'
+                        : 'bg-white border-[#A6AFC1]/50 shadow-xs hover:border-[#D69E2E] hover:shadow-md'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-amber-400 font-medium">Sedang Ditindaklanjuti</span>
-                      <Clock className="w-4 h-4 text-amber-400" />
+                      <span className="text-xs text-[#D69E2E] font-semibold">Sedang Ditindaklanjuti</span>
+                      <Clock className="w-4 h-4 text-[#D69E2E]" />
                     </div>
-                    <div className="mt-2 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-amber-300">{inProgressCount}</span>
-                      <span className="text-[11px] text-amber-400/70">penanganan CS</span>
+                    <div className="mt-2.5 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-[#D69E2E] font-mono">{inProgressCount}</span>
+                      <span className="text-[11px] text-[#D69E2E]/80 font-medium">penanganan CS</span>
                     </div>
                   </button>
 
                   {/* Resolved */}
                   <button
                     onClick={() => { setTicketStatusFilter('Resolved'); setTicketPriorityFilter('Semua'); }}
-                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                    className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
                       ticketStatusFilter === 'Resolved'
-                        ? 'bg-emerald-500/20 border-emerald-500/60 shadow-md ring-1 ring-emerald-500/50'
-                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-emerald-500/10'
+                        ? 'border-2 border-[#2F855A] bg-[#2F855A]/10 ring-2 ring-[#2F855A]/20 shadow-md'
+                        : 'bg-white border-[#A6AFC1]/50 shadow-xs hover:border-[#2F855A] hover:shadow-md'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-emerald-400 font-medium">Selesai & Tuntas</span>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span className="text-xs text-[#2F855A] font-semibold">Selesai & Tuntas</span>
+                      <CheckCircle2 className="w-4 h-4 text-[#2F855A]" />
                     </div>
-                    <div className="mt-2 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-emerald-300">{resolvedCount}</span>
-                      <span className="text-[11px] text-emerald-400/70">terselesaikan</span>
+                    <div className="mt-2.5 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-[#2F855A] font-mono">{resolvedCount}</span>
+                      <span className="text-[11px] text-[#2F855A]/80 font-medium">terselesaikan</span>
                     </div>
                   </button>
 
                   {/* Urgent / Prioritas Tinggi */}
                   <button
                     onClick={() => { setTicketPriorityFilter('Tinggi'); setTicketStatusFilter('Semua'); }}
-                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between col-span-2 sm:col-span-1 cursor-pointer ${
+                    className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between col-span-2 sm:col-span-1 cursor-pointer ${
                       ticketPriorityFilter === 'Tinggi' || ticketPriorityFilter === 'Urgent'
-                        ? 'bg-rose-500/20 border-rose-500/60 shadow-md ring-1 ring-rose-500/50'
-                        : 'bg-[#0f172a]/70 border-slate-800/80 hover:bg-rose-500/10'
+                        ? 'border-2 border-[#C53030] bg-[#C53030]/10 ring-2 ring-[#C53030]/20 shadow-md'
+                        : 'bg-white border-[#A6AFC1]/50 shadow-xs hover:border-[#C53030] hover:shadow-md'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-rose-400 font-medium">Prioritas Mendesak</span>
-                      <ShieldAlert className="w-4 h-4 text-rose-400" />
+                      <span className="text-xs text-[#C53030] font-semibold">Prioritas Mendesak</span>
+                      <ShieldAlert className="w-4 h-4 text-[#C53030]" />
                     </div>
-                    <div className="mt-2 flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold text-rose-300">{urgentCount}</span>
-                      <span className="text-[11px] text-rose-400/70">butuh atensi</span>
+                    <div className="mt-2.5 flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-[#C53030] font-mono">{urgentCount}</span>
+                      <span className="text-[11px] text-[#C53030]/80 font-medium">butuh atensi</span>
                     </div>
                   </button>
                 </div>
 
                 {/* 3. Search Bar, Dropdown Filters, Sort & Category Pills */}
-                <div className="p-3.5 rounded-2xl border border-slate-800/80 bg-[#0f172a]/70 backdrop-blur-xl shadow-lg space-y-3">
+                <div className="p-3.5 rounded-2xl border border-[#A6AFC1]/40 bg-white shadow-sm space-y-3">
                   <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
                     {/* Search Input */}
                     <div className="relative flex-1">
@@ -5727,7 +5726,7 @@ export default function Dashboard() {
                         value={ticketSearchQuery}
                         onChange={(e) => setTicketSearchQuery(e.target.value)}
                         placeholder="Cari ID tiket, nama pelanggan, kontak WhatsApp, atau kendala..."
-                        className="w-full pl-10 pr-9 py-2 rounded-xl bg-slate-900/90 border border-slate-700/80 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/80 transition"
+                        className="w-full pl-10 pr-9 py-2 rounded-xl bg-white border border-[#A6AFC1]/60 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] shadow-xs transition"
                       />
                       {ticketSearchQuery && (
                         <button
@@ -5742,51 +5741,51 @@ export default function Dashboard() {
                     {/* Filter & Sort Controls */}
                     <div className="flex flex-wrap items-center gap-2">
                       {/* Status Filter */}
-                      <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl px-2.5 py-1">
+                      <div className="flex items-center gap-1.5 bg-[#F5F6F8] border border-[#A6AFC1]/60 rounded-xl px-2.5 py-1">
                         <Filter className="w-3.5 h-3.5 text-slate-400" />
                         <span className="text-[11px] text-slate-400 font-medium">Status:</span>
                         <select
                           value={ticketStatusFilter}
                           onChange={(e) => setTicketStatusFilter(e.target.value)}
-                          className="bg-transparent text-xs text-white outline-none cursor-pointer pr-1"
+                          className="bg-transparent text-xs text-[#233858] font-semibold outline-none cursor-pointer pr-1"
                         >
-                          <option value="Semua" className="bg-[#0f172a]">Semua</option>
-                          <option value="Open" className="bg-[#0f172a]">Open</option>
-                          <option value="In Progress" className="bg-[#0f172a]">In Progress</option>
-                          <option value="Resolved" className="bg-[#0f172a]">Resolved</option>
-                          <option value="Closed" className="bg-[#0f172a]">Closed</option>
+                          <option value="Semua" className="bg-white text-[#233858]">Semua</option>
+                          <option value="Open" className="bg-white text-[#233858]">Open</option>
+                          <option value="In Progress" className="bg-white text-[#233858]">In Progress</option>
+                          <option value="Resolved" className="bg-white text-[#233858]">Resolved</option>
+                          <option value="Closed" className="bg-white text-[#233858]">Closed</option>
                         </select>
                       </div>
 
                       {/* Priority Filter */}
-                      <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl px-2.5 py-1">
+                      <div className="flex items-center gap-1.5 bg-[#F5F6F8] border border-[#A6AFC1]/60 rounded-xl px-2.5 py-1">
                         <Sliders className="w-3.5 h-3.5 text-slate-400" />
                         <span className="text-[11px] text-slate-400 font-medium">Prioritas:</span>
                         <select
                           value={ticketPriorityFilter}
                           onChange={(e) => setTicketPriorityFilter(e.target.value)}
-                          className="bg-transparent text-xs text-white outline-none cursor-pointer pr-1"
+                          className="bg-transparent text-xs text-[#233858] font-semibold outline-none cursor-pointer pr-1"
                         >
-                          <option value="Semua" className="bg-[#0f172a]">Semua</option>
-                          <option value="Urgent" className="bg-[#0f172a]">Urgent</option>
-                          <option value="Tinggi" className="bg-[#0f172a]">Tinggi</option>
-                          <option value="Normal" className="bg-[#0f172a]">Normal</option>
+                          <option value="Semua" className="bg-white text-[#233858]">Semua</option>
+                          <option value="Urgent" className="bg-white text-[#233858]">Urgent</option>
+                          <option value="Tinggi" className="bg-white text-[#233858]">Tinggi</option>
+                          <option value="Normal" className="bg-white text-[#233858]">Normal</option>
                         </select>
                       </div>
 
                       {/* Sort By */}
-                      <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl px-2.5 py-1">
+                      <div className="flex items-center gap-1.5 bg-[#F5F6F8] border border-[#A6AFC1]/60 rounded-xl px-2.5 py-1">
                         <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                         <span className="text-[11px] text-slate-400 font-medium">Urutan:</span>
                         <select
                           value={ticketSortOrder}
                           onChange={(e) => setTicketSortOrder(e.target.value)}
-                          className="bg-transparent text-xs text-white outline-none cursor-pointer pr-1"
+                          className="bg-transparent text-xs text-[#233858] font-semibold outline-none cursor-pointer pr-1"
                         >
-                          <option value="newest" className="bg-[#0f172a]">Terbaru</option>
-                          <option value="oldest" className="bg-[#0f172a]">Terlama</option>
-                          <option value="priority" className="bg-[#0f172a]">Prioritas Tertinggi</option>
-                          <option value="status" className="bg-[#0f172a]">Status Terbuka</option>
+                          <option value="newest" className="bg-white text-[#233858]">Terbaru</option>
+                          <option value="oldest" className="bg-white text-[#233858]">Terlama</option>
+                          <option value="priority" className="bg-white text-[#233858]">Prioritas Tertinggi</option>
+                          <option value="status" className="bg-white text-[#233858]">Status Terbuka</option>
                         </select>
                       </div>
 
@@ -5803,7 +5802,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Category Pills Row */}
-                  <div className="flex items-center gap-2 overflow-x-auto pb-0.5 pt-1 text-xs border-t border-slate-800/80">
+                  <div className="flex items-center gap-2 overflow-x-auto pb-0.5 pt-1 text-xs border-t border-[#A6AFC1]/30">
                     {categoriesList.map((item) => {
                       const count = item.id === 'Semua'
                         ? tickets.length
@@ -5813,15 +5812,15 @@ export default function Dashboard() {
                         <button
                           key={item.id}
                           onClick={() => setTicketCategoryFilter(item.id)}
-                          className={`px-3 py-1.5 rounded-xl font-medium transition flex items-center gap-1.5 border whitespace-nowrap cursor-pointer ${
+                          className={`px-3.5 py-1.5 rounded-xl font-semibold transition flex items-center gap-1.5 border whitespace-nowrap cursor-pointer shadow-xs active:scale-95 ${
                             isSelected
-                              ? 'bg-emerald-500/20 text-white border-emerald-500/50 shadow-sm'
-                              : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200'
+                              ? 'bg-[#5A7194] text-white border-[#5A7194]'
+                              : 'bg-[#F5F6F8] hover:bg-white text-[#233858] border-[#A6AFC1]/60 hover:border-[#5A7194]'
                           }`}
                         >
                           <span>{item.label}</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
-                            isSelected ? 'bg-emerald-500/40 text-emerald-100' : 'bg-slate-800 text-slate-400'
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            isSelected ? 'bg-white/25 text-white' : 'bg-[#E8E6DB] text-[#233858]'
                           }`}>
                             {count}
                           </span>
@@ -5832,10 +5831,10 @@ export default function Dashboard() {
                 </div>
 
                 {/* 4. DESKTOP TABLE VIEW (Responsive with Horizontal Scrollbar) */}
-                <div className="hidden md:block rounded-2xl border border-slate-800/80 bg-[#0f172a]/60 backdrop-blur-xl overflow-x-auto shadow-xl">
+                <div className="hidden md:block rounded-2xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl overflow-x-auto shadow-xl">
                   <table className="w-full min-w-[1050px] text-left border-collapse text-xs">
                     <thead>
-                      <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-semibold">
+                      <tr className="border-b border-[#A6AFC1]/40 bg-[#F5F6F8] text-[#233858] font-bold">
                         <th className="p-3.5 w-28">ID Tiket</th>
                         <th className="p-3.5 w-40">Pelanggan</th>
                         <th className="p-3.5 w-36">Kontak / WA</th>
@@ -5846,7 +5845,7 @@ export default function Dashboard() {
                         <th className="p-3.5 w-48 text-right pr-4">Aksi</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/60">
+                    <tbody className="divide-y divide-[#A6AFC1]/30">
                       {displayTickets.length === 0 ? (
                         <tr>
                           <td colSpan={8} className="p-12 text-center text-slate-500">
@@ -5874,23 +5873,23 @@ export default function Dashboard() {
                           const dateStr = t.createdAt ? new Date(t.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-';
 
                           return (
-                            <tr key={`${t.id || 'ticket'}_${idx}`} className="hover:bg-slate-800/30 transition group">
+                            <tr key={`${t.id || 'ticket'}_${idx}`} className="hover:bg-[#F5F6F8]/60 transition group">
                               {/* ID Tiket */}
                               <td className="p-3.5">
-                                <span className="font-mono font-bold text-emerald-400 block">{t.id}</span>
+                                <span className="font-mono font-bold text-[#5A7194] block">{t.id}</span>
                                 <span className="text-[10px] text-slate-500 block mt-0.5">{dateStr}</span>
                               </td>
 
                               {/* Pelanggan */}
                               <td className="p-3.5">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-bold flex items-center justify-center text-[10px] uppercase shrink-0">
+                                  <div className="w-7 h-7 rounded-full bg-[#5A7194]/15 border border-[#5A7194]/30 text-[#233858] font-bold flex items-center justify-center text-[10px] uppercase shrink-0">
                                     {(t.name || 'P').charAt(0)}
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="font-semibold text-slate-200 truncate">{t.name || 'Pelanggan'}</p>
+                                    <p className="font-bold text-[#233858] truncate">{t.name || 'Pelanggan'}</p>
                                     {t.notes && (
-                                      <span className="text-[9px] text-emerald-400/80 block truncate">Ada Catatan</span>
+                                      <span className="text-[9px] text-[#2F855A] font-semibold block truncate">Ada Catatan</span>
                                     )}
                                   </div>
                                 </div>
@@ -5901,10 +5900,10 @@ export default function Dashboard() {
                                 {cleanPhone ? (
                                   <button
                                     onClick={() => openWhatsAppChat(t.contact || t.sender, t.id, t.name)}
-                                    className="text-slate-300 hover:text-emerald-400 flex items-center gap-1 group-hover:underline text-left cursor-pointer"
+                                    className="text-[#233858] hover:text-[#5A7194] font-medium flex items-center gap-1 group-hover:underline text-left cursor-pointer"
                                     title="Klik untuk chat di WhatsApp"
                                   >
-                                    <MessageSquare className="w-3 h-3 text-emerald-500 shrink-0" />
+                                    <MessageSquare className="w-3 h-3 text-[#2F855A] shrink-0" />
                                     <span className="truncate">+{cleanPhone}</span>
                                   </button>
                                 ) : (
@@ -5915,22 +5914,22 @@ export default function Dashboard() {
                               {/* Kategori & Tanda */}
                               <td className="p-3.5">
                                 {cat.includes('beli') || cat.includes('order') || cat.includes('pembelian') ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm shadow-emerald-500/10 whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[#2F855A]/15 text-[#2F855A] border border-[#2F855A]/40 font-semibold shadow-xs whitespace-nowrap">
                                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                                     <span>Pembelian Produk</span>
                                   </span>
                                 ) : cat.includes('garansi') || cat.includes('klaim') ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm shadow-amber-500/10 whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[#D69E2E]/15 text-[#D69E2E] border border-[#D69E2E]/40 font-semibold shadow-xs whitespace-nowrap">
                                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
                                     <span>Klaim Garansi</span>
                                   </span>
                                 ) : cat.includes('pengaduan') || cat.includes('komplain') || cat.includes('rusak') || cat.includes('keluhan') ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm shadow-rose-500/10 whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[#C53030]/15 text-[#C53030] border border-[#C53030]/40 font-semibold shadow-xs whitespace-nowrap">
                                     <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse"></span>
                                     <span>Pengaduan Produk</span>
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30 whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[#3182CE]/15 text-[#3182CE] border border-[#3182CE]/40 font-semibold shadow-xs whitespace-nowrap">
                                     <span className="w-2 h-2 rounded-full bg-sky-400"></span>
                                     <span>{t.category || 'Layanan Umum'}</span>
                                   </span>
@@ -5938,7 +5937,7 @@ export default function Dashboard() {
                               </td>
 
                               {/* Rincian Permohonan */}
-                              <td className="p-3.5 text-slate-300 max-w-xs">
+                              <td className="p-3.5 text-[#233858] max-w-xs">
                                 <p className="line-clamp-2 leading-relaxed" title={t.description}>
                                   {t.description}
                                 </p>
@@ -5951,17 +5950,19 @@ export default function Dashboard() {
                                   onChange={(e) => handleQuickStatusChange(t.id, e.target.value)}
                                   className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase cursor-pointer border outline-none transition ${
                                     t.status === 'Open'
-                                      ? 'bg-sky-500/15 text-sky-300 border-sky-500/30 hover:bg-sky-500/25'
-                                      : t.status === 'Resolved' || t.status === 'Closed'
-                                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
-                                      : 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+    ? 'bg-[#3182CE]/15 text-[#3182CE] border-[#3182CE]/40 hover:bg-[#3182CE]/25'
+    : t.status === 'In Progress'
+    ? 'bg-[#D69E2E]/15 text-[#D69E2E] border-[#D69E2E]/40 hover:bg-[#D69E2E]/25'
+    : t.status === 'Resolved'
+    ? 'bg-[#2F855A]/15 text-[#2F855A] border-[#2F855A]/40 hover:bg-[#2F855A]/25'
+    : 'bg-[#8A94A6]/15 text-[#8A94A6] border-[#8A94A6]/40 hover:bg-[#8A94A6]/25'
                                   }`}
                                   title="Ubah status tiket secara instan"
                                 >
-                                  <option value="Open" className="bg-[#0f172a] text-sky-400">Open</option>
-                                  <option value="In Progress" className="bg-[#0f172a] text-amber-400">In Progress</option>
-                                  <option value="Resolved" className="bg-[#0f172a] text-emerald-400">Resolved</option>
-                                  <option value="Closed" className="bg-[#0f172a] text-slate-400">Closed</option>
+                                  <option value="Open" className="bg-white text-[#233858] text-sky-400">Open</option>
+                                  <option value="In Progress" className="bg-white text-[#233858] text-amber-400">In Progress</option>
+                                  <option value="Resolved" className="bg-white text-[#233858] text-emerald-400">Resolved</option>
+                                  <option value="Closed" className="bg-white text-[#233858] text-slate-400">Closed</option>
                                 </select>
                               </td>
 
@@ -5969,10 +5970,10 @@ export default function Dashboard() {
                               <td className="p-3.5">
                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                                   (t.priority || '').toLowerCase() === 'urgent'
-                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                    : (t.priority || '').toLowerCase() === 'tinggi' || (t.priority || '').toLowerCase() === 'high'
-                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                    : 'bg-slate-800 text-slate-300'
+    ? 'bg-[#C53030]/15 text-[#C53030] border border-[#C53030]/40'
+    : (t.priority || '').toLowerCase() === 'tinggi' || (t.priority || '').toLowerCase() === 'high'
+    ? 'bg-[#D69E2E]/15 text-[#D69E2E] border border-[#D69E2E]/40'
+    : 'bg-[#8A94A6]/15 text-[#8A94A6] border border-[#8A94A6]/40'
                                 }`}>
                                   {t.priority || 'Normal'}
                                 </span>
@@ -5984,7 +5985,7 @@ export default function Dashboard() {
                                   {cleanPhone && (
                                     <button
                                       onClick={() => openWhatsAppChat(t.contact || t.sender, t.id, t.name)}
-                                      className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 transition cursor-pointer"
+                                      className="p-1.5 rounded-lg bg-[#2F855A]/10 hover:bg-[#2F855A]/20 text-[#2F855A] border border-[#2F855A]/30 transition cursor-pointer shadow-xs"
                                       title="Hubungi di WhatsApp"
                                     >
                                       <MessageSquare className="w-3.5 h-3.5" />
@@ -5998,16 +5999,16 @@ export default function Dashboard() {
                                       setTicketCategoryUpdate(t.category || 'Layanan Umum');
                                       setTicketPriorityUpdate(t.priority || 'Normal');
                                     }}
-                                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium border border-slate-700 transition cursor-pointer flex items-center gap-1"
+                                    className="px-3 py-1.5 rounded-lg bg-[#F5F6F8] hover:bg-[#5A7194]/15 text-[#233858] text-[11px] font-semibold border border-[#A6AFC1]/60 transition cursor-pointer flex items-center gap-1 shadow-xs"
                                     title="Kelola & Detail Tiket"
                                   >
-                                    <Edit3 className="w-3 h-3 text-slate-400" />
+                                    <Edit3 className="w-3 h-3 text-[#5A7194]" />
                                     <span>Kelola</span>
                                   </button>
                                   <button
                                     onClick={() => handleDeleteTicket(t.id)}
                                     disabled={deletingTicketId === t.id}
-                                    className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition cursor-pointer"
+                                    className="p-1.5 rounded-lg bg-[#C53030]/10 hover:bg-[#C53030]/20 text-[#C53030] border border-[#C53030]/30 transition cursor-pointer shadow-xs"
                                     title="Hapus Tiket"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -6025,7 +6026,7 @@ export default function Dashboard() {
                 {/* 5. MOBILE CARDS VIEW (md:hidden) */}
                 <div className="md:hidden space-y-3">
                   {displayTickets.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500 rounded-2xl bg-[#0f172a]/60 border border-slate-800 space-y-2">
+                    <div className="p-8 text-center text-slate-500 rounded-2xl bg-[#233858]/60 border border-slate-800 space-y-2">
                       <Ticket className="w-8 h-8 mx-auto text-slate-600 opacity-60" />
                       <p className="font-medium text-slate-400">
                         {hasActiveFilter 
@@ -6051,7 +6052,7 @@ export default function Dashboard() {
                       return (
                         <div
                           key={`${t.id || 'm_ticket'}_${idx}`}
-                          className="p-4 rounded-2xl border border-slate-800/80 bg-[#0f172a]/80 backdrop-blur-xl shadow-lg space-y-3"
+                          className="p-4 rounded-2xl border border-[#A6AFC1]/40 bg-white shadow-sm space-y-3"
                         >
                           {/* Header: ID + Date + Status + Priority */}
                           <div className="flex items-center justify-between">
@@ -6071,18 +6072,18 @@ export default function Dashboard() {
                                     : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
                                 }`}
                               >
-                                <option value="Open" className="bg-[#0f172a]">Open</option>
-                                <option value="In Progress" className="bg-[#0f172a]">In Progress</option>
-                                <option value="Resolved" className="bg-[#0f172a]">Resolved</option>
-                                <option value="Closed" className="bg-[#0f172a]">Closed</option>
+                                <option value="Open" className="bg-white text-[#233858]">Open</option>
+                                <option value="In Progress" className="bg-white text-[#233858]">In Progress</option>
+                                <option value="Resolved" className="bg-white text-[#233858]">Resolved</option>
+                                <option value="Closed" className="bg-white text-[#233858]">Closed</option>
                               </select>
 
                               <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
                                 (t.priority || '').toLowerCase() === 'urgent'
-                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                  : (t.priority || '').toLowerCase() === 'tinggi' || (t.priority || '').toLowerCase() === 'high'
-                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                  : 'bg-slate-800 text-slate-300'
+    ? 'bg-[#C53030]/15 text-[#C53030] border border-[#C53030]/40'
+    : (t.priority || '').toLowerCase() === 'tinggi' || (t.priority || '').toLowerCase() === 'high'
+    ? 'bg-[#D69E2E]/15 text-[#D69E2E] border border-[#D69E2E]/40'
+    : 'bg-[#8A94A6]/15 text-[#8A94A6] border border-[#8A94A6]/40'
                               }`}>
                                 {t.priority || 'Normal'}
                               </span>
@@ -6132,7 +6133,7 @@ export default function Dashboard() {
                           </div>
 
                           {/* Description */}
-                          <p className="text-xs text-slate-300 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 line-clamp-3">
+                          <p className="text-xs text-[#233858] bg-[#F5F6F8] p-2.5 rounded-xl border border-[#A6AFC1]/60 line-clamp-3">
                             {t.description}
                           </p>
 
@@ -6192,20 +6193,11 @@ export default function Dashboard() {
 
             return (
               <div className="space-y-5">
-
                 {/* Header with Title, Badges, and Primary Action Buttons */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-[#A6AFC1]/40">
                   <div>
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <h3 className="text-xl font-bold text-white tracking-tight">Katalog Produk Karpet</h3>
-                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
-                        {config?.catalog?.length || 0} Total Produk
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 font-semibold text-xs">
-                        {carpetCategoriesList.length} Kategori
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                    <h3 className="text-xl font-bold text-[#233858] tracking-tight">Katalog Produk Karpet</h3>
+                    <p className="text-xs text-[#5A7194] mt-1 max-w-2xl leading-relaxed">
                       Kelola katalog karpet, harga, kategori produk, dan pemesanan WhatsApp otomatis Sultan Carpet.
                     </p>
                   </div>
@@ -6215,18 +6207,18 @@ export default function Dashboard() {
                     <button
                       type="button"
                       onClick={handleOpenAddCategory}
-                      className="py-2 px-3.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 font-semibold text-xs border border-emerald-500/30 flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                      className="py-2 px-3.5 rounded-xl bg-white hover:bg-[#F5F6F8] text-[#5A7194] hover:text-[#233858] font-semibold text-xs border border-[#A6AFC1]/60 flex items-center gap-1.5 transition shadow-xs cursor-pointer active:scale-95"
                       title="Tambah Kategori Baru"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-4 h-4 text-[#5A7194]" />
                       <span>Tambah Kategori</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleOpenAddProduct}
-                      className="py-2 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/25 flex items-center gap-1.5 cursor-pointer"
+                      className="py-2 px-4 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-md flex items-center gap-1.5 cursor-pointer active:scale-95"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-4 h-4 text-white" />
                       <span>Tambah Produk Baru</span>
                     </button>
                   </div>
@@ -6236,19 +6228,19 @@ export default function Dashboard() {
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                   {/* Search Input */}
                   <div className="relative flex-1 max-w-md">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <Search className="w-4 h-4 text-[#5A7194] absolute left-3 top-2.5" />
                     <input
                       type="text"
                       value={catalogSearch}
                       onChange={(e) => setCatalogSearch(e.target.value)}
                       placeholder="Cari nama karpet, kode, warna, harga..."
-                      className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition shadow-inner"
+                      className="w-full rounded-xl bg-white border border-[#A6AFC1]/60 pl-9 pr-8 py-2 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:ring-1 focus:ring-[#5A7194]/40 transition shadow-xs"
                     />
                     {catalogSearch && (
                       <button
                         type="button"
                         onClick={() => setCatalogSearch('')}
-                        className="absolute right-2.5 top-2 text-slate-400 hover:text-white p-0.5 rounded transition cursor-pointer"
+                        className="absolute right-2.5 top-2 text-[#5A7194] hover:text-[#233858] p-0.5 rounded transition cursor-pointer"
                         title="Hapus pencarian"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -6261,18 +6253,19 @@ export default function Dashboard() {
                     <button
                       type="button"
                       onClick={() => setShowCategoryCards(!showCategoryCards)}
-                      className={`py-1.5 px-3 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer ${
+                      className={`py-2 px-3.5 rounded-xl text-xs font-semibold border flex items-center gap-2 transition cursor-pointer active:scale-95 ${
                         showCategoryCards
-                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
-                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                          ? 'bg-[#5A7194]/15 border-[#5A7194]/50 text-[#233858] shadow-xs'
+                          : 'bg-white border-[#A6AFC1]/60 text-[#233858] hover:bg-[#5A7194]/10 hover:border-[#5A7194]'
                       }`}
-                      title="Tampilkan / Sembunyikan ringkasan kartu kategori"
+                      title="Kelola & lihat deskripsi kartu kategori"
                     >
-                      <span>{showCategoryCards ? 'Sembunyikan Kartu' : 'Detail Kategori'}</span>
+                      <Tag className="w-3.5 h-3.5 text-[#5A7194]" />
+                      <span>{showCategoryCards ? 'Sembunyikan Kartu' : `Kelola Kategori (${carpetCategoriesList.length})`}</span>
                       {showCategoryCards ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
+                        <ChevronUp className="w-3.5 h-3.5 text-[#5A7194]" />
                       ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
+                        <ChevronDown className="w-3.5 h-3.5 text-[#5A7194]" />
                       )}
                     </button>
 
@@ -6283,7 +6276,7 @@ export default function Dashboard() {
                           setSelectedCatalogCategory('Semua');
                           setCatalogSearch('');
                         }}
-                        className="py-1.5 px-3 rounded-xl bg-rose-950/30 hover:bg-rose-950/60 border border-rose-800/40 text-rose-300 hover:text-rose-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                        className="py-2 px-3 rounded-xl bg-[#C53030]/15 hover:bg-[#C53030]/25 border border-[#C53030]/40 text-[#C53030] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer active:scale-95"
                       >
                         <RotateCcw className="w-3 h-3" />
                         <span>Reset Filter</span>
@@ -6292,21 +6285,21 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Category Pills Navigation with Inline Add */}
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full scrollbar-thin scrollbar-thumb-slate-800">
+                {/* Category Pills Navigation */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full scrollbar-thin scrollbar-thumb-[#A6AFC1]/40">
                   {/* 'Semua Koleksi' Pill */}
                   <button
                     type="button"
                     onClick={() => setSelectedCatalogCategory('Semua')}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-2 cursor-pointer ${
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-2 cursor-pointer active:scale-95 ${
                       selectedCatalogCategory === 'Semua'
-                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400/40'
-                        : 'bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                        ? 'bg-[#5A7194] text-white shadow-sm ring-1 ring-[#5A7194]/50'
+                        : 'bg-white border border-[#A6AFC1]/60 text-[#233858] hover:bg-[#5A7194]/10 hover:border-[#5A7194]'
                     }`}
                   >
                     <span>Semua Koleksi</span>
                     <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
-                      selectedCatalogCategory === 'Semua' ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'
+                      selectedCatalogCategory === 'Semua' ? 'bg-white/25 text-white' : 'bg-[#E8E6DB] text-[#233858] border border-[#A6AFC1]/60'
                     }`}>
                       {config?.catalog?.length || 0}
                     </span>
@@ -6319,144 +6312,148 @@ export default function Dashboard() {
                       const pCat = (p.category || '').trim().toLowerCase();
                       return pCat === cat.name.trim().toLowerCase();
                     }).length;
-                    const isCustomCat = cat.id && !['kat-masjid', 'kat-persia', 'kat-minimalis', 'kat-shaggy', 'kat-kantor'].includes(cat.id);
 
                     return (
                       <div key={cat.id || cat.name} className="relative group shrink-0">
                         <button
                           type="button"
                           onClick={() => setSelectedCatalogCategory(isSelected ? 'Semua' : cat.name)}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer active:scale-95 ${
                             isSelected
-                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400/40'
-                              : 'bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-                          } ${isCustomCat ? 'pr-7' : ''}`}
+                              ? 'bg-[#5A7194] text-white shadow-sm ring-1 ring-[#5A7194]/50'
+                              : 'bg-white border border-[#A6AFC1]/60 text-[#233858] hover:bg-[#5A7194]/10 hover:border-[#5A7194]'
+                          }`}
                         >
                           <span>{cat.name}</span>
                           <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
-                            isSelected ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'
+                            isSelected ? 'bg-white/25 text-white' : 'bg-[#E8E6DB] text-[#233858] border border-[#A6AFC1]/60'
                           }`}>
                             {count}
                           </span>
                         </button>
-
-                        {/* Quick Delete icon for custom categories */}
-                        {isCustomCat && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteCategory(cat.id, cat.name);
-                            }}
-                            title={`Hapus kategori "${cat.name}"`}
-                            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-950/50 transition cursor-pointer"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
                       </div>
                     );
                   })}
-
-                  {/* Quick Add Category Pill */}
-                  <button
-                    type="button"
-                    onClick={handleOpenAddCategory}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-emerald-400 hover:text-emerald-300 border border-dashed border-emerald-500/40 hover:border-emerald-500 bg-emerald-950/20 hover:bg-emerald-950/40 shrink-0 transition flex items-center gap-1.5 cursor-pointer"
-                    title="Tambah Kategori Baru"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Tambah Kategori</span>
-                  </button>
                 </div>
 
-                {/* Collapsible Category Overview Cards Shelf */}
+                {/* Collapsible Category Overview Cards Shelf (Clean Light Aesthetic) */}
                 {showCategoryCards && (
-                  <div className="p-4 sm:p-5 rounded-2xl border border-slate-800 bg-slate-900/40 space-y-3.5 animate-in fade-in duration-200">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <Tag className="w-4 h-4 text-emerald-400" />
-                        <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                          Detail & Deskripsi Kategori Karpet ({carpetCategoriesList.length})
-                        </span>
+                  <div className="p-4 sm:p-5 rounded-3xl border border-[#A6AFC1]/50 bg-white shadow-sm space-y-4 animate-in fade-in duration-200">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#A6AFC1]/30">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-xl bg-[#5A7194]/15 text-[#5A7194] border border-[#5A7194]/20 shadow-xs">
+                          <Tag className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-[#233858]">
+                              Detail & Deskripsi Kategori Karpet
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-[#5A7194]/15 border border-[#5A7194]/30 text-[#233858] text-[10px] font-bold">
+                              {carpetCategoriesList.length} Kategori
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#5A7194] mt-0.5">
+                            Gunakan tombol edit atau hapus pada setiap kartu kategori untuk mengelola katalog produk.
+                          </p>
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowCategoryCards(false)}
-                        className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition cursor-pointer"
-                      >
-                        <span>Tutup</span>
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      </button>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setShowCategoryCards(false)}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] border border-[#A6AFC1]/50 flex items-center gap-1 transition cursor-pointer"
+                        >
+                          <span>Tutup</span>
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3.5">
                       {carpetCategoriesList.map((cat) => {
                         const isSelected = selectedCatalogCategory === cat.name;
-                        const count = (config?.catalog || []).filter(p => {
-                          const pCat = (p.category || '').trim().toLowerCase();
-                          return pCat === cat.name.trim().toLowerCase();
-                        }).length;
-                        const isCustom = cat.id && !['kat-masjid', 'kat-persia', 'kat-minimalis', 'kat-shaggy', 'kat-kantor'].includes(cat.id);
 
                         return (
                           <div
                             key={cat.id || cat.name}
                             onClick={() => setSelectedCatalogCategory(isSelected ? 'Semua' : cat.name)}
-                            className={`p-3.5 rounded-xl border text-left transition-all duration-200 flex flex-col justify-between group relative cursor-pointer ${
+                            className={`p-4 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between group relative cursor-pointer shadow-xs ${
                               isSelected
-                                ? 'bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/30 shadow-md shadow-emerald-500/10'
-                                : 'bg-[#0f172a]/70 hover:bg-slate-900 border-slate-800 hover:border-slate-700'
+                                ? 'bg-[#5A7194]/10 border-2 border-[#5A7194] ring-2 ring-[#5A7194]/20 shadow-md'
+                                : 'bg-[#F5F6F8] hover:bg-white border-[#A6AFC1]/60 hover:border-[#5A7194] hover:shadow-md'
                             }`}
                           >
                             <div>
-                              <div className="flex items-center justify-between mb-2">
-                                <span className={`text-[10px] font-bold tracking-wide uppercase px-2 py-0.5 rounded-md border ${
-                                  isSelected 
-                                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                                    : 'bg-slate-800/80 border-slate-700/60 text-slate-400'
+                              {/* Top row: Category Tag Icon & Action Buttons */}
+                              <div className="flex items-center justify-between mb-2.5">
+                                <div className={`p-1.5 rounded-lg border transition ${
+                                  isSelected
+                                    ? 'bg-[#5A7194] border-[#5A7194] text-white'
+                                    : 'bg-white border-[#A6AFC1]/60 text-[#5A7194] group-hover:bg-[#5A7194] group-hover:text-white'
                                 }`}>
-                                  Kategori
-                                </span>
-                                <div className="flex items-center gap-1.5">
-                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                                    isSelected 
-                                      ? 'bg-emerald-500 text-slate-950' 
-                                      : 'bg-slate-800 text-slate-300'
-                                  }`}>
-                                    {count} Produk
-                                  </span>
-                                  {isCustom && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDeleteCategory(cat.id, cat.name);
-                                      }}
-                                      title="Hapus Kategori"
-                                      className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 transition cursor-pointer"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
+                                  <Tag className="w-3.5 h-3.5" />
+                                </div>
+
+                                {/* EDIT & HAPUS ACTION BUTTONS */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenEditCategory(cat);
+                                    }}
+                                    title={`Edit kategori "${cat.name}"`}
+                                    className="p-1.5 rounded-lg bg-white hover:bg-[#5A7194]/20 text-[#5A7194] hover:text-[#233858] border border-[#A6AFC1]/60 transition cursor-pointer shadow-xs"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteCategory(cat.id, cat.name);
+                                    }}
+                                    title={`Hapus kategori "${cat.name}"`}
+                                    className="p-1.5 rounded-lg bg-[#C53030]/10 hover:bg-[#C53030]/20 text-[#C53030] border border-[#C53030]/30 transition cursor-pointer shadow-xs"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
                               </div>
 
-                              <h5 className={`font-bold text-sm mb-1 leading-snug ${
-                                isSelected ? 'text-emerald-300' : 'text-white'
-                              }`}>
+                              {/* Title & Description */}
+                              <h5 className={`font-bold text-sm mb-1 leading-snug line-clamp-1 transition ${
+                                isSelected ? 'text-[#233858]' : 'text-[#233858] group-hover:text-[#5A7194]'
+                              }`} title={cat.name}>
                                 {cat.name}
                               </h5>
-                              <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
-                                {cat.description || `Koleksi karpet pilihan ${cat.name}.`}
+                              <p className="text-xs text-[#5A7194] line-clamp-2 leading-relaxed min-h-[2.5rem]" title={cat.description}>
+                                {cat.description || `Koleksi karpet pilihan ${cat.name} Sultan Carpet Gallery.`}
                               </p>
                             </div>
 
-                            <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
-                              <span className={isSelected ? 'text-emerald-400 font-semibold' : 'text-slate-500 group-hover:text-slate-300'}>
-                                {isSelected ? '✓ Sedang Difilter' : 'Filter Kategori'}
+                            {/* Bottom row: Filter toggle indicator */}
+                            <div className="mt-3 pt-2.5 border-t border-[#A6AFC1]/30 flex items-center justify-between text-xs">
+                              <span className={`font-medium flex items-center gap-1.5 text-[11px] ${
+                                isSelected ? 'text-[#2F855A] font-bold' : 'text-[#5A7194] group-hover:text-[#233858]'
+                              }`}>
+                                {isSelected ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-[#2F855A]" />
+                                    <span>✓ Sedang Difilter</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Filter className="w-3 h-3 text-[#5A7194]" />
+                                    <span>Terapkan Filter</span>
+                                  </>
+                                )}
                               </span>
-                              <ChevronRight className={`w-3.5 h-3.5 ${isSelected ? 'text-emerald-400' : 'text-slate-600 group-hover:text-slate-400'}`} />
+                              <ChevronRight className={`w-3.5 h-3.5 transition ${
+                                isSelected ? 'text-[#2F855A]' : 'text-[#5A7194] group-hover:translate-x-0.5'
+                              }`} />
                             </div>
                           </div>
                         );
@@ -6465,62 +6462,62 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* Status Summary & Filter Indicator */}
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 pt-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span>Menampilkan <strong className="text-white font-semibold">{filteredCatalog.length}</strong> produk</span>
-                    {selectedCatalogCategory !== 'Semua' && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px]">
-                        <span>Kategori: <strong>{selectedCatalogCategory}</strong></span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedCatalogCategory('Semua')}
-                          className="hover:text-white p-0.5 rounded transition cursor-pointer"
-                          title="Hapus filter kategori"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    )}
-                    {catalogSearch && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px]">
-                        <span>Pencarian: <strong>"{catalogSearch}"</strong></span>
-                        <button
-                          type="button"
-                          onClick={() => setCatalogSearch('')}
-                          className="hover:text-white p-0.5 rounded transition cursor-pointer"
-                          title="Hapus kata kunci pencarian"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    )}
-                  </div>
+                {/* Filter Indicator (Only shown when active) */}
+                {(selectedCatalogCategory !== 'Semua' || catalogSearch) && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {selectedCatalogCategory !== 'Semua' && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#5A7194]/15 border border-[#5A7194]/40 text-[#233858] font-medium text-xs shadow-xs">
+                          <span>Kategori: <strong>{selectedCatalogCategory}</strong></span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCatalogCategory('Semua')}
+                            className="hover:text-[#C53030] p-0.5 rounded transition cursor-pointer"
+                            title="Hapus filter kategori"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      )}
+                      {catalogSearch && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#5A7194]/15 border border-[#5A7194]/40 text-[#233858] font-medium text-xs shadow-xs">
+                          <span>Pencarian: <strong>"{catalogSearch}"</strong></span>
+                          <button
+                            type="button"
+                            onClick={() => setCatalogSearch('')}
+                            className="hover:text-[#C53030] p-0.5 rounded transition cursor-pointer"
+                            title="Hapus kata kunci pencarian"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      )}
+                    </div>
 
-                  {(selectedCatalogCategory !== 'Semua' || catalogSearch) && (
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedCatalogCategory('Semua');
                         setCatalogSearch('');
                       }}
-                      className="text-xs text-rose-400 hover:text-rose-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer"
+                      className="text-xs text-[#C53030] hover:text-[#C53030]/80 font-semibold underline underline-offset-2 flex items-center gap-1 cursor-pointer"
                     >
+                      <RotateCcw className="w-3 h-3" />
                       <span>Reset Semua Filter</span>
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {/* Product Cards Responsive Grid */}
                 {filteredCatalog.length === 0 ? (
-                  <div className="p-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/30">
-                    <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                    <p className="font-semibold text-slate-400 text-sm">
+                  <div className="p-12 text-center rounded-3xl border border-dashed border-[#A6AFC1]/60 bg-white shadow-xs">
+                    <ShoppingBag className="w-12 h-12 text-[#5A7194] mx-auto mb-3" />
+                    <p className="font-bold text-[#233858] text-sm">
                       {catalogSearch || selectedCatalogCategory !== 'Semua'
                         ? 'Tidak ada produk karpet yang cocok dengan filter atau pencarian'
                         : 'Belum ada produk di katalog'}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1 mb-4">
+                    <p className="text-xs text-[#5A7194] mt-1 mb-4">
                       {selectedCatalogCategory !== 'Semua'
                         ? `Belum ada produk dalam kategori "${selectedCatalogCategory}". Klik Tambah Produk untuk mengisi kategori ini.`
                         : 'Klik tombol di bawah untuk menambahkan produk karpet baru ke katalog Anda.'}
@@ -6533,7 +6530,7 @@ export default function Dashboard() {
                             setSelectedCatalogCategory('Semua');
                             setCatalogSearch('');
                           }}
-                          className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition cursor-pointer"
+                          className="py-2 px-4 rounded-xl bg-[#F5F6F8] hover:bg-[#5A7194]/15 text-[#233858] border border-[#A6AFC1]/60 font-semibold text-xs transition cursor-pointer shadow-xs"
                         >
                           Tampilkan Semua Karpet
                         </button>
@@ -6541,9 +6538,9 @@ export default function Dashboard() {
                       <button
                         type="button"
                         onClick={handleOpenAddProduct}
-                        className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs inline-flex items-center gap-1.5 transition cursor-pointer"
+                        className="py-2 px-4 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs inline-flex items-center gap-1.5 transition shadow-sm cursor-pointer"
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-4 h-4 text-white" />
                         <span>Tambah Produk Sekarang</span>
                       </button>
                     </div>
@@ -6557,47 +6554,31 @@ export default function Dashboard() {
                       return (
                         <div
                           key={item.id}
-                          className="rounded-2xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl overflow-hidden shadow-xl flex flex-col justify-between group hover:border-slate-700 hover:shadow-2xl hover:shadow-emerald-950/10 transition-all duration-300"
+                          className="rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm overflow-hidden flex flex-col justify-between group hover:border-[#5A7194] hover:shadow-lg transition-all duration-300 card-interactive"
                         >
                           {/* Image Container */}
-                          <div className="h-48 sm:h-52 bg-slate-900 relative overflow-hidden flex items-center justify-center shrink-0">
+                          <div className="h-52 bg-[#F5F6F8] relative overflow-hidden flex items-center justify-center shrink-0">
                             <img
                               src={imgSrc}
                               alt={item.title}
                               onError={(e) => {
                                 e.target.src = '/catalog/karpet-masjid-turki.jpg';
                               }}
-                              className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             />
+                            {/* Ambient Gradient overlay */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20 pointer-events-none" />
+
                             {/* Price Badge */}
-                            <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-slate-950/85 backdrop-blur-md text-emerald-400 font-bold text-xs border border-emerald-500/30 shadow">
+                            <span className="absolute top-3.5 right-3.5 px-3 py-1 rounded-full bg-white/95 backdrop-blur-md text-[#233858] font-bold text-xs border border-[#A6AFC1]/50 shadow-md">
                               {item.price}
                             </span>
                             {/* Category Badge on Bottom Left of Image */}
-                            <div className="absolute bottom-3 left-3">
-                              <span className="px-2.5 py-1 rounded-lg bg-slate-950/90 backdrop-blur-md text-emerald-300 font-medium text-[11px] border border-emerald-500/30 shadow flex items-center">
-                                <span className="truncate max-w-[180px]">{item.category || 'Semua Kategori'}</span>
+                            <div className="absolute bottom-3 left-3.5">
+                              <span className="px-2.5 py-1 rounded-xl bg-white/95 backdrop-blur-md text-[#233858] font-semibold text-[11px] border border-[#A6AFC1]/50 shadow-md flex items-center gap-1.5">
+                                <Tag className="w-3 h-3 text-[#5A7194]" />
+                                <span className="truncate max-w-[170px]">{item.category || 'Semua Kategori'}</span>
                               </span>
-                            </div>
-                            {/* Actions on Card Image (Edit & Delete) */}
-                            <div className="absolute top-3 left-3 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditProduct(item)}
-                                title="Edit Produk"
-                                className="p-1.5 rounded-lg bg-slate-900/80 backdrop-blur-md text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 transition cursor-pointer"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteProduct(item.id, item.title)}
-                                disabled={deletingProductId === item.id}
-                                title="Hapus Produk"
-                                className="p-1.5 rounded-lg bg-slate-900/80 backdrop-blur-md text-rose-400 hover:text-rose-300 hover:bg-rose-950/80 border border-rose-900/50 transition cursor-pointer disabled:opacity-50"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
                             </div>
                           </div>
 
@@ -6605,46 +6586,54 @@ export default function Dashboard() {
                           <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3.5">
                             <div className="space-y-1.5">
                               <div className="flex items-start justify-between gap-2">
-                                <h4 className="font-bold text-white text-sm sm:text-base leading-snug line-clamp-1 group-hover:text-emerald-300 transition" title={item.title}>
+                                <h4 className="font-bold text-[#233858] text-sm sm:text-base leading-snug line-clamp-1 group-hover:text-[#5A7194] transition-colors" title={item.title}>
                                   {item.title}
                                 </h4>
-                                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono shrink-0">
+                                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/60 text-[#5A7194] font-mono font-bold shrink-0">
                                   #{item.id}
                                 </span>
                               </div>
-                              <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
+                              <p className="text-xs text-[#5A7194] leading-relaxed line-clamp-2">
                                 {item.subtitle}
                               </p>
                               {item.footer && (
-                                <p className="text-[11px] text-purple-300 font-medium line-clamp-1">
-                                  🎨 {item.footer}
+                                <p className="text-[11px] text-[#233858] font-medium line-clamp-1 flex items-center gap-1.5 bg-[#F5F6F8] px-2.5 py-1 rounded-lg border border-[#A6AFC1]/40">
+                                  <Palette className="w-3 h-3 text-[#5A7194] shrink-0" />
+                                  <span className="truncate">{item.footer}</span>
                                 </p>
                               )}
                             </div>
 
-                            {/* Card Footer: SKU Code & Action Buttons */}
-                            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs gap-2">
-                              <span className="text-slate-500 font-mono text-[11px] truncate max-w-[100px]" title={item.code || `PROD-${item.id}`}>
-                                {item.code || `PROD-${item.id}`}
-                              </span>
-                              <div className="flex items-center gap-2 shrink-0">
+                            {/* Card Footer: Action Buttons */}
+                            <div className="pt-3 border-t border-[#A6AFC1]/30 flex items-center justify-between text-xs gap-2">
+                              <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditProduct(item)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+                                  className="px-3 py-1.5 rounded-xl bg-[#F5F6F8] hover:bg-[#5A7194]/15 text-[#233858] text-xs font-semibold transition cursor-pointer border border-[#A6AFC1]/60 shadow-xs active:scale-95"
+                                  title="Edit Produk"
                                 >
                                   Edit
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenSendProductModal(item)}
-                                  className="px-3 py-1.5 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/40 text-emerald-300 font-semibold border border-emerald-500/40 hover:border-emerald-400 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:shadow"
-                                  title="Kirim pesan produk ini ke riwayat chat pelanggan WhatsApp"
+                                  onClick={() => handleDeleteProduct(item.id, item.title)}
+                                  disabled={deletingProductId === item.id}
+                                  className="px-3 py-1.5 rounded-xl bg-[#C53030]/15 hover:bg-[#C53030]/25 text-[#C53030] border border-[#C53030]/40 transition cursor-pointer text-xs font-bold disabled:opacity-50 shadow-xs active:scale-95"
+                                  title="Hapus Produk"
                                 >
-                                  <Send className="w-3 h-3 text-emerald-400" />
-                                  <span>Kirim Pesan</span>
+                                  Hapus
                                 </button>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSendProductModal(item)}
+                                className="px-3.5 py-1.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold border border-[#5A7194] transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                                title="Kirim pesan produk ini ke riwayat chat pelanggan WhatsApp"
+                              >
+                                <Send className="w-3.5 h-3.5 text-white" />
+                                <span>Kirim Pesan</span>
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -6656,183 +6645,187 @@ export default function Dashboard() {
             );
           })()}
 
-          
-          {/* TAB: STORE PROFILE & OWNER */}
+          {/* TAB: STORE PROFILE */}
           {activeTab === 'store_profile' && (
             <div className="space-y-6">
 
-              {/* 2-Column: Owner Story & Direct Live Editor Form */}
+              {/* 2-Column: Store Profile Preview & Live Editor Form */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Left Column: Story & Direct Details */}
-                <div className="lg:col-span-7 space-y-6">
-                  {/* Story Card */}
-                  <div className="p-6 sm:p-7 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                    <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
-                        <Award className="w-5 h-5" />
+                {/* Left Column: Ringkasan Profil Toko */}
+                <div className="lg:col-span-6 space-y-6">
+                  {/* Nama Toko & Deskripsi Card */}
+                  <div className="p-6 sm:p-7 rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl shadow-xl space-y-5">
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                          <Building className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-[#233858] text-base">Identitas Toko</h3>
+                          <p className="text-xs text-slate-400">Profil resmi yang digunakan bot & customer</p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-bold text-white text-base">Sejarah & Filosofi Pendiri</h3>
-                        <p className="text-xs text-slate-400">Dedikasi menghadirkan kemuliaan sajadah & kehangatan hunian</p>
-                      </div>
+                      <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        Profil Aktif
+                      </span>
                     </div>
-                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-line">
-                      {ownerSettings.story}
-                    </p>
-                    <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-200 text-xs leading-relaxed space-y-1">
-                      <p className="font-bold flex items-center gap-1.5 text-emerald-300">
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Komitmen Manajemen:</span>
+
+                    {/* Nama Toko Display */}
+                    <div className="p-4 rounded-2xl bg-[#F5F6F8]/80 border border-[#A6AFC1]/60 space-y-1">
+                      <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider">Nama Toko</p>
+                      <h4 className="text-lg font-bold text-[#233858] flex items-center gap-2">
+                        <span>{businessSettings.name || 'Nama Toko Belum Diatur'}</span>
+                      </h4>
+                    </div>
+
+                    {/* Deskripsi Toko Display */}
+                    <div className="p-4 rounded-2xl bg-[#F5F6F8]/80 border border-[#A6AFC1]/60 space-y-1.5">
+                      <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider">Deskripsi Toko</p>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                        {businessSettings.description || 'Belum ada deskripsi toko.'}
                       </p>
-                      <p>{ownerSettings.commitment}</p>
                     </div>
                   </div>
 
-                  {/* Highlights / Features Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/50 space-y-2">
-                      <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center font-semibold text-xs">
-                        🕌
-                      </div>
-                      <h4 className="font-bold text-white text-sm">Spesialis Karpet Masjid</h4>
-                      <p className="text-xs text-slate-400 leading-relaxed">
-                        Layanan survey gratis, pembawaan sampel bahan fisik, dan pengukuran presisi dengan akurasi arah kiblat.
-                      </p>
-                    </div>
-                    <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/50 space-y-2">
-                      <div className="w-8 h-8 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center font-semibold text-xs">
-                        👑
-                      </div>
-                      <h4 className="font-bold text-white text-sm">Permadani Klasik Persia</h4>
-                      <p className="text-xs text-slate-400 leading-relaxed">
-                        Koleksi eksklusif sutra alami dan wool Tabriz bernilai seni tinggi, tahan puluhan tahun dengan sertifikat.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Column: Direct Contact & Live Settings Form */}
-                <div className="lg:col-span-5 space-y-6">
-                  {/* Contact Owner Quick Card */}
-                  <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                    <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                  {/* Kontak Toko: WhatsApp & Email Card */}
+                  <div className="p-6 rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl shadow-xl space-y-4">
+                    <h3 className="font-bold text-[#233858] text-sm flex items-center gap-2">
                       <PhoneCall className="w-4 h-4 text-emerald-400" />
-                      <span>Kontak Pemilik & Kantor Pusat</span>
+                      <span>Kontak Resmi Toko</span>
                     </h3>
                     <div className="space-y-3 text-xs">
-                      <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                      {/* WhatsApp Row */}
+                      <div className="p-3.5 rounded-2xl bg-[#F5F6F8]/80 border border-[#A6AFC1]/60 flex items-center justify-between">
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase font-mono">Telepon / WhatsApp</p>
-                          <p className="font-bold text-white font-mono">{ownerSettings.phone}</p>
+                          <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider">Nomor WhatsApp</p>
+                          <p className="font-bold text-[#233858] font-mono text-sm">{businessSettings.phone || '-'}</p>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <button
-                            onClick={() => handleCopyText(ownerSettings.phone, 'Telepon Pemilik')}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
-                            title="Salin Nomor"
+                            onClick={() => handleCopyText(businessSettings.phone, 'Nomor WhatsApp Toko')}
+                            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                            title="Salin Nomor WhatsApp"
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => {
                               sendDirectWaMessage(
-                                ownerSettings.phone,
-                                `Halo Bapak/Ibu ${ownerSettings.owner_name || 'Owner'}, saya ingin berkonsultasi seputar pesanan karpet.`
+                                businessSettings.phone,
+                                `Halo ${businessSettings.name || 'Admin Toko'}, saya ingin berkonsultasi seputar pemesanan produk.`
                               );
                             }}
-                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px]"
+                            className="px-3 py-2 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs flex items-center gap-1.5 transition"
                           >
-                            Chat WA
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span>Chat WA</span>
                           </button>
                         </div>
                       </div>
 
-                      <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                      {/* Email Row */}
+                      <div className="p-3.5 rounded-2xl bg-[#F5F6F8]/80 border border-[#A6AFC1]/60 flex items-center justify-between">
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase font-mono">Email Resmi</p>
-                          <p className="font-bold text-white">{ownerSettings.email}</p>
+                          <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider">Email Toko</p>
+                          <p className="font-bold text-[#233858] text-sm">{businessSettings.email || '-'}</p>
                         </div>
                         <button
-                          onClick={() => handleCopyText(ownerSettings.email, 'Email Pemilik')}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
-                          title="Salin Email"
+                          onClick={() => handleCopyText(businessSettings.email, 'Email Toko')}
+                          className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                          title="Salin Email Toko"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* Live Edit Store & Owner Info Form */}
-                  <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-4">
-                    <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                      <Edit3 className="w-4 h-4 text-emerald-400" />
-                      <span>Edit Profil Toko & Pemilik</span>
-                    </h3>
-                    <div className="space-y-3 text-xs">
+                {/* Right Column: Live Form Editor */}
+                <div className="lg:col-span-6 space-y-6">
+                  <div className="p-6 sm:p-7 rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl shadow-xl space-y-5">
+                    <div className="pb-4 border-b border-slate-800">
+                      <h3 className="font-bold text-[#233858] text-base flex items-center gap-2">
+                        <Edit3 className="w-5 h-5 text-emerald-400" />
+                        <span>Edit Profil Toko</span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Perbarui 4 data utama toko Anda untuk identitas bot WhatsApp & informasi pelanggan
+                      </p>
+                    </div>
+
+                    <div className="space-y-4 text-xs">
+                      {/* 1. Nama Toko */}
                       <div>
-                        <label className="text-slate-400 block mb-1">Nama Pemilik / Founder</label>
+                        <label className="text-[#233858] font-semibold font-semibold block mb-1.5 flex items-center gap-1.5">
+                          <Building className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Nama Toko</span>
+                        </label>
                         <input
                           type="text"
-                          value={ownerSettings.owner_name}
-                          onChange={(e) => setOwnerSettings((prev) => ({ ...prev, owner_name: e.target.value }))}
-                          className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+                          placeholder="Masukkan nama toko..."
+                          value={businessSettings.name || ''}
+                          onChange={(e) => setBusinessSettings((prev) => ({ ...prev, name: e.target.value }))}
+                          className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-[#233858] text-xs focus:border-[#5A7194] focus:outline-none transition shadow-inner"
                         />
                       </div>
-                      <div>
-                        <label className="text-slate-400 block mb-1">Jabatan / Role</label>
-                        <input
-                          type="text"
-                          value={ownerSettings.role}
-                          onChange={(e) => setOwnerSettings((prev) => ({ ...prev, role: e.target.value }))}
-                          className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
+
+                      {/* 2. Nomor WhatsApp & 3. Email */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="text-slate-400 block mb-1">Nomor WhatsApp</label>
+                          <label className="text-[#233858] font-semibold font-semibold block mb-1.5 flex items-center gap-1.5">
+                            <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Nomor WhatsApp</span>
+                          </label>
                           <input
                             type="text"
-                            value={ownerSettings.phone}
-                            onChange={(e) => setOwnerSettings((prev) => ({ ...prev, phone: e.target.value }))}
-                            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+                            placeholder="Contoh: 0812-9876-5432"
+                            value={businessSettings.phone || ''}
+                            onChange={(e) => setBusinessSettings((prev) => ({ ...prev, phone: e.target.value }))}
+                            className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-[#233858] text-xs font-mono focus:border-[#5A7194] focus:outline-none transition shadow-inner"
                           />
                         </div>
                         <div>
-                          <label className="text-slate-400 block mb-1">Email Resmi</label>
+                          <label className="text-[#233858] font-semibold font-semibold block mb-1.5 flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Email</span>
+                          </label>
                           <input
-                            type="text"
-                            value={ownerSettings.email}
-                            onChange={(e) => setOwnerSettings((prev) => ({ ...prev, email: e.target.value }))}
-                            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+                            type="email"
+                            placeholder="Contoh: info@sultancarpet.co.id"
+                            value={businessSettings.email || ''}
+                            onChange={(e) => setBusinessSettings((prev) => ({ ...prev, email: e.target.value }))}
+                            className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-[#233858] text-xs focus:border-[#5A7194] focus:outline-none transition shadow-inner"
                           />
                         </div>
                       </div>
+
+                      {/* 4. Deskripsi Toko */}
                       <div>
-                        <label className="text-slate-400 block mb-1">Sejarah & Kisah Toko</label>
+                        <label className="text-[#233858] font-semibold font-semibold block mb-1.5 flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Deskripsi Toko</span>
+                        </label>
                         <textarea
-                          rows={3}
-                          value={ownerSettings.story}
-                          onChange={(e) => setOwnerSettings((prev) => ({ ...prev, story: e.target.value }))}
-                          className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-emerald-500 focus:outline-none leading-relaxed"
+                          rows={6}
+                          placeholder="Tuliskan deskripsi profil, produk utama, spesifikasi layanan, atau keunggulan toko Anda..."
+                          value={businessSettings.description || ''}
+                          onChange={(e) => setBusinessSettings((prev) => ({ ...prev, description: e.target.value }))}
+                          className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-[#233858] text-xs focus:border-[#5A7194] focus:outline-none leading-relaxed transition resize-y shadow-inner"
                         />
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Deskripsi ini otomatis diindeks oleh AI RAG untuk menjawab pertanyaan seputar profil toko saat ada chat masuk.
+                        </p>
                       </div>
-                      <div>
-                        <label className="text-slate-400 block mb-1">Komitmen Pelayanan</label>
-                        <textarea
-                          rows={2}
-                          value={ownerSettings.commitment}
-                          onChange={(e) => setOwnerSettings((prev) => ({ ...prev, commitment: e.target.value }))}
-                          className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-emerald-500 focus:outline-none leading-relaxed"
-                        />
-                      </div>
+
+                      {/* Tombol Simpan */}
                       <button
-                        onClick={() => handleSaveStoreSection('owner_info', ownerSettings, 'Profil toko & pemilik berhasil disimpan!')}
+                        onClick={handleSaveStoreProfile}
                         disabled={savingStoreInfo}
-                        className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50"
+                        className="w-full py-3 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 disabled:opacity-50 mt-2"
                       >
-                        {savingStoreInfo ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                        <span>{savingStoreInfo ? 'Menyimpan...' : 'Simpan Perubahan Profil'}</span>
+                        {savingStoreInfo ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        <span>{savingStoreInfo ? 'Menyimpan...' : 'Simpan Profil Toko'}</span>
                       </button>
                     </div>
                   </div>
@@ -6845,20 +6838,17 @@ export default function Dashboard() {
           {activeTab === 'schedule' && (
             <div className="space-y-6">
               {/* Form Editor for Schedules */}
-              <div className="p-6 sm:p-8 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-6">
+              <div className="p-6 sm:p-8 rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl shadow-xl space-y-6">
                 <div className="pb-4 border-b border-slate-800">
-                  <h3 className="font-bold text-white text-base flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-sky-400" />
-                    <span>Jadwal Operasional & Jam Kerja Toko</span>
-                  </h3>
+                  <h3 className="font-bold text-[#233858] text-base flex items-center gap-2"><Clock className="w-5 h-5 text-[#5A7194]" /><span>Jadwal Operasional & Jam Kerja Toko</span></h3>
                   <p className="text-xs text-slate-400 mt-0.5">
                     Kelola jadwal operasional showroom, survey lokasi, teknisi pasang karpet, dan pengiriman kargo
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
-                  <div className="space-y-1.5 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                    <label className="text-slate-300 font-semibold flex items-center gap-2">
+                  <div className="space-y-1.5 p-4 rounded-2xl bg-[#F5F6F8] border-2 border-[#A6AFC1]/70">
+                    <label className="text-[#233858] font-semibold font-semibold flex items-center gap-2">
                       <ShoppingBag className="w-4 h-4 text-emerald-400" />
                       <span>1. Jam Buka Showroom & Galeri</span>
                     </label>
@@ -6867,13 +6857,13 @@ export default function Dashboard() {
                       value={scheduleSettings.store_hours}
                       onChange={(e) => setScheduleSettings((prev) => ({ ...prev, store_hours: e.target.value }))}
                       placeholder="Contoh: Senin - Sabtu: 08:30 - 20:00 WIB | Minggu: 09:00 - 18:00 WIB"
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3 text-white text-xs focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-[#233858] text-xs focus:border-[#5A7194] focus:outline-none"
                     />
                     <p className="text-[11px] text-slate-500">Waktu kunjungan langsung untuk memilih motif dan mengecek ketebalan benang.</p>
                   </div>
 
-                  <div className="space-y-1.5 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                    <label className="text-slate-300 font-semibold flex items-center gap-2">
+                  <div className="space-y-1.5 p-4 rounded-2xl bg-[#F5F6F8] border-2 border-[#A6AFC1]/70">
+                    <label className="text-[#233858] font-semibold font-semibold flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-sky-400" />
                       <span>2. Jam Layanan Survey & Bawa Sampel</span>
                     </label>
@@ -6882,13 +6872,13 @@ export default function Dashboard() {
                       value={scheduleSettings.survey_hours}
                       onChange={(e) => setScheduleSettings((prev) => ({ ...prev, survey_hours: e.target.value }))}
                       placeholder="Contoh: Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB (Gratis Jabodetabek)"
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3 text-white text-xs focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-[#233858] text-xs focus:border-[#5A7194] focus:outline-none"
                     />
                     <p className="text-[11px] text-slate-500">Jadwal konsultan teknis datang membawa meteran laser dan sampel bahan gratis.</p>
                   </div>
 
-                  <div className="space-y-1.5 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                    <label className="text-slate-300 font-semibold flex items-center gap-2">
+                  <div className="space-y-1.5 p-4 rounded-2xl bg-[#F5F6F8] border-2 border-[#A6AFC1]/70">
+                    <label className="text-[#233858] font-semibold font-semibold flex items-center gap-2">
                       <Zap className="w-4 h-4 text-purple-400" />
                       <span>3. Instalasi, Pasang & Obras 24 Jam</span>
                     </label>
@@ -6897,13 +6887,13 @@ export default function Dashboard() {
                       value={scheduleSettings.installation_hours}
                       onChange={(e) => setScheduleSettings((prev) => ({ ...prev, installation_hours: e.target.value }))}
                       placeholder="Contoh: Layanan Teknisi 24 Jam (By Appointment), bisa malam hari setelah Isya."
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3 text-white text-xs focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-[#233858] text-xs focus:border-[#5A7194] focus:outline-none"
                     />
                     <p className="text-[11px] text-slate-500">Jadwal pengerjaan obras portabel di tempat dan pasang presisi mengikuti kontur masjid.</p>
                   </div>
 
-                  <div className="space-y-1.5 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                    <label className="text-slate-300 font-semibold flex items-center gap-2">
+                  <div className="space-y-1.5 p-4 rounded-2xl bg-[#F5F6F8] border-2 border-[#A6AFC1]/70">
+                    <label className="text-[#233858] font-semibold font-semibold flex items-center gap-2">
                       <Send className="w-4 h-4 text-amber-400" />
                       <span>4. Jadwal Ekspedisi & Pengiriman Kargo</span>
                     </label>
@@ -6912,7 +6902,7 @@ export default function Dashboard() {
                       value={scheduleSettings.shipping_schedule}
                       onChange={(e) => setScheduleSettings((prev) => ({ ...prev, shipping_schedule: e.target.value }))}
                       placeholder="Contoh: Jabodetabek setiap hari kerja. Luar kota: Indah, Dakota, Baraka Kargo."
-                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-3 text-white text-xs focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-[#233858] text-xs focus:border-[#5A7194] focus:outline-none"
                     />
                     <p className="text-[11px] text-slate-500">Armada internal dan ekspedisi pengiriman resmi ke seluruh Nusantara.</p>
                   </div>
@@ -6925,7 +6915,7 @@ export default function Dashboard() {
                   <button
                     onClick={() => handleSaveStoreSection('schedule_info', scheduleSettings, 'Jadwal operasional berhasil disimpan!')}
                     disabled={savingStoreInfo}
-                    className="py-2.5 px-6 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-sky-600/20 disabled:opacity-50"
+                    className="py-2.5 px-6 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-sky-600/20 disabled:opacity-50"
                   >
                     {savingStoreInfo ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                     <span>{savingStoreInfo ? 'Menyimpan...' : 'Simpan Perubahan Jadwal'}</span>
@@ -6942,7 +6932,7 @@ export default function Dashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
                 <div>
                   <div className="flex items-center gap-2.5">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-[#233858] flex items-center gap-2">
                       <MapPin className="w-5 h-5 text-amber-400" />
                       <span>Lokasi Alamat Showroom & Gudang Sultan Carpet Gallery</span>
                     </h3>
@@ -6956,18 +6946,9 @@ export default function Dashboard() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <a
-                    href={locationSettings.main_showroom?.maps_url || 'https://maps.google.com'}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="py-2 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition border border-slate-700 flex items-center gap-1.5 shrink-0"
-                  >
-                    <Map className="w-4 h-4 text-amber-400" />
-                    <span>Peta Utama</span>
-                  </a>
                   <button
                     onClick={handleOpenAddLocation}
-                    className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition shadow-lg shadow-amber-600/20 flex items-center gap-1.5 shrink-0"
+                    className="py-2 px-4 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-lg shadow-amber-600/20 flex items-center gap-1.5 shrink-0 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Tambah Lokasi Baru</span>
@@ -6994,7 +6975,7 @@ export default function Dashboard() {
 
                 if (locationsList.length === 0) {
                   return (
-                    <div className="p-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/30">
+                    <div className="p-12 text-center rounded-2xl border border-dashed border-[#A6AFC1]/60 bg-[#F5F6F8]/30">
                       <MapPin className="w-12 h-12 text-slate-600 mx-auto mb-3" />
                       <p className="font-semibold text-slate-400 text-sm">
                         Belum ada lokasi showroom atau cabang tersimpan
@@ -7004,7 +6985,7 @@ export default function Dashboard() {
                       </p>
                       <button
                         onClick={handleOpenAddLocation}
-                        className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs inline-flex items-center gap-1.5 transition"
+                        className="py-2 px-4 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs inline-flex items-center gap-1.5 transition"
                       >
                         <Plus className="w-4 h-4" />
                         <span>Tambah Lokasi Sekarang</span>
@@ -7016,55 +6997,37 @@ export default function Dashboard() {
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {locationsList.map((loc, idx) => {
-                      const typeStr = loc.type || 'Showroom';
-                      const badgeClass = typeStr.includes('Utama')
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                        : typeStr.includes('Gudang') || typeStr.includes('Obras')
-                        ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-                        : 'bg-purple-500/20 text-purple-300 border-purple-500/40';
-
                       return (
                         <div
                           key={loc.id || idx}
-                          className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl flex flex-col justify-between space-y-4 hover:border-slate-700 transition group"
+                          className="p-6 rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl shadow-xl flex flex-col justify-between space-y-4 hover:border-slate-700 transition group"
                         >
                           <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`px-2.5 py-1 rounded-full border text-xs font-bold ${badgeClass}`}>
-                                {loc.type || 'Showroom'}
-                              </span>
-                              <div className="flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
+                            <div className="flex items-start justify-between gap-3">
+                              <h4 className="font-bold text-[#233858] text-base leading-snug transition flex-1">{loc.title}</h4>
+                              <div className="flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition shrink-0">
                                 <button
                                   onClick={() => handleOpenEditLocation(loc, idx)}
                                   title="Edit Lokasi & Alamat"
-                                  className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+                                  className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteLocation(idx, loc.title)}
                                   title="Hapus Lokasi"
-                                  className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-900/50 transition"
+                                  className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-900/50 transition cursor-pointer"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
 
-                            <h4 className="font-bold text-white text-base leading-snug group-hover:text-amber-300 transition">
-                              {loc.title}
-                            </h4>
-
                             <p className="text-xs text-slate-300 leading-relaxed">
                               {loc.address}
                             </p>
 
-                            <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 text-xs space-y-1.5">
-                              {loc.landmark && (
-                                <p className="text-slate-400">
-                                  <strong className="text-slate-300">Landmark:</strong> {loc.landmark}
-                                </p>
-                              )}
+                            <div className="p-3.5 rounded-2xl bg-[#F5F6F8]/80 border border-[#A6AFC1]/60 text-xs space-y-1.5">
                               {loc.hours && (
                                 <p className="text-slate-400">
                                   <strong className="text-slate-300">Jam Buka:</strong> {loc.hours}
@@ -7125,13 +7088,10 @@ export default function Dashboard() {
           {activeTab === 'warranty' && (
             <div className="space-y-6">
               {/* Live Form Editor for Warranty */}
-              <div className="p-6 sm:p-8 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl space-y-6">
+              <div className="p-6 sm:p-8 rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl shadow-xl space-y-6">
                 <div className="pb-4 border-b border-slate-800">
                   <div className="flex items-center gap-2.5">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                      <ShieldCheck className="w-5 h-5 text-indigo-400" />
-                      <span>{warrantySettings.title || 'Jaminan Kualitas & Garansi Resmi Sultan Carpet'}</span>
-                    </h3>
+                    <h3 className="text-xl font-black text-[#233858] flex items-center gap-2"><ShieldCheck className="w-6 h-6 text-[#5A7194]" /><span>{warrantySettings.title || 'Jaminan Kualitas & Garansi Resmi Sultan Carpet'}</span></h3>
                     <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-semibold text-xs">
                       Resmi Reseller Utama
                     </span>
@@ -7143,37 +7103,37 @@ export default function Dashboard() {
 
                 <div className="space-y-4 text-xs">
                   <div>
-                    <label className="text-slate-300 font-semibold block mb-1.5">Judul Dokumen Garansi</label>
+                    <label className="text-[#233858] font-semibold font-semibold block mb-1.5">Judul Dokumen Garansi</label>
                     <input
                       type="text"
                       value={warrantySettings.title}
                       onChange={(e) => setWarrantySettings((prev) => ({ ...prev, title: e.target.value }))}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2.5 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                      className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2.5 text-[#233858] text-xs focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="text-slate-300 font-semibold block mb-1.5">Ringkasan Garansi</label>
+                    <label className="text-[#233858] font-semibold font-semibold block mb-1.5">Ringkasan Garansi</label>
                     <textarea
                       rows={2}
                       value={warrantySettings.summary}
                       onChange={(e) => setWarrantySettings((prev) => ({ ...prev, summary: e.target.value }))}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                      className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-[#233858] text-xs focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="text-slate-300 font-semibold block mb-1.5">Panduan Langkah Klaim</label>
+                    <label className="text-[#233858] font-semibold font-semibold block mb-1.5">Panduan Langkah Klaim</label>
                     <textarea
                       rows={3}
                       value={warrantySettings.claim_steps}
                       onChange={(e) => setWarrantySettings((prev) => ({ ...prev, claim_steps: e.target.value }))}
-                      className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white text-xs focus:border-indigo-500 focus:outline-none leading-relaxed"
+                      className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-[#233858] text-xs focus:border-indigo-500 focus:outline-none leading-relaxed"
                     />
                   </div>
                   <div className="flex justify-end pt-2 border-t border-slate-800">
                     <button
                       onClick={() => handleSaveStoreSection('warranty_info', warrantySettings, 'Ketentuan garansi berhasil disimpan!')}
                       disabled={savingStoreInfo}
-                      className="py-2.5 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+                      className="py-2.5 px-6 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
                     >
                       {savingStoreInfo ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                       <span>{savingStoreInfo ? 'Menyimpan...' : 'Simpan Ketentuan Garansi'}</span>
@@ -7192,7 +7152,7 @@ export default function Dashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
                 <div>
                   <div className="flex items-center gap-2.5">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-[#233858] flex items-center gap-2">
                       <Tag className="w-5 h-5 text-rose-400" />
                       <span>{promoSettings.title || 'Promo & Penawaran Spesial Karpet'}</span>
                     </h3>
@@ -7218,7 +7178,7 @@ export default function Dashboard() {
                     });
                     setShowPromoModal(true);
                   }}
-                  className="py-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-lg shadow-rose-600/20 flex items-center gap-1.5 shrink-0"
+                  className="py-2 px-4 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-sm flex items-center gap-1.5 shrink-0"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Tambah Promo Baru</span>
@@ -7230,7 +7190,7 @@ export default function Dashboard() {
                 {(promoSettings.active_promos || []).map((promo, idx) => (
                   <div
                     key={promo.id || idx}
-                    className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 backdrop-blur-xl shadow-xl flex flex-col justify-between space-y-4 hover:border-rose-500/30 transition group"
+                    className="p-6 rounded-3xl border border-[#A6AFC1]/40 bg-white shadow-sm backdrop-blur-xl shadow-xl flex flex-col justify-between space-y-4 hover:border-rose-500/30 transition group"
                   >
                     <div className="space-y-3">
                       <div className="flex items-center justify-between gap-2">
@@ -7241,10 +7201,8 @@ export default function Dashboard() {
                           Masa Berlaku: <strong className="text-slate-300">{promo.valid_until || 'Tersedia'}</strong>
                         </span>
                       </div>
-                      <h4 className="font-bold text-white text-base group-hover:text-rose-300 transition">
-                        {promo.title}
-                      </h4>
-                      <div className="p-3 rounded-2xl bg-rose-950/20 border border-rose-500/20 text-rose-300 font-bold text-sm">
+                      <h4 className="font-bold text-[#233858] text-base transition">{promo.title}</h4>
+                      <div className="p-3.5 rounded-2xl bg-[#E8E6DB] border border-[#A6AFC1]/60 text-[#233858] font-bold text-sm shadow-xs">
                         🎉 {promo.discount}
                       </div>
                       <p className="text-xs text-slate-300 leading-relaxed">
@@ -7308,30 +7266,30 @@ export default function Dashboard() {
 
           {/* TAB: TANYA JAWAB AI (AI KNOWLEDGE) */}
           {activeTab === 'qna' && (
-            <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200">
+            <div className="w-full space-y-6 animate-in fade-in duration-200">
               {/* Top Action & Knowledge Management Bar */}
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-sm">
+              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-5 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm">
                 <div className="flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
+                  <div className="w-10 h-10 rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/50 text-[#5A7194] flex items-center justify-center shrink-0 shadow-inner">
                     <Brain className="w-5 h-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2.5 flex-wrap">
-                      <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">
+                      <h3 className="text-sm sm:text-base font-bold text-[#233858] tracking-tight">
                         Basis Tanya Jawab AI (Knowledge Base)
                       </h3>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-mono font-semibold">
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#E8E6DB] border border-[#A6AFC1]/60 text-[#233858] text-[11px] font-mono font-bold shadow-xs">
                         {faqs.length} Q&A Aktif
                       </span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-xs text-[#5A7194] mt-0.5">
                       Kelola bank pertanyaan dan jawaban resmi toko agar AI menjawab chat WhatsApp pelanggan secara konsisten dan akurat.
                     </p>
                   </div>
                 </div>
 
                 {/* Action Buttons Toolbar */}
-                <div className="flex flex-wrap items-center gap-2.5 sm:self-auto self-start">
+                <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                   {/* Hidden Excel File Input */}
                   <input
                     type="file"
@@ -7345,9 +7303,9 @@ export default function Dashboard() {
                   <button
                     onClick={handleDownloadFaqTemplate}
                     title="Unduh format template Excel (.xlsx) untuk mengisi pertanyaan & jawaban secara massal"
-                    className="px-3.5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-600 text-xs font-semibold flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer"
+                    className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-[#F5F6F8] text-[#233858] border border-[#A6AFC1] text-xs font-semibold flex items-center gap-2 shadow-xs transition hover:border-[#5A7194] active:scale-95 cursor-pointer"
                   >
-                    <Download className="w-4 h-4 text-emerald-400" />
+                    <Download className="w-4 h-4 text-[#5A7194]" />
                     <span>Download Template Excel</span>
                   </button>
 
@@ -7356,18 +7314,16 @@ export default function Dashboard() {
                     onClick={() => excelFileInputRef.current?.click()}
                     disabled={faqImporting}
                     title="Upload file Excel (.xlsx / .csv) untuk otomatis menambah Q&A ke memori AI"
-                    className="px-3.5 py-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30 hover:border-emerald-500/50 text-xs font-semibold flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3.5 py-2.5 rounded-xl bg-[#F5F6F8] hover:bg-[#E8E6DB] text-[#233858] border border-[#A6AFC1] text-xs font-semibold flex items-center gap-2 shadow-xs transition hover:border-[#5A7194] active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Upload className={`w-4 h-4 text-emerald-400 ${faqImporting ? 'animate-bounce' : ''}`} />
+                    <Upload className={"w-4 h-4 text-[#5A7194] " + (faqImporting ? 'animate-bounce' : '')} />
                     <span>{faqImporting ? 'Mengimpor Data...' : 'Upload Excel'}</span>
                   </button>
-
-
 
                   {/* Tambah Tanya Jawab Manual */}
                   <button
                     onClick={() => handleOpenAddFaq()}
-                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/25 flex items-center gap-2 cursor-pointer active:scale-95"
+                    className="px-4 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-sm flex items-center gap-2 cursor-pointer active:scale-95"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Tambah Tanya Jawab</span>
@@ -7376,107 +7332,95 @@ export default function Dashboard() {
               </div>
 
               {/* Metrics Stats Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                  <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
-                    <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                <div className="p-4 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[#5A7194] text-xs mb-1 font-medium">
                     <span>Total Tanya-Jawab</span>
+                    <div className="p-1.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/40 text-[#5A7194]">
+                      <HelpCircle className="w-4 h-4" />
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-xl font-bold text-white font-mono">{faqs.length}</span>
-                    <span className="text-[10px] text-emerald-400">Aktif Dipelajari</span>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="text-2xl font-bold text-[#233858] font-mono">{faqs.length}</span>
+                    <span className="text-[11px] font-semibold text-[#2F855A]">Aktif Dipelajari</span>
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                  <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
-                    <Tag className="w-3.5 h-3.5 text-amber-400" />
+                <div className="p-4 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[#5A7194] text-xs mb-1 font-medium">
                     <span>Kategori Topik</span>
+                    <div className="p-1.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/40 text-[#5A7194]">
+                      <Tag className="w-4 h-4" />
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-xl font-bold text-white font-mono">
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="text-2xl font-bold text-[#233858] font-mono">
                       {new Set(faqs.map(f => f.category || 'Umum')).size}
                     </span>
-                    <span className="text-[10px] text-amber-300">Kategori</span>
+                    <span className="text-[11px] font-semibold text-[#5A7194]">Kategori</span>
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                  <div className="flex items-center gap-2 text-slate-400 text-[11px] mb-1">
-                    <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Pertanyaan Chat Asli</span>
+                <div className="p-4 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[#5A7194] text-xs mb-1 font-medium">
+                    <span>Penyerapan Memori AI</span>
+                    <div className="p-1.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/40 text-[#2F855A]">
+                      <CheckCircle className="w-4 h-4" />
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-xl font-bold text-white font-mono">{customerQuestions.length}</span>
-                    <span className="text-[10px] text-sky-300">Terdeteksi</span>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="text-2xl font-bold text-[#2F855A] font-mono">100%</span>
+                    <span className="text-[11px] font-semibold text-[#2F855A]">Groq & Gemini Siap</span>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[#5A7194] text-xs mb-1 font-medium">
+                    <span>Sumber Pengetahuan</span>
+                    <div className="p-1.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/40 text-[#5A7194]">
+                      <BookOpen className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="text-2xl font-bold text-[#233858] font-mono">Admin & CS</span>
+                    <span className="text-[11px] font-semibold text-[#5A7194]">Toko Resmi</span>
                   </div>
                 </div>
               </div>
 
-              {/* Sub-Tabs Switcher */}
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setFaqSubTab('qa_list')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                      faqSubTab === 'qa_list'
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                    }`}
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Daftar Tanya Jawab AI</span>
-                    <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] font-mono text-slate-300">
-                      {faqs.length}
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setFaqSubTab('customer_insights');
-                      fetchCustomerQuestions();
-                    }}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                      faqSubTab === 'customer_insights'
-                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                    }`}
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Pola Pertanyaan dari Chat Pelanggan</span>
-                    {customerQuestions.length > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full bg-sky-500/20 text-[10px] font-mono text-sky-300">
-                        {customerQuestions.length}
-                      </span>
-                    )}
-                  </button>
+              {/* Section Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#A6AFC1]/40 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <h4 className="text-sm font-bold text-[#233858]">Daftar Tanya Jawab AI</h4>
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#E8E6DB] text-[#233858] border border-[#A6AFC1]/60 text-xs font-bold font-mono shadow-xs">
+                    {faqs.length}
+                  </span>
                 </div>
 
-                <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>AI otomatis mempelajari data ini</span>
+                <div className="flex items-center gap-2 text-xs font-medium text-[#5A7194]">
+                  <span className="w-2 h-2 rounded-full bg-[#2F855A] animate-pulse"></span>
+                  <span>AI otomatis menyerap dan mempelajari data ini</span>
                 </div>
               </div>
 
-              {/* TAB 1: QA LIST & KNOWLEDGE BASE */}
-              {faqSubTab === 'qa_list' && (
-                <div className="space-y-4">
+              {/* QA LIST & KNOWLEDGE BASE */}
+              <div className="space-y-4">
                   {/* Search & Filter Bar */}
-                  <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-3">
+                  <div className="p-4 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm space-y-3">
                     <div className="flex flex-col md:flex-row md:items-center gap-3">
                       <div className="relative flex-1">
-                        <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#5A7194]" />
                         <input
                           type="text"
                           value={faqSearchQuery}
                           onChange={(e) => setFaqSearchQuery(e.target.value)}
                           placeholder="Cari pertanyaan atau jawaban..."
-                          className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:bg-white transition"
                         />
                         {faqSearchQuery && (
                           <button
                             onClick={() => setFaqSearchQuery('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5A7194] hover:text-[#233858]"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -7486,31 +7430,30 @@ export default function Dashboard() {
                       {faqCategoryFilter !== 'Semua' && (
                         <button
                           onClick={() => setFaqCategoryFilter('Semua')}
-                          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+                          className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-[#F5F6F8] text-[#233858] border border-[#A6AFC1] text-xs font-semibold flex items-center gap-1.5 shrink-0 transition cursor-pointer shadow-xs"
                         >
-                          <RotateCcw className="w-3 h-3" />
+                          <RotateCcw className="w-3.5 h-3.5 text-[#5A7194]" />
                           <span>Reset Filter</span>
                         </button>
                       )}
                     </div>
 
                     {/* Category Filter Pills */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+                    <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                       {['Semua', ...allFaqCategories].map((cat) => (
                         <button
                           key={cat}
                           onClick={() => setFaqCategoryFilter(cat)}
-                          className={`px-3 py-1.5 rounded-lg whitespace-nowrap text-xs font-medium transition cursor-pointer ${
-                            faqCategoryFilter === cat
-                              ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20'
-                              : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                          }`}
+                          className={
+                            "px-3 py-1.5 rounded-xl whitespace-nowrap text-xs font-semibold transition cursor-pointer shadow-xs " +
+                            (faqCategoryFilter === cat
+                              ? 'bg-[#5A7194] text-white border border-[#485E7E] shadow-sm'
+                              : 'bg-white text-[#233858] hover:bg-[#F5F6F8] border border-[#A6AFC1]/60 hover:border-[#5A7194]')
+                          }
                         >
                           {cat}
                         </button>
                       ))}
-
-
                     </div>
                   </div>
 
@@ -7531,19 +7474,19 @@ export default function Dashboard() {
 
                     if (filtered.length === 0) {
                       return (
-                        <div className="p-12 rounded-3xl border border-slate-800 bg-slate-900/40 text-center space-y-3">
-                          <div className="w-12 h-12 rounded-2xl bg-slate-800 text-slate-400 mx-auto flex items-center justify-center text-xl">
-                            🔍
+                        <div className="p-12 rounded-3xl border border-[#A6AFC1]/60 bg-white text-center space-y-3 shadow-sm">
+                          <div className="w-12 h-12 rounded-2xl bg-[#F5F6F8] border border-[#A6AFC1]/50 text-[#5A7194] mx-auto flex items-center justify-center text-xl">
+                            <Search className="w-6 h-6" />
                           </div>
-                          <h4 className="text-sm font-semibold text-white">Tidak ada Tanya-Jawab yang cocok</h4>
-                          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                          <h4 className="text-sm font-bold text-[#233858]">Tidak ada Tanya-Jawab yang cocok</h4>
+                          <p className="text-xs text-[#5A7194] max-w-sm mx-auto">
                             {faqSearchQuery || faqCategoryFilter !== 'Semua'
                               ? 'Coba ganti kata kunci pencarian atau reset filter kategori di atas.'
                               : 'Belum ada data tanya-jawab. Klik tombol di bawah untuk menambah pertanyaan pertama.'}
                           </p>
                           <button
                             onClick={() => handleOpenAddFaq()}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 cursor-pointer"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white text-xs font-semibold shadow-sm cursor-pointer"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             <span>Tambah Tanya Jawab Baru</span>
@@ -7553,20 +7496,20 @@ export default function Dashboard() {
                     }
 
                     return (
-                      <div className="grid grid-cols-1 gap-4">
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                         {filtered.map((item, idx) => (
                           <div
                             key={item.id || idx}
-                            className="p-5 rounded-2xl border border-slate-800/90 bg-[#0f172a]/80 backdrop-blur-md hover:border-slate-700 transition space-y-3.5 shadow-lg relative group"
+                            className="p-5 rounded-2xl border border-[#A6AFC1]/50 bg-white shadow-sm hover:border-[#5A7194] transition space-y-4 relative group flex flex-col justify-between"
                           >
                             {/* Card Header */}
                             <div className="flex items-start justify-between gap-3">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold">
+                                <span className="px-2.5 py-1 rounded-lg bg-[#E8E6DB] border border-[#A6AFC1]/60 text-[#233858] text-[11px] font-bold shadow-xs">
                                   🏷️ {item.category || 'Umum'}
                                 </span>
                                 {item.source && (
-                                  <span className="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-400 text-[10px] font-medium">
+                                  <span className="px-2 py-0.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/40 text-[#5A7194] text-[10px] font-medium">
                                     Sumber: {item.source}
                                   </span>
                                 )}
@@ -7575,48 +7518,48 @@ export default function Dashboard() {
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <button
                                   onClick={() => handleEditFaq(item)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-300 hover:bg-slate-800 transition cursor-pointer"
+                                  className="p-1.5 rounded-lg bg-white hover:bg-[#F5F6F8] text-[#5A7194] hover:text-[#233858] border border-[#A6AFC1]/50 hover:border-[#5A7194] transition cursor-pointer shadow-xs"
                                   title="Edit Pertanyaan & Jawaban"
                                 >
-                                  <Edit3 className="w-4 h-4" />
+                                  <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteFaq(item.id || idx)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
+                                  className="p-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-500 hover:text-rose-700 border border-[#A6AFC1]/50 hover:border-rose-300 transition cursor-pointer shadow-xs"
                                   title="Hapus dari memori AI"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
 
                             {/* Question */}
                             <div className="flex items-start gap-3">
-                              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                              <div className="w-7 h-7 rounded-lg bg-[#5A7194]/15 border border-[#5A7194]/30 text-[#5A7194] flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
                                 Q
                               </div>
                               <div className="space-y-1">
-                                <p className="text-[11px] text-slate-400 font-medium">Pertanyaan Pelanggan:</p>
-                                <h3 className="text-sm font-semibold text-white leading-snug">
+                                <p className="text-[11px] text-[#5A7194] font-semibold uppercase tracking-wider">Pertanyaan Pelanggan:</p>
+                                <h3 className="text-sm font-bold text-[#233858] leading-snug">
                                   {item.q}
                                 </h3>
                               </div>
                             </div>
 
                             {/* AI Official Answer */}
-                            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800/80 space-y-1.5">
-                              <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-semibold">
+                            <div className="p-3.5 rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/50 space-y-1.5">
+                              <div className="flex items-center gap-1.5 text-[11px] text-[#5A7194] font-bold">
                                 <Bot className="w-3.5 h-3.5" />
                                 <span>Jawaban Resmi AI & CS:</span>
                               </div>
-                              <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line pl-4 border-l-2 border-emerald-500/40">
+                              <p className="text-xs text-[#233858] leading-relaxed whitespace-pre-line pl-3 border-l-2 border-[#5A7194]">
                                 {item.a}
                               </p>
                             </div>
 
                             {/* Footer Status */}
-                            <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-                              <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                            <div className="pt-3 border-t border-[#A6AFC1]/30 flex items-center justify-between text-[11px] mt-auto">
+                              <div className="flex items-center gap-1.5 text-[#2F855A] font-semibold">
                                 <CheckCircle className="w-3.5 h-3.5" />
                                 <span>Aktif diajarkan ke AI (Groq & Gemini)</span>
                               </div>
@@ -7625,9 +7568,9 @@ export default function Dashboard() {
                                   setSimPrompt(item.q);
                                   setActiveTab('gemini');
                                 }}
-                                className="text-slate-400 hover:text-purple-300 flex items-center gap-1 transition cursor-pointer"
+                                className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#F5F6F8] text-[#5A7194] hover:text-[#233858] border border-[#A6AFC1]/50 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
                               >
-                                <Sparkles className="w-3 h-3 text-purple-400" />
+                                <Sparkles className="w-3.5 h-3.5 text-[#5A7194]" />
                                 <span>Uji di Simulator AI</span>
                               </button>
                             </div>
@@ -7637,166 +7580,145 @@ export default function Dashboard() {
                     );
                   })()}
                 </div>
-              )}
-
-              {/* TAB 2: REAL CUSTOMER QUESTIONS FROM WHATSAPP */}
-              {faqSubTab === 'customer_insights' && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800">
-                    <div className="space-y-1">
-                      <h4 className="text-xs font-semibold text-white flex items-center gap-2">
-                        <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
-                        <span>Pertanyaan Nyata Terdeteksi dari Obrolan WhatsApp</span>
-                      </h4>
-                      <p className="text-[11px] text-slate-400">
-                        Sistem memindai pesan masuk dari riwayat WhatsApp untuk mendeteksi pertanyaan aktual. Anda bisa langsung mengajari AI jawaban idealnya.
-                      </p>
-                    </div>
-                  </div>
-
-                  {customerQuestions.length === 0 ? (
-                    <div className="p-12 rounded-3xl border border-slate-800 bg-slate-900/40 text-center space-y-3">
-                      <div className="w-12 h-12 rounded-2xl bg-slate-800 text-slate-400 mx-auto flex items-center justify-center text-xl">
-                        💬
-                      </div>
-                      <h4 className="text-sm font-semibold text-white">Belum Ada Pertanyaan Terdeteksi</h4>
-                      <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                        Ketika pelanggan WhatsApp mengirim pesan yang mengandung pertanyaan (misal: "apakah ada karpet polos?", "berapa harga?"), pertanyaan tersebut akan otomatis muncul di sini.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                      {customerQuestions.map((cq, idx) => (
-                        <div
-                          key={cq.id || idx}
-                          className="p-4 rounded-2xl border border-slate-800 bg-[#0f172a]/70 hover:border-slate-700 transition space-y-3 shadow-md flex flex-col justify-between"
-                        >
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <div className="flex items-center gap-1.5 text-slate-300 font-semibold">
-                                <User className="w-3.5 h-3.5 text-slate-400" />
-                                <span>{cq.senderName || 'Pelanggan'}</span>
-                              </div>
-                              <span className="text-[10px] text-slate-400">
-                                {cq.timestamp ? new Date(cq.timestamp).toLocaleDateString('id-ID', { hour: '2-digit', minute: '2-digit' }) : 'Baru saja'}
-                              </span>
-                            </div>
-
-                            <p className="text-xs text-white font-medium bg-slate-950/70 p-3 rounded-xl border border-slate-850 leading-relaxed">
-                              "{cq.text}"
-                            </p>
-                          </div>
-
-                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                            {cq.isLearned ? (
-                              <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                                <CheckCircle className="w-3.5 h-3.5" />
-                                <span>Sudah Masuk Q&A</span>
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-amber-400 font-medium flex items-center gap-1">
-                                <AlertCircle className="w-3.5 h-3.5" />
-                                <span>Belum Masuk Q&A</span>
-                              </span>
-                            )}
-
-                            <button
-                              onClick={() => handleOpenAddFaq({
-                                text: cq.text,
-                                senderName: cq.senderName,
-                                category: 'Karpet Masjid & Musholla'
-                              })}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
-                                cq.isLearned
-                                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20'
-                              }`}
-                            >
-                              <Plus className="w-3 h-3" />
-                              <span>{cq.isLearned ? 'Perbarui Jawaban' : 'Ajari AI Jawaban Ini'}</span>
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-
             </div>
           )}
 
           {/* TAB: HANDS-OFF CS & AI TAKEOVER */}
           {activeTab === 'handoff' && (() => {
             return (
-              <div className="space-y-6">
-                {/* Top Action Controls */}
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  {/* Global Handoff Toggle */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newStatus = !handoffConfig.enabled;
-                      handleSaveHandoffConfig({ ...handoffConfig, enabled: newStatus });
-                    }}
-                    disabled={savingHandoffConfig}
-                    className={`py-2 px-4 rounded-xl font-semibold text-xs border flex items-center gap-2 transition cursor-pointer ${
-                      handoffConfig.enabled
-                        ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/60'
-                        : 'bg-rose-950/40 border-rose-500/40 text-rose-300 hover:bg-rose-950/60'
-                    }`}
-                    title="Klik untuk mengaktifkan atau menonaktifkan fitur hands-off otomatis"
-                  >
-                    <span className={`w-2 h-2 rounded-full ${handoffConfig.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
-                    <span>Hands-Off Otomatis: {handoffConfig.enabled ? 'AKTIF' : 'NONAKTIF'}</span>
-                  </button>
+              <div className="space-y-6 animate-in fade-in duration-200">
+                {/* Header Banner */}
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-5 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/50 text-[#5A7194] flex items-center justify-center shrink-0 shadow-inner">
+                      <Headphones className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h3 className="text-sm sm:text-base font-bold text-[#233858] tracking-tight">
+                          Hands-Off Customer Service & AI Takeover
+                        </h3>
+                        <span className={"px-2.5 py-0.5 rounded-full border text-[11px] font-mono font-bold shadow-xs flex items-center gap-1.5 " + (
+                          handoffConfig.enabled
+                            ? 'bg-emerald-50 border-emerald-300 text-[#2F855A]'
+                            : 'bg-rose-50 border-rose-300 text-[#C53030]'
+                        )}>
+                          <span className={"w-1.5 h-1.5 rounded-full " + (handoffConfig.enabled ? 'bg-[#2F855A] animate-pulse' : 'bg-[#C53030]')} />
+                          <span>{handoffConfig.enabled ? 'Fitur Aktif' : 'Fitur Nonaktif'}</span>
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#5A7194] mt-0.5">
+                        Atur pengalihan obrolan otomatis dari bot AI ke Customer Service manusia saat pelanggan membutuhkan bantuan khusus.
+                      </p>
+                    </div>
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('chats')}
-                    className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700/80 flex items-center gap-1.5 transition cursor-pointer shadow-sm"
-                  >
-                    <MessageSquare className="w-4 h-4 text-emerald-400" />
-                    <span>Buka Obrolan WA</span>
-                  </button>
+                  {/* Actions */}
+                  <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newStatus = !handoffConfig.enabled;
+                        handleSaveHandoffConfig({ ...handoffConfig, enabled: newStatus });
+                      }}
+                      disabled={savingHandoffConfig}
+                      className={"py-2 px-4 rounded-xl font-bold text-xs border flex items-center gap-2 transition cursor-pointer shadow-xs active:scale-95 " + (
+                        handoffConfig.enabled
+                          ? 'bg-emerald-50 border-emerald-300 text-[#2F855A] hover:bg-emerald-100'
+                          : 'bg-rose-50 border-rose-300 text-[#C53030] hover:bg-rose-100'
+                      )}
+                      title="Klik untuk mengaktifkan atau menonaktifkan fitur hands-off otomatis"
+                    >
+                      <span className={"w-2 h-2 rounded-full " + (handoffConfig.enabled ? 'bg-[#2F855A] animate-pulse' : 'bg-[#C53030]')} />
+                      <span>Hands-Off Otomatis: {handoffConfig.enabled ? 'AKTIF' : 'NONAKTIF'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('chats')}
+                      className="py-2 px-4 rounded-xl bg-white hover:bg-[#F5F6F8] text-[#233858] font-semibold text-xs border border-[#A6AFC1] hover:border-[#5A7194] flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95"
+                    >
+                      <MessageSquare className="w-4 h-4 text-[#5A7194]" />
+                      <span>Buka Obrolan WA</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* KPI Metrics */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                    <div className="flex items-center justify-between text-slate-400 mb-1">
-                      <span className="text-xs font-medium">Auto-Expire Sesi</span>
-                      <Clock className="w-4 h-4 text-blue-400" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  <div className="p-4 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-[#5A7194] text-xs mb-1 font-medium">
+                      <span>Status Pengalihan CS</span>
+                      <div className="p-1.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/40 text-[#5A7194]">
+                        <Headphones className="w-4 h-4" />
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold text-white">
-                      {handoffConfig.auto_expire_hours || 2} <span className="text-sm font-normal text-slate-400">Jam</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-bold text-[#233858] font-mono">
+                        {handoffConfig.enabled ? 'Otomatis' : 'Manual'}
+                      </span>
+                      <span className={"text-[11px] font-semibold " + (handoffConfig.enabled ? 'text-[#2F855A]' : 'text-[#C53030]')}>
+                        {handoffConfig.enabled ? 'Aktif Mengawasi' : 'Nonaktif'}
+                      </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-1">Otomatis kembali ke bot AI</p>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                    <div className="flex items-center justify-between text-slate-400 mb-1">
-                      <span className="text-xs font-medium">Kata Kunci Pemicu</span>
-                      <Tag className="w-4 h-4 text-purple-400" />
+                  <div className="p-4 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-[#5A7194] text-xs mb-1 font-medium">
+                      <span>Kata Kunci Pemicu Alih</span>
+                      <div className="p-1.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/40 text-[#5A7194]">
+                        <Tag className="w-4 h-4" />
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold text-white">
-                      {handoffConfig.keywords?.length || 0} <span className="text-sm font-normal text-slate-400">Pemicu</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-bold text-[#233858] font-mono">
+                        {handoffConfig.keywords?.length || 0}
+                      </span>
+                      <span className="text-[11px] font-semibold text-[#5A7194]">Panggil CS Manusia</span>
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-1">Kata panggil CS manusia</p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-[#5A7194] text-xs mb-1 font-medium">
+                      <span>Kata Kunci Rilis Bot</span>
+                      <div className="p-1.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/40 text-[#2F855A]">
+                        <Bot className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-bold text-[#233858] font-mono">
+                        {handoffConfig.release_keywords?.length || 0}
+                      </span>
+                      <span className="text-[11px] font-semibold text-[#2F855A]">Kembali ke AI</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-[#5A7194] text-xs mb-1 font-medium">
+                      <span>Auto-Expire Sesi CS</span>
+                      <div className="p-1.5 rounded-lg bg-[#F5F6F8] border border-[#A6AFC1]/40 text-[#5A7194]">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-bold text-[#233858] font-mono">
+                        {handoffConfig.auto_expire_hours || 2} Jam
+                      </span>
+                      <span className="text-[11px] font-semibold text-[#5A7194]">Otomatis Balik ke Bot</span>
+                    </div>
                   </div>
                 </div>
 
                 {/* Sub-Tabs Navigation */}
-                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2.5 border-b border-[#A6AFC1]/40 pb-3">
                   <button
                     type="button"
                     onClick={() => setHandoffSubTab('rules')}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
+                    className={"px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs " + (
                       handoffSubTab === 'rules'
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                    }`}
+                        ? 'bg-[#5A7194] text-white border border-[#485E7E] shadow-sm'
+                        : 'bg-white text-[#233858] hover:bg-[#F5F6F8] border border-[#A6AFC1]/60 hover:border-[#5A7194]'
+                    )}
                   >
                     <Settings className="w-4 h-4" />
                     <span>Aturan & Kata Kunci Pemicu</span>
@@ -7805,11 +7727,11 @@ export default function Dashboard() {
                   <button
                     type="button"
                     onClick={() => setHandoffSubTab('tester')}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
+                    className={"px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs " + (
                       handoffSubTab === 'tester'
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                    }`}
+                        ? 'bg-[#5A7194] text-white border border-[#485E7E] shadow-sm'
+                        : 'bg-white text-[#233858] hover:bg-[#F5F6F8] border border-[#A6AFC1]/60 hover:border-[#5A7194]'
+                    )}
                   >
                     <Zap className="w-4 h-4" />
                     <span>Uji Pemicu Hands-Off</span>
@@ -7819,23 +7741,23 @@ export default function Dashboard() {
                 {/* SUBTAB 2: ATURAN & KATA KUNCI PEMICU */}
                 {handoffSubTab === 'rules' && (
                   <div className="space-y-6">
-                    <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 space-y-6">
+                    <div className="p-6 rounded-3xl border border-[#A6AFC1]/50 bg-white shadow-sm space-y-6">
                       {/* Section 1: Trigger Keywords */}
-                      <div className="space-y-3 pb-6 border-b border-slate-800">
+                      <div className="space-y-3.5 pb-6 border-b border-[#A6AFC1]/40">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div>
-                            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                              <Tag className="w-4 h-4 text-amber-400" />
+                            <h4 className="text-sm font-bold text-[#233858] flex items-center gap-2">
+                              <Tag className="w-4 h-4 text-[#5A7194]" />
                               <span>Kata Kunci Pemicu Alih ke CS (Trigger Keywords)</span>
                             </h4>
-                            <p className="text-xs text-slate-400 mt-0.5">
+                            <p className="text-xs text-[#5A7194] mt-0.5">
                               Jika pelanggan mengetik salah satu kata kunci di bawah, AI otomatis berhenti membalas dan mode CS Manusia aktif.
                             </p>
                           </div>
                           <button
                             type="button"
                             onClick={() => handleLoadDefaultHandoffPresets('trigger')}
-                            className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-2 shrink-0 cursor-pointer"
+                            className="text-xs text-[#5A7194] hover:text-[#233858] font-bold underline underline-offset-2 shrink-0 cursor-pointer"
                           >
                             + Muat Rekomendasi CS
                           </button>
@@ -7846,23 +7768,23 @@ export default function Dashboard() {
                           {(handoffConfig.keywords || []).map((kw) => (
                             <span
                               key={kw}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#E8E6DB] border border-[#A6AFC1]/60 text-[#233858] text-xs font-bold shadow-xs hover:border-[#5A7194] transition"
                             >
                               <span>{kw}</span>
                               <button
                                 type="button"
                                 onClick={() => handleRemoveHandoffKeyword(kw)}
-                                className="text-amber-400 hover:text-rose-400 p-0.5 rounded transition cursor-pointer"
+                                className="text-[#5A7194] hover:text-rose-600 p-0.5 rounded transition cursor-pointer"
                                 title="Hapus kata kunci"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </span>
                           ))}
                         </div>
 
                         {/* Add Keyword Input */}
-                        <div className="flex items-center gap-2 pt-2">
+                        <div className="flex items-center gap-2 pt-1">
                           <input
                             type="text"
                             value={newHandoffKeyword}
@@ -7874,12 +7796,12 @@ export default function Dashboard() {
                               }
                             }}
                             placeholder="Ketik kata kunci baru (contoh: 'bicara orang', 'agen live')..."
-                            className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                            className="flex-1 rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:bg-white font-medium transition"
                           />
                           <button
                             type="button"
                             onClick={handleAddHandoffKeyword}
-                            className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
+                            className="py-2.5 px-4 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             <span>Tambah</span>
@@ -7888,21 +7810,21 @@ export default function Dashboard() {
                       </div>
 
                       {/* Section 2: Release Keywords */}
-                      <div className="space-y-3 pb-6 border-b border-slate-800">
+                      <div className="space-y-3.5 pb-6 border-b border-[#A6AFC1]/40">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div>
-                            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                              <Bot className="w-4 h-4 text-emerald-400" />
+                            <h4 className="text-sm font-bold text-[#233858] flex items-center gap-2">
+                              <Bot className="w-4 h-4 text-[#2F855A]" />
                               <span>Kata Kunci Pengembalian ke Bot AI (Release Keywords)</span>
                             </h4>
-                            <p className="text-xs text-slate-400 mt-0.5">
+                            <p className="text-xs text-[#5A7194] mt-0.5">
                               Kata kunci yang mengetikkan perintah untuk mengaktifkan kembali bot AI setelah sesi dengan CS manusia selesai.
                             </p>
                           </div>
                           <button
                             type="button"
                             onClick={() => handleLoadDefaultHandoffPresets('release')}
-                            className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 shrink-0 cursor-pointer"
+                            className="text-xs text-[#2F855A] hover:text-[#276749] font-bold underline underline-offset-2 shrink-0 cursor-pointer"
                           >
                             + Muat Rekomendasi Bot
                           </button>
@@ -7913,23 +7835,23 @@ export default function Dashboard() {
                           {(handoffConfig.release_keywords || []).map((kw) => (
                             <span
                               key={kw}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-[#2F855A] text-xs font-bold shadow-xs hover:border-[#2F855A] transition"
                             >
                               <span>{kw}</span>
                               <button
                                 type="button"
                                 onClick={() => handleRemoveReleaseKeyword(kw)}
-                                className="text-emerald-400 hover:text-rose-400 p-0.5 rounded transition cursor-pointer"
+                                className="text-emerald-600 hover:text-rose-600 p-0.5 rounded transition cursor-pointer"
                                 title="Hapus kata kunci rilis"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </span>
                           ))}
                         </div>
 
                         {/* Add Release Keyword Input */}
-                        <div className="flex items-center gap-2 pt-2">
+                        <div className="flex items-center gap-2 pt-1">
                           <input
                             type="text"
                             value={newReleaseKeyword}
@@ -7941,12 +7863,12 @@ export default function Dashboard() {
                               }
                             }}
                             placeholder="Ketik kata rilis baru (contoh: '!bot', 'kembali ke bot')..."
-                            className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                            className="flex-1 rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:bg-white font-medium transition"
                           />
                           <button
                             type="button"
                             onClick={handleAddReleaseKeyword}
-                            className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
+                            className="py-2.5 px-4 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             <span>Tambah</span>
@@ -7955,16 +7877,16 @@ export default function Dashboard() {
                       </div>
 
                       {/* Section 3: Durations & Auto Messages */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pb-6 border-b border-slate-800">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pb-6 border-b border-[#A6AFC1]/40">
                         <div className="space-y-1.5">
-                          <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-blue-400" />
+                          <label className="text-xs font-bold text-[#233858] flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-[#5A7194]" />
                             <span>Auto-Expire Sesi CS</span>
                           </label>
                           <select
                             value={handoffConfig.auto_expire_hours || 2}
                             onChange={(e) => setHandoffConfig((prev) => ({ ...prev, auto_expire_hours: Number(e.target.value) }))}
-                            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                            className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:bg-white font-medium transition"
                           >
                             <option value={1}>1 Jam (Cepat)</option>
                             <option value={2}>2 Jam (Standar)</option>
@@ -7972,13 +7894,13 @@ export default function Dashboard() {
                             <option value={8}>8 Jam</option>
                             <option value={24}>24 Jam (1 Hari)</option>
                           </select>
-                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                          <p className="text-[11px] text-[#5A7194] leading-relaxed">
                             Jika CS tidak aktif merespons selama durasi ini, bot AI otomatis aktif kembali.
                           </p>
                         </div>
 
                         <div className="space-y-1.5 md:col-span-2">
-                          <label className="text-xs font-semibold text-slate-300">
+                          <label className="text-xs font-bold text-[#233858]">
                             Pesan Otomatis Saat Alih CS (Hand-off Notice)
                           </label>
                           <textarea
@@ -7986,7 +7908,7 @@ export default function Dashboard() {
                             value={handoffConfig.takeover_notice || ''}
                             onChange={(e) => setHandoffConfig((prev) => ({ ...prev, takeover_notice: e.target.value }))}
                             placeholder="Pesan yang dikirim ke pelanggan saat tangan dialihkan ke CS manusia..."
-                            className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-amber-500 leading-relaxed"
+                            className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:bg-white leading-relaxed font-medium transition"
                           />
                         </div>
                       </div>
@@ -7997,7 +7919,7 @@ export default function Dashboard() {
                           type="button"
                           onClick={() => handleSaveHandoffConfig()}
                           disabled={savingHandoffConfig}
-                          className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-semibold text-xs transition shadow-lg shadow-amber-600/20 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                          className="px-6 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-bold text-xs transition shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50 active:scale-95"
                         >
                           {savingHandoffConfig ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Settings className="w-4 h-4" />}
                           <span>{savingHandoffConfig ? 'Menyimpan Pengaturan...' : 'Simpan Pengaturan Hands-Off'}</span>
@@ -8010,13 +7932,13 @@ export default function Dashboard() {
                 {/* SUBTAB 3: TESTER */}
                 {handoffSubTab === 'tester' && (
                   <div className="space-y-4">
-                    <div className="p-6 rounded-3xl border border-slate-800 bg-[#0f172a]/70 space-y-5">
+                    <div className="p-6 rounded-3xl border border-[#A6AFC1]/50 bg-white shadow-sm space-y-5">
                       <div>
-                        <h4 className="text-base font-bold text-white flex items-center gap-2">
-                          <Zap className="w-4 h-4 text-amber-400" />
+                        <h4 className="text-base font-bold text-[#233858] flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-[#5A7194]" />
                           <span>Simulasi & Uji Kata Kunci Hands-Off</span>
                         </h4>
-                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        <p className="text-xs text-[#5A7194] mt-1 leading-relaxed">
                           Uji bagaimana sistem merespons pesan teks dari pelanggan. Anda dapat memastikan kata kunci pemicu CS atau kata kunci rilis bot berfungsi sesuai ekspektasi.
                         </p>
                       </div>
@@ -8028,19 +7950,19 @@ export default function Dashboard() {
                             value={testHandoffQuery}
                             onChange={(e) => setTestHandoffQuery(e.target.value)}
                             placeholder="Ketik contoh pesan pelanggan, misal: 'Halo saya ingin bicara dengan admin manusia mengenai karpet masjid 10 roll'..."
-                            className="w-full rounded-2xl bg-slate-900 border border-slate-700/80 p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 leading-relaxed"
+                            className="w-full rounded-2xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:bg-white leading-relaxed font-medium transition"
                           />
                         </div>
 
                         <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                          <div className="flex items-center gap-2 text-xs text-[#5A7194]">
                             <span>Contoh cepat:</span>
                             <button
                               type="button"
                               onClick={() => {
                                 setTestHandoffQuery('Bisa bicara dengan admin manusia?');
                               }}
-                              className="text-amber-400 hover:underline"
+                              className="text-[#5A7194] hover:text-[#233858] font-semibold hover:underline"
                             >
                               "Bicara admin manusia"
                             </button>
@@ -8050,7 +7972,7 @@ export default function Dashboard() {
                               onClick={() => {
                                 setTestHandoffQuery('Kembali ke bot asisten');
                               }}
-                              className="text-emerald-400 hover:underline"
+                              className="text-[#2F855A] hover:text-[#276749] font-semibold hover:underline"
                             >
                               "Kembali ke bot"
                             </button>
@@ -8059,7 +7981,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={handleTestHandoffMessage}
-                            className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition flex items-center gap-2 cursor-pointer shadow-md shadow-amber-600/20"
+                            className="px-5 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
                           >
                             <Zap className="w-3.5 h-3.5" />
                             <span>Uji Pesan Ini</span>
@@ -8069,17 +7991,17 @@ export default function Dashboard() {
 
                       {/* Test Result Display */}
                       {testHandoffResult && (
-                        <div className={`p-4 rounded-2xl border transition-all animate-in fade-in duration-200 ${
+                        <div className={"p-4 rounded-2xl border transition-all animate-in fade-in duration-200 " + (
                           testHandoffResult.type === 'TRIGGER'
-                            ? 'bg-amber-950/40 border-amber-500/50 text-amber-200'
+                            ? 'bg-amber-50 border-amber-300 text-[#B7791F]'
                             : testHandoffResult.type === 'RELEASE'
-                            ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200'
-                            : 'bg-blue-950/40 border-blue-500/50 text-blue-200'
-                        }`}>
+                            ? 'bg-emerald-50 border-emerald-300 text-[#2F855A]'
+                            : 'bg-blue-50 border-blue-200 text-[#233858]'
+                        )}>
                           <div className="flex items-center gap-2 font-bold text-sm mb-1.5">
-                            {testHandoffResult.type === 'TRIGGER' && <Headphones className="w-4 h-4 text-amber-400" />}
-                            {testHandoffResult.type === 'RELEASE' && <Bot className="w-4 h-4 text-emerald-400" />}
-                            {testHandoffResult.type === 'AI_REPLY' && <Sparkles className="w-4 h-4 text-blue-400" />}
+                            {testHandoffResult.type === 'TRIGGER' && <Headphones className="w-4 h-4 text-[#B7791F]" />}
+                            {testHandoffResult.type === 'RELEASE' && <Bot className="w-4 h-4 text-[#2F855A]" />}
+                            {testHandoffResult.type === 'AI_REPLY' && <Sparkles className="w-4 h-4 text-[#5A7194]" />}
                             <span>{testHandoffResult.title}</span>
                           </div>
                           <p className="text-xs leading-relaxed opacity-90">
@@ -8096,116 +8018,52 @@ export default function Dashboard() {
 
           {/* TAB 12: SETTINGS (ANTI-SPAM, DELAY & PROTECTIONS) */}
           {activeTab === 'settings' && (
-            <div className="space-y-8 animate-in fade-in duration-200">
-              {/* Top Action Controls */}
-              <div className="flex flex-wrap items-center justify-end gap-2.5">
-                <button
-                  onClick={fetchProtections}
-                  disabled={loadingProtections}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 text-xs font-medium border border-slate-700/80 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
-                  title="Muat ulang data statistik & konfigurasi proteksi"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingProtections ? 'animate-spin' : ''}`} />
-                  <span>{loadingProtections ? 'Memuat...' : 'Sinkronkan'}</span>
-                </button>
-
-                <button
-                  onClick={handleResetProtectionsStats}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-rose-300 text-xs font-medium border border-rose-500/20 transition-all flex items-center gap-2 shadow-sm cursor-pointer"
-                  title="Reset angka metrik statistik ke 0"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Reset Metrik</span>
-                </button>
-
-                <button
-                  onClick={handleLoadProtectionsDefaults}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-emerald-300 text-xs font-medium border border-emerald-500/30 transition-all flex items-center gap-2 shadow-sm cursor-pointer"
-                  title="Gunakan konfigurasi delay dan proteksi yang paling direkomendasikan"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Standar Aman</span>
-                </button>
-
-                <button
-                  onClick={() => handleSaveProtections()}
-                  disabled={savingProtections}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold transition-all flex items-center gap-2 shadow-lg shadow-emerald-900/30 disabled:opacity-50 cursor-pointer"
-                >
-                  {savingProtections ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Menyimpan...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Simpan Pengaturan</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* 5 Real-Time KPI Stats Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-400 mb-1">
-                    <span className="text-[11px] font-medium uppercase tracking-wider">Total Diproses</span>
-                    <MessageSquare className="w-4 h-4 text-emerald-400" />
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Top Header Card */}
+              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-5 rounded-2xl bg-white border border-[#A6AFC1]/60 shadow-sm">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/50 text-[#5A7194] flex items-center justify-center shrink-0 shadow-inner">
+                    <ShieldAlert className="w-5 h-5" />
                   </div>
-                  <div className="text-xl sm:text-2xl font-bold text-white">
-                    {(protectionsStats?.totalInboundProcessed || 0).toLocaleString('id-ID')}
+                  <div>
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <h3 className="text-sm sm:text-base font-bold text-[#233858] tracking-tight">
+                        Pengaturan Anti-Spam, Cooldown & Proteksi Akun
+                      </h3>
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#E8E6DB] border border-[#A6AFC1]/60 text-[#233858] text-[11px] font-mono font-bold shadow-xs">
+                        Meta Anti-Ban Proteksi
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#5A7194] mt-0.5">
+                      Kelola jeda waktu acak (delay), simulasi mengetik, proteksi flood spam, dan batas global agar akun WhatsApp toko Anda aman dari blokir Meta.
+                    </p>
                   </div>
-                  <div className="text-[10px] text-slate-500 mt-1">Pesan masuk dievaluasi</div>
                 </div>
 
-                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-400 mb-1">
-                    <span className="text-[11px] font-medium uppercase tracking-wider">Spam Ditangkal</span>
-                    <ShieldAlert className="w-4 h-4 text-rose-400" />
-                  </div>
-                  <div className="text-xl sm:text-2xl font-bold text-rose-400">
-                    {(protectionsStats?.floodsBlocked || 0).toLocaleString('id-ID')}
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-1">Pesan flood di-cooldown</div>
-                </div>
-
-                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-400 mb-1">
-                    <span className="text-[11px] font-medium uppercase tracking-wider">Duplikat Dicegah</span>
-                    <Copy className="w-4 h-4 text-amber-400" />
-                  </div>
-                  <div className="text-xl sm:text-2xl font-bold text-amber-400">
-                    {(protectionsStats?.duplicatesBlocked || 0).toLocaleString('id-ID')}
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-1">Pesan identik kembar</div>
-                </div>
-
-                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-400 mb-1">
-                    <span className="text-[11px] font-medium uppercase tracking-wider">Debounce Buffer</span>
-                    <Zap className="w-4 h-4 text-cyan-400" />
-                  </div>
-                  <div className="text-xl sm:text-2xl font-bold text-cyan-400">
-                    {(protectionsStats?.burstsAggregated || 0).toLocaleString('id-ID')}
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-1">Pesan beruntun digabung</div>
-                </div>
-
-                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between col-span-2 sm:col-span-1">
-                  <div className="flex items-center justify-between text-slate-400 mb-1">
-                    <span className="text-[11px] font-medium uppercase tracking-wider">Opt-Out / Stop</span>
-                    <UserCheck className="w-4 h-4 text-purple-400" />
-                  </div>
-                  <div className="text-xl sm:text-2xl font-bold text-purple-400">
-                    {(protectionsStats?.optOutUsers || 0).toLocaleString('id-ID')}
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-1">Pengguna berhenti pesan</div>
+                {/* Save Button */}
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <button
+                    onClick={() => handleSaveProtections()}
+                    disabled={savingProtections}
+                    className="px-5 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white text-xs font-bold transition flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer active:scale-95"
+                  >
+                    {savingProtections ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Simpan Pengaturan</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
               {/* Sub-Tabs Pill Navigation Bar */}
-              <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-900/80 border border-slate-800 rounded-2xl backdrop-blur-md">
+              <div className="flex flex-wrap items-center gap-2 p-1.5 bg-white border border-[#A6AFC1]/50 rounded-2xl shadow-xs">
                 {[
                   { id: 'cooldown', label: 'Delay & Cooldown', icon: Clock },
                   { id: 'flood', label: 'Proteksi Spam (Flood)', icon: ShieldAlert, badge: blockedUsers.length > 0 ? `${blockedUsers.length} Diblokir` : null },
@@ -8220,16 +8078,16 @@ export default function Dashboard() {
                     <button
                       key={tab.id}
                       onClick={() => setProtectionsSubTab(tab.id)}
-                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                      className={"flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer " + (
                         isActive
-                          ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20'
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                      }`}
+                          ? 'bg-[#5A7194] text-white shadow-sm border border-[#485E7E]'
+                          : 'bg-white text-[#233858] hover:bg-[#F5F6F8] border border-[#A6AFC1]/60 hover:border-[#5A7194]'
+                      )}
                     >
                       <Icon className="w-4 h-4" />
                       <span>{tab.label}</span>
                       {tab.badge && (
-                        <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white animate-pulse">
+                        <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#C53030] text-white animate-pulse">
                           {tab.badge}
                         </span>
                       )}
@@ -8241,39 +8099,39 @@ export default function Dashboard() {
               {/* SUB-TAB 1: DELAY & COOLDOWN */}
               {protectionsSubTab === 'cooldown' && (
                 <div className="space-y-6 animate-in fade-in duration-150">
-                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                  <div className="bg-white border border-[#A6AFC1]/60 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#A6AFC1]/40 gap-4">
                       <div>
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
-                          <Clock className="w-5 h-5 text-emerald-400" />
+                        <h3 className="text-base sm:text-lg font-bold text-[#233858] flex items-center gap-2.5">
+                          <Clock className="w-5 h-5 text-[#5A7194]" />
                           <span>Delay Pengiriman & Simulasi Mengetik Alami</span>
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">
+                        <p className="text-xs text-[#5A7194] mt-1">
                           Memberikan jeda waktu acak sebelum bot membalas pesan dan menampilkan status "sedang mengetik..." di WhatsApp agar terkesan manusiawi.
                         </p>
                       </div>
 
                       {/* Enable Switch */}
-                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
-                        <span className="text-xs font-medium text-slate-300">Status Delay:</span>
+                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-[#F5F6F8] px-4 py-2 rounded-xl border border-[#A6AFC1]/60 shadow-xs">
+                        <span className="text-xs font-bold text-[#233858]">Status Delay:</span>
                         <input
                           type="checkbox"
                           checked={Boolean(protectionsConfig.cooldown?.enabled)}
                           onChange={(e) => updateNestedProtections('cooldown', 'enabled', e.target.checked)}
                           className="sr-only peer"
                         />
-                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 relative"></div>
-                        <span className={`text-xs font-bold ${protectionsConfig.cooldown?.enabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2F855A] relative"></div>
+                        <span className={"text-xs font-bold " + (protectionsConfig.cooldown?.enabled ? 'text-[#2F855A]' : 'text-slate-400')}>
                           {protectionsConfig.cooldown?.enabled ? 'Aktif' : 'Nonaktif'}
                         </span>
                       </label>
                     </div>
 
                     {/* Quick Preset Buttons */}
-                    <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-4 space-y-2">
+                    <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-4 space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-slate-300">Preset Kecepatan Balasan Cepat:</span>
-                        <span className="text-[11px] text-emerald-400 font-medium">🛡️ Jeda 1 Menit Direkomendasikan untuk Mencegah Ban Meta</span>
+                        <span className="text-xs font-bold text-[#233858]">Preset Kecepatan Balasan Cepat:</span>
+                        <span className="text-[11px] text-[#2F855A] font-semibold">🛡️ Jeda 1 Menit (Normal) & 1m 15s (Panjang) Terpilih</span>
                       </div>
                       <div className="flex flex-wrap gap-2 pt-1">
                         <button
@@ -8284,174 +8142,165 @@ export default function Dashboard() {
                               cooldown: {
                                 ...prev.cooldown,
                                 enabled: true,
-                                min_delay_ms: 55000,
-                                max_delay_ms: 65000,
-                                jitter_ms: 8000
-                              }
-                            }));
-                            showToastMsg('Preset 1 Menit (Aman Meta) dipilih', 'info');
-                          }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                            protectionsConfig.cooldown?.min_delay_ms >= 50000 && protectionsConfig.cooldown?.min_delay_ms <= 60000
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
-                              : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/60'
-                          }`}
-                        >
-                          ⏱️ 1 Menit (Sangat Aman / Anti-Ban)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProtectionsConfig(prev => ({
-                              ...prev,
-                              cooldown: {
-                                ...prev.cooldown,
-                                enabled: true,
-                                min_delay_ms: 25000,
-                                max_delay_ms: 35000,
-                                jitter_ms: 5000
-                              }
-                            }));
-                            showToastMsg('Preset 30 Detik dipilih', 'info');
-                          }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
-                            protectionsConfig.cooldown?.min_delay_ms >= 20000 && protectionsConfig.cooldown?.min_delay_ms < 50000
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
-                              : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/60'
-                          }`}
-                        >
-                          ☕ 30 Detik (Santai)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProtectionsConfig(prev => ({
-                              ...prev,
-                              cooldown: {
-                                ...prev.cooldown,
-                                enabled: true,
-                                min_delay_ms: 8000,
-                                max_delay_ms: 12000,
+                                normal_delay_ms: 60000,
+                                long_delay_ms: 75000,
+                                min_delay_ms: 60000,
+                                max_delay_ms: 75000,
+                                long_threshold: 160,
                                 jitter_ms: 3000
                               }
                             }));
-                            showToastMsg('Preset 10 Detik dipilih', 'info');
+                            showToastMsg('Preset 1 Menit Normal / 1m 15s Panjang (Aman Meta) dipilih', 'info');
                           }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
-                            protectionsConfig.cooldown?.min_delay_ms >= 5000 && protectionsConfig.cooldown?.min_delay_ms < 20000
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
-                              : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/60'
-                          }`}
+                          className={"px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer shadow-xs " + (
+                            (protectionsConfig.cooldown?.normal_delay_ms || protectionsConfig.cooldown?.min_delay_ms) >= 55000
+                              ? 'bg-[#5A7194] text-white border-[#485E7E] shadow-sm'
+                              : 'bg-white hover:bg-[#F5F6F8] text-[#233858] border-[#A6AFC1]/60'
+                          )}
                         >
-                          ⚡ 10 Detik (Cepat)
+                          ⏱️ 1 Menit Normal / 1m 15s Panjang (Aman Meta)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProtectionsConfig(prev => ({
+                              ...prev,
+                              cooldown: {
+                                ...prev.cooldown,
+                                enabled: true,
+                                normal_delay_ms: 30000,
+                                long_delay_ms: 45000,
+                                min_delay_ms: 30000,
+                                max_delay_ms: 45000,
+                                long_threshold: 160,
+                                jitter_ms: 3000
+                              }
+                            }));
+                            showToastMsg('Preset 30s Normal / 45s Panjang dipilih', 'info');
+                          }}
+                          className={"px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer shadow-xs " + (
+                            (protectionsConfig.cooldown?.normal_delay_ms || protectionsConfig.cooldown?.min_delay_ms) >= 20000 && (protectionsConfig.cooldown?.normal_delay_ms || protectionsConfig.cooldown?.min_delay_ms) < 50000
+                              ? 'bg-[#5A7194] text-white border-[#485E7E] shadow-sm'
+                              : 'bg-white hover:bg-[#F5F6F8] text-[#233858] border-[#A6AFC1]/60'
+                          )}
+                        >
+                          ☕ 30 Detik (Santai)
                         </button>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Min Delay */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      {/* Normal Delay */}
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Delay Minimum (Waktu Tunggu Tercepat)</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            {((protectionsConfig.cooldown?.min_delay_ms || 55000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.min_delay_ms || 55000} ms)
+                          <label className="text-xs font-bold text-[#233858]">Delay Jawaban Normal (Singkat / Menu / Sapaan)</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
+                            {((protectionsConfig.cooldown?.normal_delay_ms || protectionsConfig.cooldown?.min_delay_ms || 60000) / 1000).toFixed(0)} detik (1 Menit)
                           </span>
                         </div>
                         <input
                           type="range"
-                          min="1000"
+                          min="10000"
                           max="120000"
-                          step="1000"
-                          value={protectionsConfig.cooldown?.min_delay_ms || 55000}
-                          onChange={(e) => updateNestedProtections('cooldown', 'min_delay_ms', parseInt(e.target.value) || 1000)}
-                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          step="5000"
+                          value={protectionsConfig.cooldown?.normal_delay_ms || protectionsConfig.cooldown?.min_delay_ms || 60000}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 60000;
+                            updateNestedProtections('cooldown', 'normal_delay_ms', val);
+                            updateNestedProtections('cooldown', 'min_delay_ms', val);
+                          }}
+                          className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <div className="flex justify-between text-[11px] text-slate-500">
-                          <span>1 detik</span>
-                          <span>30 detik</span>
+                        <div className="flex justify-between text-[11px] font-medium text-[#5A7194]">
+                          <span>10s</span>
+                          <span>30s</span>
                           <span>1 Menit (60s)</span>
                           <span>2 Menit (120s)</span>
                         </div>
-                        <p className="text-[11px] text-slate-400 leading-normal">
-                          Waktu minimum bot menahan balasan sejak pesan customer masuk. Nilai 50–60 detik sangat ideal untuk nomor bisnis agar terhindar dari pemblokiran Meta.
+                        <p className="text-[11px] text-[#5A7194] leading-relaxed">
+                          Waktu tunggu bot membalas pesan normal (di bawah 160 karakter seperti menu, sapaan, atau konfirmasi). Standar: 1 menit.
                         </p>
                       </div>
 
-                      {/* Max Delay */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      {/* Long Delay */}
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Delay Maksimum (Batas Atas)</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            {((protectionsConfig.cooldown?.max_delay_ms || 65000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.max_delay_ms || 65000} ms)
+                          <label className="text-xs font-bold text-[#233858]">Delay Jawaban Panjang (AI / Spek &gt; 160 Karakter)</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
+                            {((protectionsConfig.cooldown?.long_delay_ms || protectionsConfig.cooldown?.max_delay_ms || 75000) / 1000).toFixed(0)} detik (1m 15s)
                           </span>
                         </div>
                         <input
                           type="range"
-                          min="2000"
+                          min="20000"
                           max="180000"
-                          step="1000"
-                          value={protectionsConfig.cooldown?.max_delay_ms || 65000}
-                          onChange={(e) => updateNestedProtections('cooldown', 'max_delay_ms', parseInt(e.target.value) || 2000)}
-                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          step="5000"
+                          value={protectionsConfig.cooldown?.long_delay_ms || protectionsConfig.cooldown?.max_delay_ms || 75000}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 75000;
+                            updateNestedProtections('cooldown', 'long_delay_ms', val);
+                            updateNestedProtections('cooldown', 'max_delay_ms', val);
+                          }}
+                          className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <div className="flex justify-between text-[11px] text-slate-500">
-                          <span>2 detik</span>
+                        <div className="flex justify-between text-[11px] font-medium text-[#5A7194]">
+                          <span>30s</span>
                           <span>1 Menit (60s)</span>
-                          <span>2 Menit (120s)</span>
+                          <span>1m 15s (75s)</span>
                           <span>3 Menit (180s)</span>
                         </div>
-                        <p className="text-[11px] text-slate-400 leading-normal">
-                          Batas terlama jeda pengiriman sehingga respons pelanggan tetap terjadwal teratur.
+                        <p className="text-[11px] text-[#5A7194] leading-relaxed">
+                          Waktu tunggu untuk jawaban panjang dan mendalam (rekomendasi produk, konsultasi RAG AI, katalog lengkap). Standar: 1 menit 15 detik.
                         </p>
                       </div>
 
                       {/* Jitter (Random Variation) */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Jitter Acak (Variasi Waktu)</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            + 0 ~ {((protectionsConfig.cooldown?.jitter_ms || 8000) / 1000).toFixed(1)} detik ({protectionsConfig.cooldown?.jitter_ms || 8000} ms)
+                          <label className="text-xs font-bold text-[#233858]">Jitter Acak (Variasi Waktu Alami)</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
+                            ± {((protectionsConfig.cooldown?.jitter_ms || 3000) / 2000).toFixed(1)} detik ({protectionsConfig.cooldown?.jitter_ms || 3000} ms)
                           </span>
                         </div>
                         <input
                           type="range"
                           min="0"
-                          max="20000"
+                          max="10000"
                           step="500"
-                          value={protectionsConfig.cooldown?.jitter_ms || 8000}
+                          value={protectionsConfig.cooldown?.jitter_ms || 3000}
                           onChange={(e) => updateNestedProtections('cooldown', 'jitter_ms', parseInt(e.target.value) || 0)}
-                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <div className="flex justify-between text-[11px] text-slate-500">
+                        <div className="flex justify-between text-[11px] font-medium text-[#5A7194]">
                           <span>0s (Tetap)</span>
-                          <span>+5.0s</span>
-                          <span>+8.0s (Rekomendasi)</span>
-                          <span>+20.0s</span>
+                          <span>±1.5s (Alami)</span>
+                          <span>±3.0s</span>
+                          <span>±5.0s</span>
                         </div>
-                        <p className="text-[11px] text-slate-400 leading-normal">
-                          Memberikan tambahan waktu acak di setiap balasan agar jeda tidak selalu bernilai sama persis (menghindari deteksi bot statis oleh algoritma Meta).
+                        <p className="text-[11px] text-[#5A7194] leading-relaxed">
+                          Memberikan variasi acak halus pada waktu tunggu agar jeda tidak selalu berulang persis pada milidetik yang sama, mencegah deteksi bot oleh Meta.
                         </p>
                       </div>
 
                       {/* Typing Simulation */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-4">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-4 shadow-xs">
                         <div className="flex items-center justify-between">
                           <div>
-                            <label className="text-xs font-semibold text-slate-200 block">Simulasi Mengetik (Typing Presence)</label>
-                            <span className="text-[11px] text-slate-400">Kirim status "sedang mengetik..." di WA</span>
+                            <label className="text-xs font-bold text-[#233858] block">Simulasi Mengetik (Typing Presence)</label>
+                            <span className="text-[11px] text-[#5A7194]">Kirim status "sedang mengetik..." di WA</span>
                           </div>
                           <input
                             type="checkbox"
                             checked={Boolean(protectionsConfig.cooldown?.typing_simulation)}
                             onChange={(e) => updateNestedProtections('cooldown', 'typing_simulation', e.target.checked)}
-                            className="w-4 h-4 accent-emerald-500 rounded bg-slate-800 cursor-pointer"
+                            className="w-4 h-4 accent-[#5A7194] rounded cursor-pointer"
                           />
                         </div>
 
-                        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                        <div className="pt-2 border-t border-[#A6AFC1]/40 space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-300">Kecepatan Mengetik (CPM)</span>
-                            <span className="text-xs font-bold text-emerald-400">{protectionsConfig.cooldown?.typing_speed_cpm || 300} Karakter/menit</span>
+                            <span className="text-xs font-semibold text-[#233858]">Kecepatan Mengetik (CPM)</span>
+                            <span className="text-xs font-mono font-bold text-[#2F855A]">{protectionsConfig.cooldown?.typing_speed_cpm || 300} Karakter/menit</span>
                           </div>
                           <input
                             type="range"
@@ -8461,21 +8310,21 @@ export default function Dashboard() {
                             disabled={!protectionsConfig.cooldown?.typing_simulation}
                             value={protectionsConfig.cooldown?.typing_speed_cpm || 300}
                             onChange={(e) => updateNestedProtections('cooldown', 'typing_speed_cpm', parseInt(e.target.value) || 300)}
-                            className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer disabled:opacity-40"
+                            className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer disabled:opacity-40"
                           />
-                          <p className="text-[10px] text-slate-500">
-                            Durasi mengetik otomatis dihitung sesuai panjang teks jawaban AI (misal pesan 150 karakter akan mengetik selama ~3 detik).
+                          <p className="text-[11px] text-[#5A7194]">
+                            Status mengetik muncul beberapa detik tepat sebelum balasan dikirim sehingga tampak sangat realistis di WhatsApp pelanggan.
                           </p>
                         </div>
                       </div>
                     </div>
 
                     {/* Safety Alert Note */}
-                    <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-start gap-3">
-                      <Sparkles className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-xs text-[#2F855A] flex items-start gap-3 shadow-xs">
+                      <Sparkles className="w-5 h-5 text-[#2F855A] flex-shrink-0 mt-0.5" />
                       <div>
-                        <strong className="font-semibold text-emerald-200 block">Rekomendasi Keamanan WhatsApp:</strong>
-                        Nilai delay minimum 2.500 ms (2.5 detik) dengan jitter 1.000 ms dan simulasi mengetik aktif terbukti paling aman untuk penggunaan nomor bot operasional toko karpet, meminimalisir risiko pelaporan spam oleh pelanggan.
+                        <strong className="font-bold text-[#276749] block">Kalibrasi Anti-Ban WhatsApp Aktif:</strong>
+                        Balasan normal (menu, sapaan, konfirmasi) diatur jeda <strong>1 menit (60 detik)</strong>. Balasan panjang (penjelasan AI, spesifikasi, katalog) diatur jeda <strong>1 menit 15 detik (75 detik)</strong> dengan variasi acak alami (jitter) dan status mengetik aktif.
                       </div>
                     </div>
                   </div>
@@ -8485,29 +8334,29 @@ export default function Dashboard() {
               {/* SUB-TAB 2: FLOOD PROTECTION & TEMP BLOCK */}
               {protectionsSubTab === 'flood' && (
                 <div className="space-y-6 animate-in fade-in duration-150">
-                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                  <div className="bg-white border border-[#A6AFC1]/60 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#A6AFC1]/40 gap-4">
                       <div>
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
-                          <ShieldAlert className="w-5 h-5 text-rose-400" />
+                        <h3 className="text-base sm:text-lg font-bold text-[#233858] flex items-center gap-2.5">
+                          <ShieldAlert className="w-5 h-5 text-[#C53030]" />
                           <span>Proteksi Anti-Flood & Pemblokiran Spammer Otomatis</span>
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">
+                        <p className="text-xs text-[#5A7194] mt-1">
                           Mencegah pelanggan nakal atau bot spammer yang membombardir pesan ke nomor Anda dalam hitungan detik.
                         </p>
                       </div>
 
                       {/* Enable Switch */}
-                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
-                        <span className="text-xs font-medium text-slate-300">Status Anti-Flood:</span>
+                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-[#F5F6F8] px-4 py-2 rounded-xl border border-[#A6AFC1]/60 shadow-xs">
+                        <span className="text-xs font-bold text-[#233858]">Status Anti-Flood:</span>
                         <input
                           type="checkbox"
                           checked={Boolean(protectionsConfig.flood_protection?.enabled)}
                           onChange={(e) => updateNestedProtections('flood_protection', 'enabled', e.target.checked)}
                           className="sr-only peer"
                         />
-                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500 relative"></div>
-                        <span className={`text-xs font-bold ${protectionsConfig.flood_protection?.enabled ? 'text-rose-400' : 'text-slate-500'}`}>
+                        <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#C53030] relative"></div>
+                        <span className={"text-xs font-bold " + (protectionsConfig.flood_protection?.enabled ? 'text-[#C53030]' : 'text-slate-400')}>
                           {protectionsConfig.flood_protection?.enabled ? 'Aktif' : 'Nonaktif'}
                         </span>
                       </label>
@@ -8515,10 +8364,10 @@ export default function Dashboard() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {/* Max Messages / Minute */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Maksimal Pesan per Menit per Nomor</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                          <label className="text-xs font-bold text-[#233858]">Maksimal Pesan per Menit per Nomor</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#C53030] border border-rose-200 shadow-xs">
                             {protectionsConfig.flood_protection?.max_messages_per_minute || 15} pesan / menit
                           </span>
                         </div>
@@ -8529,23 +8378,23 @@ export default function Dashboard() {
                           step="1"
                           value={protectionsConfig.flood_protection?.max_messages_per_minute || 15}
                           onChange={(e) => updateNestedProtections('flood_protection', 'max_messages_per_minute', parseInt(e.target.value) || 15)}
-                          className="w-full accent-rose-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          className="w-full accent-[#C53030] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <div className="flex justify-between text-[11px] text-slate-500">
+                        <div className="flex justify-between text-[11px] font-medium text-[#5A7194]">
                           <span>Ketat (5 pesan)</span>
                           <span>Standar (15 pesan)</span>
                           <span>Longgar (40 pesan)</span>
                         </div>
-                        <p className="text-[11px] text-slate-400 leading-normal">
+                        <p className="text-[11px] text-[#5A7194] leading-relaxed">
                           Jika satu nomor mengirim pesan melebihi batas ini dalam jendela 60 detik, sistem langsung mengaktifkan cooldown sementara.
                         </p>
                       </div>
 
                       {/* Cooldown Duration */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Durasi Blokir Cooldown Sementara</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                          <label className="text-xs font-bold text-[#233858]">Durasi Blokir Cooldown Sementara</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#C53030] border border-rose-200 shadow-xs">
                             {protectionsConfig.flood_protection?.cooldown_seconds || 60} detik ({Math.round((protectionsConfig.flood_protection?.cooldown_seconds || 60) / 60)} menit)
                           </span>
                         </div>
@@ -8556,26 +8405,26 @@ export default function Dashboard() {
                           step="15"
                           value={protectionsConfig.flood_protection?.cooldown_seconds || 60}
                           onChange={(e) => updateNestedProtections('flood_protection', 'cooldown_seconds', parseInt(e.target.value) || 60)}
-                          className="w-full accent-rose-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          className="w-full accent-[#C53030] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <div className="flex justify-between text-[11px] text-slate-500">
+                        <div className="flex justify-between text-[11px] font-medium text-[#5A7194]">
                           <span>15 detik</span>
                           <span>1 menit</span>
                           <span>5 menit</span>
                         </div>
-                        <p className="text-[11px] text-slate-400 leading-normal">
+                        <p className="text-[11px] text-[#5A7194] leading-relaxed">
                           Selama durasi ini, pesan tambahan dari pengirim spam akan diabaikan tanpa membebani kuota API AI / database Anda.
                         </p>
                       </div>
                     </div>
 
                     {/* Warning Message Template */}
-                    <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                    <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-slate-200">
+                        <label className="text-xs font-bold text-[#233858]">
                           Pesan Peringatan Otomatis ke Pengirim Flood (Dikirim 1x saat terdeteksi)
                         </label>
-                        <span className="text-[11px] text-slate-500">
+                        <span className="text-[11px] text-[#5A7194] font-mono">
                           {(protectionsConfig.flood_protection?.warning_message || '').length} karakter
                         </span>
                       </div>
@@ -8584,9 +8433,9 @@ export default function Dashboard() {
                         value={protectionsConfig.flood_protection?.warning_message || ''}
                         onChange={(e) => updateNestedProtections('flood_protection', 'warning_message', e.target.value)}
                         placeholder="Masukkan pesan peringatan sopan saat pelanggan mengirim chat terlalu cepat..."
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-rose-500/50 resize-none"
+                        className="w-full bg-white border border-[#A6AFC1]/60 rounded-xl p-3 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] resize-none"
                       />
-                      <p className="text-[11px] text-slate-400">
+                      <p className="text-[11px] text-[#5A7194]">
                         Pesan ini akan dikirim otomatis satu kali ke pelanggan ketika mereka pertama kali memicu batas flood agar mereka memahami alasan bot memberi jeda.
                       </p>
                     </div>
@@ -8594,27 +8443,27 @@ export default function Dashboard() {
                     {/* Blocked Users Table */}
                     <div className="space-y-3 pt-2">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                          <ShieldAlert className="w-4 h-4 text-rose-400" />
+                        <h4 className="text-xs font-bold text-[#233858] uppercase tracking-wider flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 text-[#C53030]" />
                           <span>Daftar Nomor Sedang Di-Cooldown Spam ({blockedUsers.length})</span>
                         </h4>
                         {blockedUsers.length > 0 && (
-                          <span className="text-[11px] text-rose-400 font-medium">
+                          <span className="text-[11px] text-[#C53030] font-semibold">
                             Auto-unblock setelah sisa waktu habis
                           </span>
                         )}
                       </div>
 
                       {blockedUsers.length === 0 ? (
-                        <div className="p-6 rounded-2xl bg-slate-950/40 border border-slate-800/80 text-center space-y-2">
-                          <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto opacity-70" />
-                          <p className="text-xs font-medium text-slate-300">Tidak ada nomor yang sedang terblokir spam saat ini.</p>
-                          <p className="text-[11px] text-slate-500">Semua aktivitas obrolan pengguna berjalan tertib dan aman.</p>
+                        <div className="p-6 rounded-2xl bg-[#F5F6F8] border border-[#A6AFC1]/50 text-center space-y-2">
+                          <ShieldCheck className="w-8 h-8 text-[#2F855A] mx-auto opacity-80" />
+                          <p className="text-xs font-bold text-[#233858]">Tidak ada nomor yang sedang terblokir spam saat ini.</p>
+                          <p className="text-[11px] text-[#5A7194]">Semua aktivitas obrolan pengguna berjalan tertib dan aman.</p>
                         </div>
                       ) : (
-                        <div className="overflow-x-auto rounded-2xl border border-slate-800">
+                        <div className="overflow-x-auto rounded-2xl border border-[#A6AFC1]/50 bg-white shadow-xs">
                           <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800">
+                            <thead className="bg-[#F5F6F8] text-[#233858] font-bold border-b border-[#A6AFC1]/40">
                               <tr>
                                 <th className="p-3.5">Nomor WhatsApp / JID</th>
                                 <th className="p-3.5">Waktu Terdeteksi</th>
@@ -8622,27 +8471,27 @@ export default function Dashboard() {
                                 <th className="p-3.5 text-right">Tindakan</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                            <tbody className="divide-y divide-[#A6AFC1]/30">
                               {blockedUsers.map((user) => (
-                                <tr key={user.jid} className="hover:bg-slate-800/30 transition-colors">
-                                  <td className="p-3.5 font-medium text-slate-200">
+                                <tr key={user.jid} className="hover:bg-[#F5F6F8] transition-colors">
+                                  <td className="p-3.5 font-bold text-[#233858]">
                                     <div className="flex items-center gap-2">
-                                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                                      <span className="w-2 h-2 rounded-full bg-[#C53030] animate-ping" />
                                       <span>{user.jid.replace('@s.whatsapp.net', '').replace('@lid', '')}</span>
                                     </div>
                                   </td>
-                                  <td className="p-3.5 text-slate-400">
+                                  <td className="p-3.5 text-[#5A7194]">
                                     {new Date(user.blockedAt).toLocaleTimeString('id-ID')}
                                   </td>
                                   <td className="p-3.5">
-                                    <span className="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 font-bold border border-rose-500/20">
+                                    <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-[#C53030] font-bold border border-rose-200">
                                       {user.remainingSeconds} detik lagi
                                     </span>
                                   </td>
                                   <td className="p-3.5 text-right">
                                     <button
                                       onClick={() => handleUnblockUser(user.jid)}
-                                      className="px-3 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30 text-[11px] transition-all"
+                                      className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#2F855A] font-bold border border-emerald-300 text-[11px] transition-all cursor-pointer"
                                     >
                                       Buka Blokir
                                     </button>
@@ -8661,29 +8510,29 @@ export default function Dashboard() {
               {/* SUB-TAB 3: DEDUPLICATION & DEBOUNCE BUFFER */}
               {protectionsSubTab === 'dedup' && (
                 <div className="space-y-6 animate-in fade-in duration-150">
-                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                  <div className="bg-white border border-[#A6AFC1]/60 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#A6AFC1]/40 gap-4">
                       <div>
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
-                          <Copy className="w-5 h-5 text-amber-400" />
+                        <h3 className="text-base sm:text-lg font-bold text-[#233858] flex items-center gap-2.5">
+                          <Copy className="w-5 h-5 text-[#5A7194]" />
                           <span>Anti-Pesan Kembar & Debounce Penggabungan Chat</span>
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">
+                        <p className="text-xs text-[#5A7194] mt-1">
                           Menghilangkan pengiriman berulang karena klik dobel WhatsApp dan menggabungkan chat kalimat terpotong dari pelanggan.
                         </p>
                       </div>
 
                       {/* Enable Switch */}
-                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
-                        <span className="text-xs font-medium text-slate-300">Status Deduplikasi:</span>
+                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-[#F5F6F8] px-4 py-2 rounded-xl border border-[#A6AFC1]/60 shadow-xs">
+                        <span className="text-xs font-bold text-[#233858]">Status Deduplikasi:</span>
                         <input
                           type="checkbox"
                           checked={Boolean(protectionsConfig.deduplication?.enabled)}
                           onChange={(e) => updateNestedProtections('deduplication', 'enabled', e.target.checked)}
                           className="sr-only peer"
                         />
-                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500 relative"></div>
-                        <span className={`text-xs font-bold ${protectionsConfig.deduplication?.enabled ? 'text-amber-400' : 'text-slate-500'}`}>
+                        <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2F855A] relative"></div>
+                        <span className={"text-xs font-bold " + (protectionsConfig.deduplication?.enabled ? 'text-[#2F855A]' : 'text-slate-400')}>
                           {protectionsConfig.deduplication?.enabled ? 'Aktif' : 'Nonaktif'}
                         </span>
                       </label>
@@ -8691,10 +8540,10 @@ export default function Dashboard() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {/* Inbound Window */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Jendela Filter Pesan Masuk Kembar</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <label className="text-xs font-bold text-[#233858]">Jendela Filter Pesan Masuk Kembar</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
                             {((protectionsConfig.deduplication?.content_window_ms || 3000) / 1000).toFixed(1)} detik ({protectionsConfig.deduplication?.content_window_ms || 3000} ms)
                           </span>
                         </div>
@@ -8705,18 +8554,18 @@ export default function Dashboard() {
                           step="500"
                           value={protectionsConfig.deduplication?.content_window_ms || 3000}
                           onChange={(e) => updateNestedProtections('deduplication', 'content_window_ms', parseInt(e.target.value) || 3000)}
-                          className="w-full accent-amber-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <p className="text-[11px] text-slate-400">
+                        <p className="text-[11px] text-[#5A7194]">
                           Jika pelanggan secara tidak sengaja menekan tombol kirim 2x untuk pesan yang sama persis, bot hanya akan menjawab 1 kali.
                         </p>
                       </div>
 
                       {/* Outbound Window */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Jendela Filter Pesan Keluar Kembar</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <label className="text-xs font-bold text-[#233858]">Jendela Filter Pesan Keluar Kembar</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
                             {((protectionsConfig.deduplication?.outbound_window_ms || 4000) / 1000).toFixed(1)} detik ({protectionsConfig.deduplication?.outbound_window_ms || 4000} ms)
                           </span>
                         </div>
@@ -8727,47 +8576,47 @@ export default function Dashboard() {
                           step="500"
                           value={protectionsConfig.deduplication?.outbound_window_ms || 4000}
                           onChange={(e) => updateNestedProtections('deduplication', 'outbound_window_ms', parseInt(e.target.value) || 4000)}
-                          className="w-full accent-amber-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <p className="text-[11px] text-slate-400">
+                        <p className="text-[11px] text-[#5A7194]">
                           Mencegah bot mengirim pesan jawaban yang persis sama ke nomor yang sama dalam waktu berdekatan.
                         </p>
                       </div>
                     </div>
 
                     {/* Section: Conversation Buffer / Debounce */}
-                    <div className="pt-6 border-t border-slate-800 space-y-5">
+                    <div className="pt-6 border-t border-[#A6AFC1]/40 space-y-5">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
-                          <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-cyan-400" />
+                          <h4 className="text-sm font-bold text-[#233858] flex items-center gap-2">
+                            <Zap className="w-4 h-4 text-[#5A7194]" />
                             <span>Conversation Buffer (Debounce Penggabungan Pesan)</span>
                           </h4>
-                          <p className="text-xs text-slate-400 mt-1">
+                          <p className="text-xs text-[#5A7194] mt-1">
                             Pelanggan di Indonesia sering mengetik terputus-putus seperti: "Halo min" (kirim), "karpet masjid ready?" (kirim), "bisa kirim hari ini?" (kirim).
                           </p>
                         </div>
 
-                        <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
-                          <span className="text-xs font-medium text-slate-300">Status Buffer:</span>
+                        <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-[#F5F6F8] px-4 py-2 rounded-xl border border-[#A6AFC1]/60 shadow-xs">
+                          <span className="text-xs font-bold text-[#233858]">Status Buffer:</span>
                           <input
                             type="checkbox"
                             checked={Boolean(protectionsConfig.conversation_buffer?.enabled)}
                             onChange={(e) => updateNestedProtections('conversation_buffer', 'enabled', e.target.checked)}
                             className="sr-only peer"
                           />
-                          <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500 relative"></div>
-                          <span className={`text-xs font-bold ${protectionsConfig.conversation_buffer?.enabled ? 'text-cyan-400' : 'text-slate-500'}`}>
+                          <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2F855A] relative"></div>
+                          <span className={"text-xs font-bold " + (protectionsConfig.conversation_buffer?.enabled ? 'text-[#2F855A]' : 'text-slate-400')}>
                             {protectionsConfig.conversation_buffer?.enabled ? 'Aktif' : 'Nonaktif'}
                           </span>
                         </label>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                           <div className="flex items-center justify-between">
-                            <label className="text-xs font-semibold text-slate-200">Waktu Tunggu Debounce</label>
-                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                            <label className="text-xs font-bold text-[#233858]">Waktu Tunggu Debounce</label>
+                            <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
                               {((protectionsConfig.conversation_buffer?.debounce_ms || 2000) / 1000).toFixed(1)} detik ({protectionsConfig.conversation_buffer?.debounce_ms || 2000} ms)
                             </span>
                           </div>
@@ -8778,17 +8627,17 @@ export default function Dashboard() {
                             step="500"
                             value={protectionsConfig.conversation_buffer?.debounce_ms || 2000}
                             onChange={(e) => updateNestedProtections('conversation_buffer', 'debounce_ms', parseInt(e.target.value) || 2000)}
-                            className="w-full accent-cyan-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                            className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                           />
-                          <p className="text-[11px] text-slate-400">
+                          <p className="text-[11px] text-[#5A7194]">
                             Bot akan menunggu selama durasi ini setelah pesan terakhir sebelum meracik jawaban AI lengkap.
                           </p>
                         </div>
 
-                        <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                        <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                           <div className="flex items-center justify-between">
-                            <label className="text-xs font-semibold text-slate-200">Maksimum Item yang Ditampung</label>
-                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                            <label className="text-xs font-bold text-[#233858]">Maksimum Item yang Ditampung</label>
+                            <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
                               {protectionsConfig.conversation_buffer?.max_buffer_items || 10} pesan berurutan
                             </span>
                           </div>
@@ -8799,9 +8648,9 @@ export default function Dashboard() {
                             step="1"
                             value={protectionsConfig.conversation_buffer?.max_buffer_items || 10}
                             onChange={(e) => updateNestedProtections('conversation_buffer', 'max_buffer_items', parseInt(e.target.value) || 10)}
-                            className="w-full accent-cyan-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                            className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                           />
-                          <p className="text-[11px] text-slate-400">
+                          <p className="text-[11px] text-[#5A7194]">
                             Batas maksimal rentetan potongan chat yang digabungkan menjadi 1 prompt utuh untuk dijawab AI.
                           </p>
                         </div>
@@ -8814,23 +8663,23 @@ export default function Dashboard() {
               {/* SUB-TAB 4: GLOBAL RATE & CIRCUIT BREAKER */}
               {protectionsSubTab === 'global_rate' && (
                 <div className="space-y-6 animate-in fade-in duration-150">
-                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
-                    <div className="pb-4 border-b border-slate-800">
-                      <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
-                        <Zap className="w-5 h-5 text-emerald-400" />
+                  <div className="bg-white border border-[#A6AFC1]/60 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+                    <div className="pb-4 border-b border-[#A6AFC1]/40">
+                      <h3 className="text-base sm:text-lg font-bold text-[#233858] flex items-center gap-2.5">
+                        <Zap className="w-5 h-5 text-[#5A7194]" />
                         <span>Batas Pengiriman Global & Keamanan Circuit Breaker</span>
                       </h3>
-                      <p className="text-xs text-slate-400 mt-1">
+                      <p className="text-xs text-[#5A7194] mt-1">
                         Menjaga volume kumulatif semua pesan keluar WhatsApp dari seluruh chat agar tidak memicu deteksi spam Meta dan menyediakan mekanisme penghentian otomatis saat terjadi kegagalan jaringan.
                       </p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {/* Global Rate Limit */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Batas Maksimal Pengiriman Global per Menit</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <label className="text-xs font-bold text-[#233858]">Batas Maksimal Pengiriman Global per Menit</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
                             {protectionsConfig.cooldown?.global_max_per_minute || 25} pesan / menit
                           </span>
                         </div>
@@ -8841,23 +8690,23 @@ export default function Dashboard() {
                           step="5"
                           value={protectionsConfig.cooldown?.global_max_per_minute || 25}
                           onChange={(e) => updateNestedProtections('cooldown', 'global_max_per_minute', parseInt(e.target.value) || 25)}
-                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <div className="flex justify-between text-[11px] text-slate-500">
+                        <div className="flex justify-between text-[11px] font-medium text-[#5A7194]">
                           <span>Sangat Aman (10)</span>
                           <span>Standar Toko (25)</span>
                           <span>Tinggi (80)</span>
                         </div>
-                        <p className="text-[11px] text-slate-400 leading-normal">
+                        <p className="text-[11px] text-[#5A7194] leading-relaxed">
                           Batas maksimal total pesan keluar WhatsApp dari bot ke seluruh nomor pelanggan dalam 1 menit. Jika melebihi batas ini, pengiriman berikutnya akan diantrikan otomatis.
                         </p>
                       </div>
 
                       {/* Retry Count */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Maksimal Percobaan Kirim Ulang (Retry)</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700">
+                          <label className="text-xs font-bold text-[#233858]">Maksimal Percobaan Kirim Ulang (Retry)</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
                             {protectionsConfig.retry_limit?.max_retries || 2} kali percobaan
                           </span>
                         </div>
@@ -8868,18 +8717,18 @@ export default function Dashboard() {
                           step="1"
                           value={protectionsConfig.retry_limit?.max_retries || 2}
                           onChange={(e) => updateNestedProtections('retry_limit', 'max_retries', parseInt(e.target.value) || 2)}
-                          className="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <p className="text-[11px] text-slate-400 leading-normal">
+                        <p className="text-[11px] text-[#5A7194] leading-relaxed">
                           Jika socket WhatsApp terputus mendadak saat bot hendak membalas, bot akan mencoba mengulang kirim sesuai angka ini.
                         </p>
                       </div>
 
                       {/* Circuit Breaker Fail Threshold */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Ambang Batas Gagal Beruntun (Circuit Breaker)</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                          <label className="text-xs font-bold text-[#233858]">Ambang Batas Gagal Beruntun (Circuit Breaker)</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#C53030] border border-rose-200 shadow-xs">
                             {protectionsConfig.retry_limit?.circuit_breaker_threshold || 3} kegagalan beruntun
                           </span>
                         </div>
@@ -8890,18 +8739,18 @@ export default function Dashboard() {
                           step="1"
                           value={protectionsConfig.retry_limit?.circuit_breaker_threshold || 3}
                           onChange={(e) => updateNestedProtections('retry_limit', 'circuit_breaker_threshold', parseInt(e.target.value) || 3)}
-                          className="w-full accent-rose-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          className="w-full accent-[#C53030] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <p className="text-[11px] text-slate-400 leading-normal">
+                        <p className="text-[11px] text-[#5A7194] leading-relaxed">
                           Jika pengiriman gagal berturut-turut hingga mencapai ambang batas ini, sistem akan memutus sirkuit untuk menghindari spamming socket yang rusak.
                         </p>
                       </div>
 
                       {/* Circuit Breaker Timeout */}
-                      <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-3 shadow-xs">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-200">Durasi Istirahat Pemutus Sirkuit</label>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <label className="text-xs font-bold text-[#233858]">Durasi Istirahat Pemutus Sirkuit</label>
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white text-[#233858] border border-[#A6AFC1]/60 shadow-xs">
                             {Math.round((protectionsConfig.retry_limit?.circuit_breaker_timeout_ms || 60000) / 1000)} detik
                           </span>
                         </div>
@@ -8912,9 +8761,9 @@ export default function Dashboard() {
                           step="10000"
                           value={protectionsConfig.retry_limit?.circuit_breaker_timeout_ms || 60000}
                           onChange={(e) => updateNestedProtections('retry_limit', 'circuit_breaker_timeout_ms', parseInt(e.target.value) || 60000)}
-                          className="w-full accent-amber-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                          className="w-full accent-[#5A7194] bg-white border border-[#A6AFC1]/40 h-2 rounded-lg cursor-pointer"
                         />
-                        <p className="text-[11px] text-slate-400 leading-normal">
+                        <p className="text-[11px] text-[#5A7194] leading-relaxed">
                           Waktu tunggu sebelum sistem mencoba mengalirkan kembali pesan setelah sirkuit terputus akibat kegagalan beruntun.
                         </p>
                       </div>
@@ -8926,64 +8775,64 @@ export default function Dashboard() {
               {/* SUB-TAB 5: COMPLIANCE & OPT-OUT KEYWORDS */}
               {protectionsSubTab === 'compliance' && (
                 <div className="space-y-6 animate-in fade-in duration-150">
-                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                  <div className="bg-white border border-[#A6AFC1]/60 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#A6AFC1]/40 gap-4">
                       <div>
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
-                          <UserCheck className="w-5 h-5 text-purple-400" />
+                        <h3 className="text-base sm:text-lg font-bold text-[#233858] flex items-center gap-2.5">
+                          <UserCheck className="w-5 h-5 text-[#5A7194]" />
                           <span>Kepatuhan WhatsApp & Kata Kunci Stop (Opt-Out)</span>
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">
+                        <p className="text-xs text-[#5A7194] mt-1">
                           Memberikan opsi kepada pelanggan untuk berhenti menerima pesan otomatis, memenuhi ketentuan resmi WhatsApp Commerce Policy.
                         </p>
                       </div>
 
                       {/* Enable Switch */}
-                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-slate-800/60 px-4 py-2 rounded-xl border border-slate-700/60">
-                        <span className="text-xs font-medium text-slate-300">Status Kepatuhan:</span>
+                      <label className="flex items-center gap-3 cursor-pointer self-start sm:self-center bg-[#F5F6F8] px-4 py-2 rounded-xl border border-[#A6AFC1]/60 shadow-xs">
+                        <span className="text-xs font-bold text-[#233858]">Status Kepatuhan:</span>
                         <input
                           type="checkbox"
                           checked={Boolean(protectionsConfig.opt_in?.enabled)}
                           onChange={(e) => updateNestedProtections('opt_in', 'enabled', e.target.checked)}
                           className="sr-only peer"
                         />
-                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500 relative"></div>
-                        <span className={`text-xs font-bold ${protectionsConfig.opt_in?.enabled ? 'text-purple-400' : 'text-slate-500'}`}>
+                        <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2F855A] relative"></div>
+                        <span className={"text-xs font-bold " + (protectionsConfig.opt_in?.enabled ? 'text-[#2F855A]' : 'text-slate-400')}>
                           {protectionsConfig.opt_in?.enabled ? 'Aktif' : 'Nonaktif'}
                         </span>
                       </label>
                     </div>
 
                     {/* Opt-Out Keywords */}
-                    <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-4">
+                    <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-4 shadow-xs">
                       <div className="flex items-center justify-between">
                         <div>
-                          <label className="text-xs font-semibold text-slate-200 block">
+                          <label className="text-xs font-bold text-[#233858] block">
                             Kata Kunci Stop / Berhenti Chat (Opt-Out)
                           </label>
-                          <span className="text-[11px] text-slate-400">
+                          <span className="text-[11px] text-[#5A7194]">
                             Jika pelanggan mengirim salah satu kata ini, bot berhenti mengirim pesan otomatis.
                           </span>
                         </div>
-                        <span className="text-xs font-bold text-purple-400">
+                        <span className="text-xs font-bold font-mono text-[#C53030]">
                           {(protectionsConfig.opt_in?.opt_out_keywords || []).length} Kata Kunci
                         </span>
                       </div>
 
                       {/* Chips List */}
-                      <div className="flex flex-wrap gap-2 min-h-[44px] p-3 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="flex flex-wrap gap-2 min-h-[44px] p-3 rounded-xl bg-white border border-[#A6AFC1]/60">
                         {(protectionsConfig.opt_in?.opt_out_keywords || []).map((keyword) => (
                           <span
                             key={keyword}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/10 text-rose-300 border border-rose-500/20 text-xs font-medium"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 text-[#C53030] border border-rose-200 text-xs font-bold shadow-xs"
                           >
                             <span>{keyword}</span>
                             <button
                               onClick={() => handleRemoveOptOutKeyword(keyword)}
-                              className="text-rose-400 hover:text-rose-200 transition-colors p-0.5"
+                              className="text-[#C53030] hover:text-rose-800 transition-colors p-0.5 cursor-pointer"
                               title="Hapus kata kunci"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3.5 h-3.5" />
                             </button>
                           </span>
                         ))}
@@ -8997,11 +8846,11 @@ export default function Dashboard() {
                           value={newOptOutKeyword}
                           onChange={(e) => setNewOptOutKeyword(e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOptOutKeyword(); } }}
-                          className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="flex-1 bg-white border border-[#A6AFC1]/60 rounded-xl px-4 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194]"
                         />
                         <button
                           onClick={handleAddOptOutKeyword}
-                          className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition-all flex items-center gap-1.5"
+                          className="px-4 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
                         >
                           <Plus className="w-4 h-4" />
                           <span>Tambah</span>
@@ -9010,35 +8859,35 @@ export default function Dashboard() {
                     </div>
 
                     {/* Opt-In Keywords */}
-                    <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-5 space-y-4">
+                    <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 space-y-4 shadow-xs">
                       <div className="flex items-center justify-between">
                         <div>
-                          <label className="text-xs font-semibold text-slate-200 block">
+                          <label className="text-xs font-bold text-[#233858] block">
                             Kata Kunci Mulai / Aktifkan Kembali (Opt-In)
                           </label>
-                          <span className="text-[11px] text-slate-400">
+                          <span className="text-[11px] text-[#5A7194]">
                             Mengizinkan pelanggan yang sebelumnya berhenti untuk kembali berinteraksi dengan bot.
                           </span>
                         </div>
-                        <span className="text-xs font-bold text-emerald-400">
+                        <span className="text-xs font-bold font-mono text-[#2F855A]">
                           {(protectionsConfig.opt_in?.opt_in_keywords || []).length} Kata Kunci
                         </span>
                       </div>
 
                       {/* Chips List */}
-                      <div className="flex flex-wrap gap-2 min-h-[44px] p-3 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="flex flex-wrap gap-2 min-h-[44px] p-3 rounded-xl bg-white border border-[#A6AFC1]/60">
                         {(protectionsConfig.opt_in?.opt_in_keywords || []).map((keyword) => (
                           <span
                             key={keyword}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-xs font-medium"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-[#2F855A] border border-emerald-300 text-xs font-bold shadow-xs"
                           >
                             <span>{keyword}</span>
                             <button
                               onClick={() => handleRemoveOptInKeyword(keyword)}
-                              className="text-emerald-400 hover:text-emerald-200 transition-colors p-0.5"
+                              className="text-emerald-600 hover:text-emerald-800 transition-colors p-0.5 cursor-pointer"
                               title="Hapus kata kunci"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3.5 h-3.5" />
                             </button>
                           </span>
                         ))}
@@ -9052,11 +8901,11 @@ export default function Dashboard() {
                           value={newOptInKeyword}
                           onChange={(e) => setNewOptInKeyword(e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOptInKeyword(); } }}
-                          className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                          className="flex-1 bg-white border border-[#A6AFC1]/60 rounded-xl px-4 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194]"
                         />
                         <button
                           onClick={handleAddOptInKeyword}
-                          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all flex items-center gap-1.5"
+                          className="px-4 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
                         >
                           <Plus className="w-4 h-4" />
                           <span>Tambah</span>
@@ -9070,14 +8919,14 @@ export default function Dashboard() {
               {/* SUB-TAB 6: SIMULATOR & TESTER */}
               {protectionsSubTab === 'tester' && (
                 <div className="space-y-6 animate-in fade-in duration-150">
-                  <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+                  <div className="bg-white border border-[#A6AFC1]/60 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#A6AFC1]/40 gap-4">
                       <div>
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
-                          <Sliders className="w-5 h-5 text-emerald-400" />
+                        <h3 className="text-base sm:text-lg font-bold text-[#233858] flex items-center gap-2.5">
+                          <Sliders className="w-5 h-5 text-[#5A7194]" />
                           <span>Live Simulator & Pengujian Logika Anti-Spam</span>
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">
+                        <p className="text-xs text-[#5A7194] mt-1">
                           Uji bagaimana sistem menghitung delay acak, simulasi mengetik, buffer penggabungan pesan, dan pemblokiran otomatis saat pelanggan melakukan klik spam beruntun.
                         </p>
                       </div>
@@ -9085,9 +8934,9 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => { setSimAntiSpamCount(0); setSimAntiSpamLogs([]); }}
-                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all flex items-center gap-1.5"
+                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-[#F5F6F8] text-[#233858] text-xs font-bold border border-[#A6AFC1] transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
+                          <RotateCcw className="w-3.5 h-3.5 text-[#5A7194]" />
                           <span>Reset Test</span>
                         </button>
                       </div>
@@ -9095,16 +8944,16 @@ export default function Dashboard() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                       {/* Left: Interactive Trigger Button */}
-                      <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between space-y-6">
+                      <div className="bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-6 flex flex-col justify-between space-y-6 shadow-xs">
                         <div className="space-y-3">
-                          <div className="flex items-center justify-between text-xs text-slate-400">
-                            <span>Frekuensi Klik Pengujian</span>
-                            <span className="font-bold text-emerald-400">{simAntiSpamCount} Pesan</span>
+                          <div className="flex items-center justify-between text-xs text-[#5A7194]">
+                            <span className="font-semibold">Frekuensi Klik Pengujian</span>
+                            <span className="font-bold font-mono text-[#2F855A]">{simAntiSpamCount} Pesan</span>
                           </div>
-                          <div className="text-sm font-semibold text-white">
+                          <div className="text-sm font-bold text-[#233858]">
                             Simulasi Chat Pelanggan Masuk
                           </div>
-                          <p className="text-xs text-slate-400 leading-relaxed">
+                          <p className="text-xs text-[#5A7194] leading-relaxed">
                             Klik tombol di bawah ini beberapa kali secara cepat untuk melihat bagaimana algoritma bereaksi saat menerima pesan beruntun dari satu pengguna.
                           </p>
                         </div>
@@ -9112,58 +8961,58 @@ export default function Dashboard() {
                         <div className="space-y-3">
                           <button
                             onClick={handleSimulateAntiSpamSend}
-                            className={`w-full py-4 px-6 rounded-2xl font-bold text-sm transition-all transform active:scale-95 shadow-xl flex items-center justify-center gap-3 ${
+                            className={"w-full py-3.5 px-6 rounded-xl font-bold text-xs transition-all transform active:scale-95 shadow-sm flex items-center justify-center gap-2.5 cursor-pointer " + (
                               isSimulatingSpam
-                                ? 'bg-emerald-400 text-slate-950 scale-95'
-                                : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/20'
-                            }`}
+                                ? 'bg-[#2F855A] text-white scale-95'
+                                : 'bg-[#5A7194] hover:bg-[#485E7E] text-white'
+                            )}
                           >
                             <Send className="w-4 h-4" />
                             <span>Kirim Chat Uji Coba (+1)</span>
                           </button>
                           
-                          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-slate-400 text-center">
-                            Batas flood saat ini: <strong className="text-rose-400 font-semibold">{protectionsConfig.flood_protection?.max_messages_per_minute || 15} pesan/menit</strong>
+                          <div className="p-3 rounded-xl bg-white border border-[#A6AFC1]/50 text-[11px] text-[#5A7194] text-center shadow-xs">
+                            Batas flood saat ini: <strong className="text-[#C53030] font-bold">{protectionsConfig.flood_protection?.max_messages_per_minute || 15} pesan/menit</strong>
                           </div>
                         </div>
                       </div>
 
                       {/* Right: Live Feed Log */}
-                      <div className="lg:col-span-2 bg-slate-950/60 border border-slate-800 rounded-2xl p-5 flex flex-col space-y-3 min-h-[320px]">
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <div className="lg:col-span-2 bg-[#F5F6F8] border border-[#A6AFC1]/50 rounded-2xl p-5 flex flex-col space-y-3 min-h-[320px] shadow-xs">
+                        <div className="flex items-center justify-between pb-3 border-b border-[#A6AFC1]/40">
+                          <span className="text-xs font-bold text-[#233858] uppercase tracking-wider flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-[#2F855A] animate-pulse" />
                             <span>Log Respon Anti-Spam Real-Time</span>
                           </span>
-                          <span className="text-[11px] text-slate-500">
+                          <span className="text-[11px] text-[#5A7194] font-mono">
                             {simAntiSpamLogs.length} event tercatat
                           </span>
                         </div>
 
                         <div className="flex-1 overflow-y-auto space-y-2 max-h-[300px] pr-1">
                           {simAntiSpamLogs.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-2 text-slate-500">
-                              <Sliders className="w-8 h-8 opacity-40 text-emerald-400" />
-                              <p className="text-xs font-medium text-slate-400">Belum ada pengujian simulasi yang dijalankan.</p>
+                            <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-2 text-[#5A7194]">
+                              <Sliders className="w-8 h-8 opacity-40 text-[#5A7194]" />
+                              <p className="text-xs font-bold text-[#233858]">Belum ada pengujian simulasi yang dijalankan.</p>
                               <p className="text-[11px]">Klik tombol "Kirim Chat Uji Coba" di sebelah kiri untuk melihat evaluasi delay & proteksi secara langsung.</p>
                             </div>
                           ) : (
                             simAntiSpamLogs.map((log, idx) => (
                               <div
                                 key={idx}
-                                className={`p-3 rounded-xl border text-xs font-mono transition-all animate-in fade-in duration-150 ${
+                                className={"p-3 rounded-xl border text-xs font-mono transition-all animate-in fade-in duration-150 shadow-xs " + (
                                   log.status === 'BLOCKED_FLOOD'
-                                    ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
+                                    ? 'bg-rose-50 border-rose-300 text-[#C53030]'
                                     : log.status === 'BUFFERED'
-                                    ? 'bg-amber-950/30 border-amber-500/40 text-amber-300'
-                                    : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
-                                }`}
+                                    ? 'bg-amber-50 border-amber-300 text-[#B7791F]'
+                                    : 'bg-emerald-50 border-emerald-300 text-[#2F855A]'
+                                )}
                               >
-                                <div className="flex items-center justify-between text-[11px] font-bold opacity-80 mb-1">
+                                <div className="flex items-center justify-between text-[11px] font-bold opacity-90 mb-1">
                                   <span>{log.time}</span>
                                   <span className="uppercase tracking-wider">#{log.count} - {log.status}</span>
                                 </div>
-                                <div className="text-slate-200 font-sans text-xs">{log.text}</div>
+                                <div className="font-sans text-xs font-medium">{log.text}</div>
                               </div>
                             ))
                           )}
@@ -9173,65 +9022,23 @@ export default function Dashboard() {
                   </div>
                 </div>
               )}
-
-              {/* Sticky Footer Bar with Save Actions */}
-              <div className="sticky bottom-4 z-30 p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
-                    <ShieldCheck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white">Sinkronisasi Perlindungan WhatsApp</h4>
-                    <p className="text-[11px] text-slate-400">
-                      Perubahan konfigurasi tersimpan langsung ke server backend & proteksi runtime.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 w-full sm:w-auto">
-                  <button
-                    onClick={handleLoadProtectionsDefaults}
-                    className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition-all"
-                  >
-                    Pulihkan Standar Aman
-                  </button>
-
-                  <button
-                    onClick={() => handleSaveProtections()}
-                    disabled={savingProtections}
-                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 disabled:opacity-50"
-                  >
-                    {savingProtections ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Menyimpan...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4" />
-                        <span>Simpan Semua Pengaturan</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 
-      {/* ADD / EDIT FAQ MODAL */}
+          {/* ADD / EDIT FAQ MODAL */}
       {showFaqModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 max-w-xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white border border-[#A6AFC1]/60 text-[#233858] rounded-3xl p-6 max-w-xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-[#A6AFC1]/40">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/50 text-[#5A7194]">
                   <Brain className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">
+                  <h3 className="font-bold text-[#233858] text-base">
                     {editingFaq ? 'Edit Tanya Jawab AI' : 'Tambah Tanya Jawab AI'}
                   </h3>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-[#5A7194]">
                     Data ini akan langsung diserap ke dalam memori sistem AI Groq & Gemini
                   </p>
                 </div>
@@ -9241,7 +9048,7 @@ export default function Dashboard() {
                   setShowFaqModal(false);
                   setEditingFaq(null);
                 }}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] border border-transparent hover:border-[#A6AFC1]/40 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -9249,10 +9056,10 @@ export default function Dashboard() {
 
             <form onSubmit={handleSaveFaq} className="space-y-4 text-xs">
               <div className="space-y-1.5">
-                <label className="font-semibold text-slate-300 flex items-center gap-1.5">
-                  <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+                <label className="font-bold text-[#233858] flex items-center gap-1.5">
+                  <HelpCircle className="w-3.5 h-3.5 text-[#5A7194]" />
                   <span>Pertanyaan dari Pelanggan (Question)</span>
-                  <span className="text-rose-400">*</span>
+                  <span className="text-[#C53030]">*</span>
                 </label>
                 <input
                   type="text"
@@ -9260,43 +9067,46 @@ export default function Dashboard() {
                   value={faqForm.q}
                   onChange={(e) => setFaqForm({ ...faqForm, q: e.target.value })}
                   placeholder="Contoh: Apakah karpet polos ready stock dan bisa langsung dikirim?"
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] placeholder-[#5A7194]/60 focus:outline-none focus:border-[#5A7194] focus:bg-white transition"
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">
-                  <label className="font-semibold text-slate-300 flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5 text-amber-400" />
+                  <label className="font-bold text-[#233858] flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-[#5A7194]" />
                     <span>Kategori Topik</span>
                   </label>
                   <input
                     type="text"
                     value={faqForm.category || ''}
                     onChange={(e) => setFaqForm({ ...faqForm, category: e.target.value })}
-                    placeholder="Ketik kategori topik bebas (contoh: Promo & Diskon, Garansi, dll)..."
+                    placeholder="Ketik kategori (contoh: Promo, Garansi, dll)..."
                     autoComplete="off"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] placeholder-[#5A7194]/60 focus:outline-none focus:border-[#5A7194] focus:bg-white transition"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="font-semibold text-slate-300">Sumber Informasi</label>
+                  <label className="font-bold text-[#233858] flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-[#5A7194]" />
+                    <span>Sumber Informasi</span>
+                  </label>
                   <input
                     type="text"
                     value={faqForm.source}
                     onChange={(e) => setFaqForm({ ...faqForm, source: e.target.value })}
                     placeholder="Contoh: Input Admin / Chat WhatsApp Pelanggan"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] placeholder-[#5A7194]/60 focus:outline-none focus:border-[#5A7194] focus:bg-white transition"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-semibold text-slate-300 flex items-center gap-1.5">
-                  <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                <label className="font-bold text-[#233858] flex items-center gap-1.5">
+                  <Bot className="w-3.5 h-3.5 text-[#5A7194]" />
                   <span>Jawaban Rekomendasi Resmi AI & CS (Answer)</span>
-                  <span className="text-rose-400">*</span>
+                  <span className="text-[#C53030]">*</span>
                 </label>
                 <textarea
                   rows={4}
@@ -9304,25 +9114,25 @@ export default function Dashboard() {
                   value={faqForm.a}
                   onChange={(e) => setFaqForm({ ...faqForm, a: e.target.value })}
                   placeholder="Tuliskan jawaban yang ramah, sopan, jelas, dan solutif yang akan disampaikan AI kepada pelanggan..."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] placeholder-[#5A7194]/60 focus:outline-none focus:border-[#5A7194] focus:bg-white transition"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#A6AFC1]/40">
                 <button
                   type="button"
                   onClick={() => {
                     setShowFaqModal(false);
                     setEditingFaq(null);
                   }}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-[#F5F6F8] text-[#233858] border border-[#A6AFC1] font-semibold text-xs shadow-xs transition cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={faqSaving}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  className="px-5 py-2 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-sm flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {faqSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
                   <span>{faqSaving ? 'Menyimpan...' : 'Simpan & Ajari AI'}</span>
@@ -9333,75 +9143,75 @@ export default function Dashboard() {
         </div>
       )}
 
-
         </div>
 
-        {/* MOBILE BOTTOM NAVIGATION BAR (md:hidden) */}
+        {/* MOBILE BOTTOM NAVIGATION BAR (md:hidden) - PERMANENTLY FIXED AT BOTTOM */}
         {!mobileChatOpen && (
-          <nav className="md:hidden shrink-0 h-16 bg-[#0f172a]/95 border-t border-slate-800 backdrop-blur-xl px-2 flex items-center justify-around z-20 shadow-lg">
-            <button
-              onClick={() => setActiveTab('chats')}
-              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${
-                activeTab === 'chats' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <div className="relative">
-                <MessageSquare className="w-5 h-5" />
-                {conversations.length > 0 && (
-                  <span className="absolute -top-1 -right-2 w-4 h-4 bg-emerald-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
-                    {conversations.length}
+          <nav className="fixed inset-x-0 bottom-0 z-40 md:hidden h-16 bg-[#233858] border-t border-[#5A7194]/40 backdrop-blur-xl px-1.5 flex items-center justify-around shadow-2xl select-none">
+            {[
+              {
+                id: 'chats',
+                label: 'Chat',
+                icon: MessageSquare,
+                badge: conversations.length > 0 ? conversations.length : null,
+                badgeBg: 'bg-[#5A7194]',
+                isActive: activeTab === 'chats',
+              },
+              {
+                id: 'gemini',
+                label: 'AI Studio',
+                icon: Sparkles,
+                badge: null,
+                isActive: activeTab === 'gemini',
+              },
+              {
+                id: 'tickets',
+                label: 'Komplain & CS',
+                icon: ShieldAlert,
+                badge: tickets.filter((t) => (t.status || 'Open').toLowerCase() === 'open').length || (tickets.length > 0 ? tickets.length : null),
+                badgeBg: 'bg-[#C53030]',
+                isActive: activeTab === 'tickets' || activeTab === 'complaint',
+              },
+              {
+                id: 'catalog',
+                label: 'Katalog',
+                icon: ShoppingBag,
+                badge: null,
+                isActive: activeTab === 'catalog',
+              },
+              {
+                id: 'qna',
+                label: 'Q&A AI',
+                icon: Brain,
+                badge: null,
+                isActive: activeTab === 'qna',
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`flex flex-col items-center justify-center gap-1 py-1 px-3 rounded-xl transition-all duration-150 cursor-pointer ${
+                    item.isActive
+                      ? 'text-white bg-[#5A7194]/40 shadow-xs'
+                      : 'text-[#A6AFC1] hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <div className="relative">
+                    <Icon className={`w-5 h-5 transition-transform ${item.isActive ? 'scale-110 text-white' : 'text-[#A6AFC1]'}`} />
+                    {item.badge && (
+                      <span className={`absolute -top-1.5 -right-2.5 min-w-[16px] h-4 ${item.badgeBg} text-white text-[9px] rounded-full flex items-center justify-center font-bold px-1 shadow-sm`}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                  <span className={`text-[10px] tracking-tight transition-colors ${item.isActive ? 'text-white font-bold' : 'text-[#A6AFC1] font-medium'}`}>
+                    {item.label}
                   </span>
-                )}
-              </div>
-              <span className="text-[10px]">Chat</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('gemini')}
-              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${
-                activeTab === 'gemini' ? 'text-purple-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Sparkles className="w-5 h-5" />
-              <span className="text-[10px]">AI Studio</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('tickets')}
-              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${
-                activeTab === 'tickets' || activeTab === 'complaint' ? 'text-purple-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <div className="relative">
-                <ShieldAlert className="w-5 h-5" />
-                {tickets.length > 0 && (
-                  <span className="absolute -top-1 -right-2 w-4 h-4 bg-purple-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
-                    {tickets.length}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px]">Komplain & CS</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('catalog')}
-              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${
-                activeTab === 'catalog' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <ShoppingBag className="w-5 h-5" />
-              <span className="text-[10px]">Katalog</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('qna')}
-              className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${
-                activeTab === 'qna' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Brain className="w-5 h-5" />
-              <span className="text-[10px]">Q&A AI</span>
-            </button>
+                </button>
+              );
+            })}
           </nav>
         )}
       </main>
@@ -9409,14 +9219,14 @@ export default function Dashboard() {
       {/* TICKET EDIT MODAL */}
       {selectedTicket && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+          <div className="bg-white border border-[#A6AFC1]/50 text-[#233858] rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
                   <ShieldAlert className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">Kelola Komplain & Layanan CS #{selectedTicket.id}</h3>
+                  <h3 className="font-bold text-[#233858] text-base">Kelola Komplain & Layanan CS #{selectedTicket.id}</h3>
                   <p className="text-[11px] text-slate-400">
                     {selectedTicket.createdAt ? new Date(selectedTicket.createdAt).toLocaleString('id-ID') : 'Laporan Aktif'}
                   </p>
@@ -9424,7 +9234,7 @@ export default function Dashboard() {
               </div>
               <button
                 onClick={() => setSelectedTicket(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] border border-transparent hover:border-[#A6AFC1]/40 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -9432,11 +9242,11 @@ export default function Dashboard() {
 
             <div className="space-y-3.5 text-xs">
               {/* Customer & Quick WA Action */}
-              <div className="p-3 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-3">
+              <div className="p-3 rounded-2xl bg-[#F5F6F8] border border-[#A6AFC1]/60 flex items-center justify-between gap-3">
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Pelanggan</span>
-                  <p className="font-bold text-slate-100 text-sm mt-0.5">{selectedTicket.name || 'Pelanggan'}</p>
-                  <p className="text-slate-400 font-mono text-[11px]">{selectedTicket.contact || selectedTicket.sender || '-'}</p>
+                  <span className="text-[10px] text-[#5A7194] uppercase font-bold block">Pelanggan</span>
+                  <p className="font-bold text-[#233858] text-sm mt-0.5">{selectedTicket.name || 'Pelanggan'}</p>
+                  <p className="text-[#5A7194] font-mono text-[11px] font-semibold">{selectedTicket.contact || selectedTicket.sender || '-'}</p>
                 </div>
                 {(selectedTicket.contact || selectedTicket.sender) && (
                   <button
@@ -9452,8 +9262,8 @@ export default function Dashboard() {
 
               {/* Rincian Permohonan */}
               <div className="space-y-1">
-                <span className="font-semibold text-slate-300">Rincian Permohonan / Keluhan</span>
-                <p className="text-slate-200 bg-slate-900/90 p-3 rounded-xl border border-slate-800 leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap">
+                <span className="font-semibold text-[#233858]">Rincian Permohonan / Keluhan</span>
+                <p className="text-[#233858] bg-[#F5F6F8] p-3 rounded-xl border border-[#A6AFC1]/60 leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap">
                   {selectedTicket.description}
                 </p>
               </div>
@@ -9461,11 +9271,11 @@ export default function Dashboard() {
               {/* Status & Priority Selection */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Status Tiket</label>
+                  <label className="font-semibold text-[#233858]">Status Tiket</label>
                   <select
                     value={ticketStatusUpdate}
                     onChange={(e) => setTicketStatusUpdate(e.target.value)}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] outline-none focus:border-emerald-500 cursor-pointer"
                   >
                     <option value="Open">Open (Menunggu Penanganan)</option>
                     <option value="In Progress">In Progress (Sedang Diproses)</option>
@@ -9475,11 +9285,11 @@ export default function Dashboard() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Prioritas</label>
+                  <label className="font-semibold text-[#233858]">Prioritas</label>
                   <select
                     value={ticketPriorityUpdate}
                     onChange={(e) => setTicketPriorityUpdate(e.target.value)}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] outline-none focus:border-emerald-500 cursor-pointer"
                   >
                     <option value="Normal">Normal</option>
                     <option value="Tinggi">Tinggi</option>
@@ -9490,11 +9300,11 @@ export default function Dashboard() {
 
               {/* Kategori Layanan */}
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Kategori Layanan</label>
+                <label className="font-semibold text-[#233858]">Kategori Layanan</label>
                 <select
                   value={ticketCategoryUpdate}
                   onChange={(e) => setTicketCategoryUpdate(e.target.value)}
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] outline-none focus:border-emerald-500 cursor-pointer"
                 >
                   <option value="Pembelian Produk">Pembelian Produk (Order / Beli)</option>
                   <option value="Klaim Garansi">Klaim Garansi (Ganti Baru / Pecah)</option>
@@ -9505,13 +9315,13 @@ export default function Dashboard() {
 
               {/* Catatan Petugas */}
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Catatan Petugas / Tindak Lanjut</label>
+                <label className="font-semibold text-[#233858]">Catatan Petugas / Tindak Lanjut</label>
                 <textarea
                   rows={3}
                   value={ticketNotesUpdate}
                   onChange={(e) => setTicketNotesUpdate(e.target.value)}
                   placeholder="Tuliskan catatan tindak lanjut, solusi, atau kontak CS..."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white outline-none focus:border-emerald-500 resize-none"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] outline-none focus:border-emerald-500 resize-none"
                 />
               </div>
             </div>
@@ -9521,7 +9331,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={handleUpdateTicket}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-lg shadow-emerald-900/30 transition cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs shadow-lg shadow-emerald-900/30 transition cursor-pointer"
               >
                 Simpan Pembaruan
               </button>
@@ -9537,7 +9347,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => setSelectedTicket(null)}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+                className="px-4 py-2.5 rounded-xl bg-[#F5F6F8] hover:bg-[#5A7194]/15 text-[#233858] border border-[#A6AFC1]/60 text-xs font-semibold transition cursor-pointer shadow-xs"
               >
                 Tutup
               </button>
@@ -9550,20 +9360,20 @@ export default function Dashboard() {
       {/* MODAL: BUAT TIKET KOMPLAIN & CS */}
       {showCreateTicketModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-[#0f172a] border border-slate-700/80 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+          <div className="bg-white border border-[#A6AFC1]/50 text-[#233858] rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
                   <ShieldAlert className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">Buat Tiket Komplain & Layanan CS</h3>
+                  <h3 className="font-bold text-[#233858] text-base">Buat Tiket Komplain & Layanan CS</h3>
                   <p className="text-[11px] text-slate-400">Input keluhan atau permohonan layanan via WhatsApp, telepon, atau walk-in</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowCreateTicketModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] border border-transparent hover:border-[#A6AFC1]/40 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -9572,35 +9382,35 @@ export default function Dashboard() {
             <form onSubmit={handleCreateManualTicket} className="space-y-3.5 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Nama Pelanggan <span className="text-rose-400">*</span></label>
+                  <label className="font-semibold text-[#233858]">Nama Pelanggan <span className="text-rose-400">*</span></label>
                   <input
                     type="text"
                     required
                     placeholder="Contoh: H. Ahmad Subardjo"
                     value={newTicketForm.name}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, name: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] placeholder-slate-500 outline-none focus:border-purple-500"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">No. WhatsApp / Kontak</label>
+                  <label className="font-semibold text-[#233858]">No. WhatsApp / Kontak</label>
                   <input
                     type="text"
                     placeholder="Contoh: 081234567890"
                     value={newTicketForm.contact}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, contact: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500 font-mono"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] placeholder-slate-500 outline-none focus:border-purple-500 font-mono"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Kategori Layanan</label>
+                  <label className="font-semibold text-[#233858]">Kategori Layanan</label>
                   <select
                     value={newTicketForm.category}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, category: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-purple-500 cursor-pointer"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2 text-xs text-[#233858] outline-none focus:border-[#5A7194] cursor-pointer font-medium"
                   >
                     <option value="Pengaduan Produk">🚨 Pengaduan & Komplain</option>
                     <option value="Klaim Garansi">🛡️ Klaim Garansi</option>
@@ -9610,11 +9420,11 @@ export default function Dashboard() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Prioritas</label>
+                  <label className="font-semibold text-[#233858]">Prioritas</label>
                   <select
                     value={newTicketForm.priority}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, priority: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-purple-500 cursor-pointer"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2 text-xs text-[#233858] outline-none focus:border-[#5A7194] cursor-pointer font-medium"
                   >
                     <option value="Normal">Normal</option>
                     <option value="Tinggi">Tinggi</option>
@@ -9623,11 +9433,11 @@ export default function Dashboard() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Status Awal</label>
+                  <label className="font-semibold text-[#233858]">Status Awal</label>
                   <select
                     value={newTicketForm.status}
                     onChange={(e) => setNewTicketForm((prev) => ({ ...prev, status: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-white outline-none focus:border-purple-500 cursor-pointer"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2 text-xs text-[#233858] outline-none focus:border-[#5A7194] cursor-pointer font-medium"
                   >
                     <option value="Open">Open (Menunggu CS)</option>
                     <option value="In Progress">In Progress (Diproses)</option>
@@ -9637,25 +9447,25 @@ export default function Dashboard() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Rincian Keluhan / Permohonan Layanan <span className="text-rose-400">*</span></label>
+                <label className="font-semibold text-[#233858]">Rincian Keluhan / Permohonan Layanan <span className="text-rose-400">*</span></label>
                 <textarea
                   required
                   rows={3}
                   placeholder="Jelaskan secara detail keluhan karpet, jahitan obras, klaim garansi, atau permohonan pelanggan..."
                   value={newTicketForm.description}
                   onChange={(e) => setNewTicketForm((prev) => ({ ...prev, description: e.target.value }))}
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500 resize-none leading-relaxed"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] placeholder-slate-500 outline-none focus:border-purple-500 resize-none leading-relaxed"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Catatan Internal Petugas CS (Opsional)</label>
+                <label className="font-semibold text-[#233858]">Catatan Internal Petugas CS (Opsional)</label>
                 <textarea
                   rows={2}
                   placeholder="Catatan penanganan untuk tim survey, admin CS, atau teknisi obras..."
                   value={newTicketForm.notes}
                   onChange={(e) => setNewTicketForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500 resize-none"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-xs text-[#233858] placeholder-slate-500 outline-none focus:border-purple-500 resize-none"
                 />
               </div>
 
@@ -9684,7 +9494,7 @@ export default function Dashboard() {
       {/* MODAL: TAMBAH / EDIT PRODUK */}
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-xl rounded-3xl bg-[#0f172a] border border-slate-700/80 p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto transform animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-xl rounded-3xl bg-white border border-[#A6AFC1]/50 text-[#233858] p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto transform animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3.5 border-b border-slate-800">
               <div className="flex items-center gap-3">
@@ -9692,7 +9502,7 @@ export default function Dashboard() {
                   <ShoppingBag className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base leading-snug">
+                  <h3 className="font-bold text-[#233858] text-base leading-snug">
                     {editingProduct ? `Edit Produk: ${editingProduct.title}` : 'Tambah Produk Baru ke Katalog'}
                   </h3>
                   <p className="text-xs text-slate-400">
@@ -9703,7 +9513,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => setShowProductModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] transition cursor-pointer"
                 aria-label="Tutup modal"
               >
                 <X className="w-5 h-5" />
@@ -9722,7 +9532,7 @@ export default function Dashboard() {
                 />
 
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-[#233858] font-semibold flex items-center gap-1.5">
                     <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Upload Foto Produk</span>
                   </label>
@@ -9730,8 +9540,8 @@ export default function Dashboard() {
                 </div>
 
                 {imagePreview ? (
-                  <div className="flex items-center gap-4 p-3 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-inner">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-950 border border-slate-700 shrink-0 relative shadow-sm">
+                  <div className="flex items-center gap-4 p-3 rounded-2xl bg-[#F5F6F8] border border-[#A6AFC1]/60 shadow-inner">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-[#F5F6F8] border border-[#A6AFC1]/60 shrink-0 relative shadow-sm">
                       <img
                         src={imagePreview}
                         alt="Preview Foto Produk"
@@ -9742,7 +9552,7 @@ export default function Dashboard() {
                       />
                     </div>
                     <div className="flex-1 min-w-0 space-y-1">
-                      <p className="text-xs font-semibold text-white truncate">
+                      <p className="text-xs font-semibold text-[#233858] truncate">
                         {productForm.imageBase64 ? 'Foto Baru Berhasil Dipilih' : 'Foto Produk Aktif'}
                       </p>
                       <p className="text-[11px] text-slate-400 leading-snug">
@@ -9781,7 +9591,7 @@ export default function Dashboard() {
                       const file = e.dataTransfer?.files?.[0];
                       if (file) processImageFile(file);
                     }}
-                    className="border-2 border-dashed border-slate-700/80 hover:border-emerald-500/70 rounded-2xl p-4 bg-slate-900/50 hover:bg-slate-900/90 transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-3.5 text-center sm:text-left group"
+                    className="border-2 border-dashed border-[#A6AFC1]/60 hover:border-emerald-500/70 rounded-2xl p-4 bg-[#F5F6F8]/50 hover:bg-[#F5F6F8] transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-3.5 text-center sm:text-left group"
                   >
                     <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition shrink-0 shadow-sm">
                       <Upload className="w-5 h-5" />
@@ -9801,7 +9611,7 @@ export default function Dashboard() {
               {/* Category Selection */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-[#233858] font-semibold flex items-center gap-1.5">
                     <Tag className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Kategori Karpet <span className="text-rose-400">*</span></span>
                   </label>
@@ -9817,10 +9627,10 @@ export default function Dashboard() {
                 <select
                   value={productForm.category || (carpetCategoriesList[0]?.name || 'Karpet Masjid & Musholla')}
                   onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))}
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition cursor-pointer"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-xs text-[#233858] focus:outline-none focus:border-[#5A7194] focus:ring-1 focus:ring-emerald-500/30 transition cursor-pointer"
                 >
                   {carpetCategoriesList.map((c) => (
-                    <option key={c.name} value={c.name} className="bg-slate-900 text-white py-1">
+                    <option key={c.name} value={c.name} className="bg-[#F5F6F8] text-[#233858] py-1">
                       {c.name}
                     </option>
                   ))}
@@ -9829,7 +9639,7 @@ export default function Dashboard() {
 
               {/* Product Title (Full Width) */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1">
+                <label className="text-xs font-semibold text-[#233858] font-semibold flex items-center gap-1">
                   <span>Nama Produk Karpet</span>
                   <span className="text-rose-400">*</span>
                 </label>
@@ -9846,45 +9656,30 @@ export default function Dashboard() {
                     }));
                   }}
                   placeholder="Contoh: Karpet Minimalis Scandinavia Nordic Line"
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:ring-1 focus:ring-emerald-500/30 transition"
                 />
               </div>
 
-              {/* Grid 2 Cols: Price & SKU Code */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1">
-                    <span>Harga Produk</span>
-                    <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={productForm.price}
-                    onChange={(e) => setProductForm((prev) => ({ ...prev, price: e.target.value }))}
-                    placeholder="Contoh: Rp 1.450.000"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-emerald-400 font-semibold placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition font-mono"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-slate-300">Kode SKU Produk</label>
-                    <span className="text-[10px] text-slate-500">(Opsional)</span>
-                  </div>
-                  <input
-                    type="text"
-                    value={productForm.code}
-                    onChange={(e) => setProductForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                    placeholder="Contoh: NORDIC-SCANDI"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition font-mono uppercase"
-                  />
-                </div>
+              {/* Product Price */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-[#233858] font-semibold flex items-center gap-1">
+                  <span>Harga Produk</span>
+                  <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={productForm.price}
+                  onChange={(e) => setProductForm((prev) => ({ ...prev, price: e.target.value }))}
+                  placeholder="Contoh: Rp 1.450.000"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-xs text-emerald-400 font-semibold placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:ring-1 focus:ring-emerald-500/30 transition font-mono"
+                />
               </div>
 
               {/* Color & Size Variants (Full Width) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-300">Pilihan Warna & Ukuran (Varian)</label>
+                  <label className="text-xs font-semibold text-[#233858]">Pilihan Warna & Ukuran (Varian)</label>
                   <span className="text-[10px] text-slate-500">Info varian untuk bot</span>
                 </div>
                 <input
@@ -9892,14 +9687,14 @@ export default function Dashboard() {
                   value={productForm.footer}
                   onChange={(e) => setProductForm((prev) => ({ ...prev, footer: e.target.value }))}
                   placeholder="Contoh: Warna: Warm Beige, Ivory Cream & Charcoal | Ukuran: 160x230cm, 200x300cm"
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:ring-1 focus:ring-emerald-500/30 transition"
                 />
               </div>
 
               {/* Subtitle / Description (Full Width) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-300">Deskripsi Singkat / Spesifikasi</label>
+                  <label className="text-xs font-semibold text-[#233858]">Deskripsi Singkat / Spesifikasi</label>
                   <span className="text-[10px] text-slate-500">Pengetahuan produk AI</span>
                 </div>
                 <textarea
@@ -9907,25 +9702,7 @@ export default function Dashboard() {
                   value={productForm.subtitle}
                   onChange={(e) => setProductForm((prev) => ({ ...prev, subtitle: e.target.value }))}
                   placeholder="Contoh: Karpet ruang tamu modern minimalis bertekstur lembut, anti-slip backing, motif geometris kontemporer chic. Sangat nyaman untuk ruang keluarga."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 leading-relaxed font-sans transition resize-none"
-                />
-              </div>
-
-              {/* Product Web URL (Optional) */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Link URL Produk (Opsional)</span>
-                  </label>
-                  <span className="text-[10px] text-slate-500">Tautan website/marketplace</span>
-                </div>
-                <input
-                  type="text"
-                  value={productForm.url}
-                  onChange={(e) => setProductForm((prev) => ({ ...prev, url: e.target.value }))}
-                  placeholder="https://sultancarpet.co.id/products/karpet-nordic-scandi"
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 font-mono text-[11px] transition"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] focus:ring-1 focus:ring-emerald-500/30 leading-relaxed font-sans transition resize-none"
                 />
               </div>
 
@@ -9934,14 +9711,14 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setShowProductModal(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition cursor-pointer border border-slate-700/50"
+                  className="px-4 py-2.5 rounded-xl bg-[#F5F6F8] hover:bg-[#5A7194]/15 text-[#233858] font-semibold text-xs transition cursor-pointer border border-[#A6AFC1]/60 shadow-xs"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={savingProduct}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-950/40 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-lg shadow-emerald-950/40 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {savingProduct ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   <span>{savingProduct ? 'Menyimpan...' : editingProduct ? 'Simpan Perubahan' : 'Simpan Produk Baru'}</span>
@@ -9952,10 +9729,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODAL: TAMBAH KATEGORI BARU */}
+      {/* MODAL: TAMBAH / EDIT KATEGORI */}
       {showCategoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-3xl bg-[#0f172a] border border-slate-700/80 p-6 shadow-2xl space-y-5 transform animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-md rounded-3xl bg-white border border-[#A6AFC1]/50 text-[#233858] p-6 shadow-2xl space-y-5 transform animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
@@ -9963,14 +9740,23 @@ export default function Dashboard() {
                   <Tag className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">Tambah Kategori Baru</h3>
-                  <p className="text-xs text-slate-400">Klasifikasi produk karpet untuk katalog & bot AI</p>
+                  <h3 className="font-bold text-[#233858] text-base">
+                    {editingCategory ? 'Edit Kategori Karpet' : 'Tambah Kategori Baru'}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {editingCategory 
+                      ? `Perbarui nama dan deskripsi kategori "${editingCategory.name}"`
+                      : 'Klasifikasi produk karpet untuk katalog & bot AI'}
+                  </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setShowCategoryModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                onClick={() => {
+                  setShowCategoryModal(false);
+                  setEditingCategory(null);
+                }}
+                className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -9978,32 +9764,35 @@ export default function Dashboard() {
 
             <form onSubmit={handleSaveCategory} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300">Nama Kategori *</label>
+                <label className="text-xs font-semibold text-[#233858]">Nama Kategori *</label>
                 <input
                   type="text"
                   required
                   value={categoryForm.name}
                   onChange={(e) => setCategoryForm((prev) => ({ ...prev, name: e.target.value }))}
                   placeholder="Contoh: Karpet Hotel & Ballroom"
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194]"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300">Deskripsi Kategori</label>
+                <label className="text-xs font-semibold text-[#233858]">Deskripsi Kategori</label>
                 <textarea
                   rows={3}
                   value={categoryForm.description}
                   onChange={(e) => setCategoryForm((prev) => ({ ...prev, description: e.target.value }))}
                   placeholder="Tuliskan keterangan singkat mengenai jenis atau karakteristik karpet dalam kategori ini..."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 leading-relaxed"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-xs text-[#233858] placeholder-slate-500 focus:outline-none focus:border-emerald-500 leading-relaxed"
                 />
               </div>
 
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setShowCategoryModal(false)}
+                  onClick={() => {
+                    setShowCategoryModal(false);
+                    setEditingCategory(null);
+                  }}
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
                 >
                   Batal
@@ -10011,7 +9800,7 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={savingCategory}
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
+                  className="px-5 py-2 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
                 >
                   {savingCategory ? (
                     <>
@@ -10021,7 +9810,7 @@ export default function Dashboard() {
                   ) : (
                     <>
                       <Check className="w-3.5 h-3.5" />
-                      <span>Simpan Kategori</span>
+                      <span>{editingCategory ? 'Simpan Perubahan' : 'Simpan Kategori'}</span>
                     </>
                   )}
                 </button>
@@ -10067,22 +9856,22 @@ export default function Dashboard() {
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-            <div className="w-full max-w-2xl rounded-3xl bg-[#0f172a] border border-slate-700/80 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="w-full max-w-2xl rounded-3xl bg-white border border-[#A6AFC1]/50 text-[#233858] shadow-2xl flex flex-col max-h-[92vh] overflow-hidden animate-in zoom-in-95 duration-200">
               {/* Modal Header */}
-              <div className="p-5 sm:p-6 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
+              <div className="p-5 sm:p-6 border-b border-[#A6AFC1]/60 bg-[#F5F6F8]/60 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                     <Send className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-base">Kirim Pesan Produk</h3>
+                    <h3 className="font-bold text-[#233858] text-base">Kirim Pesan Produk</h3>
                     <p className="text-xs text-slate-400">Pilih riwayat chat pelanggan WhatsApp untuk mengirim informasi produk ini</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowSendProductModal(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                  className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] transition cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -10091,9 +9880,9 @@ export default function Dashboard() {
               {/* Modal Body (Scrollable) */}
               <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
                 {/* 1. Selected Product Preview Card */}
-                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+                <div className="p-3.5 rounded-2xl bg-[#F5F6F8]/80 border border-[#A6AFC1]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-950 border border-slate-700/80 shrink-0">
+                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#F5F6F8] border border-[#A6AFC1]/60 shrink-0">
                       <img
                         src={imgSrc}
                         alt={prod.title}
@@ -10103,7 +9892,7 @@ export default function Dashboard() {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-white text-sm truncate">{prod.title}</h4>
+                        <h4 className="font-bold text-[#233858] text-sm truncate">{prod.title}</h4>
                         <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 shrink-0">
                           {prod.price}
                         </span>
@@ -10114,7 +9903,7 @@ export default function Dashboard() {
                   </div>
 
                   {prod.image && (
-                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none bg-slate-950/70 hover:bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 transition shrink-0">
+                    <label className="flex items-center gap-2 text-xs text-[#233858] font-semibold cursor-pointer select-none bg-[#F5F6F8]/70 hover:bg-[#F5F6F8] px-3 py-2 rounded-xl border border-[#A6AFC1]/60 transition shrink-0">
                       <input
                         type="checkbox"
                         checked={includeProductImage}
@@ -10129,7 +9918,7 @@ export default function Dashboard() {
                 {/* 2. Chat Recipient Selection */}
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                    <label className="text-xs font-semibold text-[#233858] font-semibold flex items-center gap-1.5">
                       <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
                       <span>Pilih Riwayat Chat Pelanggan ({conversations.length} Tersedia)</span>
                     </label>
@@ -10149,7 +9938,7 @@ export default function Dashboard() {
                       value={sendProductChatSearch}
                       onChange={(e) => setSendProductChatSearch(e.target.value)}
                       placeholder="Cari nama kontak pelanggan atau nomor HP..."
-                      className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-8 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 pl-8 pr-8 py-2 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194]"
                     />
                     {sendProductChatSearch && (
                       <button
@@ -10163,7 +9952,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Conversation List */}
-                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 border border-slate-800/80 rounded-2xl p-2 bg-slate-900/40">
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 border border-[#A6AFC1]/60 rounded-2xl p-2 bg-[#F5F6F8]/40">
                     {filteredRecipients.length === 0 ? (
                       <div className="p-5 text-center text-slate-500 space-y-1">
                         <MessageSquare className="w-6 h-6 mx-auto text-slate-600 opacity-60" />
@@ -10213,7 +10002,7 @@ export default function Dashboard() {
                               </div>
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <h5 className="font-bold text-white text-xs truncate">{contactName}</h5>
+                                  <h5 className="font-bold text-[#233858] text-xs truncate">{contactName}</h5>
                                   {phoneLabel && (
                                     <span className="text-[10px] text-slate-400 font-mono">{phoneLabel}</span>
                                   )}
@@ -10259,7 +10048,7 @@ export default function Dashboard() {
                           }
                         }}
                         placeholder="Contoh: 081298765432..."
-                        className="w-full rounded-xl bg-slate-900 border border-slate-800 pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                        className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 pl-8 pr-3 py-1.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] font-mono"
                       />
                     </div>
                   </div>
@@ -10268,7 +10057,7 @@ export default function Dashboard() {
                 {/* 3. Message Textarea */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-slate-200">Isi Pesan WhatsApp (Dapat Diedit)</label>
+                    <label className="text-xs font-semibold text-[#233858]">Isi Pesan WhatsApp (Dapat Diedit)</label>
                     <span className="text-[10px] text-slate-500 font-mono">{sendProductMessageText.length} karakter</span>
                   </div>
                   <textarea
@@ -10276,7 +10065,7 @@ export default function Dashboard() {
                     value={sendProductMessageText}
                     onChange={(e) => setSendProductMessageText(e.target.value)}
                     placeholder="Tulis pesan detail produk..."
-                    className="w-full rounded-xl bg-slate-900 border border-slate-800 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-sans leading-relaxed resize-y"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] font-sans leading-relaxed resize-y"
                   />
                 </div>
 
@@ -10294,11 +10083,11 @@ export default function Dashboard() {
               </div>
 
               {/* Modal Footer */}
-              <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between gap-3 shrink-0">
+              <div className="p-4 sm:p-5 border-t border-[#A6AFC1]/60 bg-[#F5F6F8]/60 flex items-center justify-between gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowSendProductModal(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-[#F5F6F8] hover:bg-[#5A7194]/15 text-[#233858] font-semibold text-xs transition cursor-pointer border border-[#A6AFC1]/60 shadow-xs"
                 >
                   Batal
                 </button>
@@ -10324,7 +10113,7 @@ export default function Dashboard() {
                     type="button"
                     onClick={handleSendProductToChat}
                     disabled={isSendingProductMessage || (!selectedChatRecipient && !manualPhoneInput.trim())}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-sm flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     {isSendingProductMessage ? (
                       <>
@@ -10367,44 +10156,44 @@ export default function Dashboard() {
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="w-full max-w-md rounded-3xl bg-[#0f172a] border border-slate-700/80 p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
+            <div className="w-full max-w-md rounded-3xl bg-white border border-[#A6AFC1]/50 text-[#233858] p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
               {/* Modal Header */}
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center justify-between pb-3 border-b border-[#A6AFC1]/30">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400">
-                    <User className="w-5 h-5" />
+                  <div className="p-2 rounded-xl bg-[#5A7194]/20 text-[#5A7194]">
+                    <User className="w-5 h-5 text-[#5A7194]" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-base">Profil Kontak Pelanggan</h3>
-                    <p className="text-xs text-slate-400">Kelola nomor telepon & informasi kontak WhatsApp</p>
+                    <h3 className="font-bold text-[#233858] text-base">Profil Kontak Pelanggan</h3>
+                    <p className="text-xs text-[#5A7194]">Kelola nomor telepon & informasi kontak WhatsApp</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowProfileModal(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                  className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] transition"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Profile Avatar Card */}
-              <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center gap-4">
+              <div className="p-4 rounded-2xl bg-[#F5F6F8] border border-[#A6AFC1]/60 flex items-center gap-4">
                 <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white font-extrabold text-xl shadow-lg ring-4 ring-emerald-500/20 shrink-0">
                   {modalInitials}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <h4 className="font-bold text-base text-white truncate">
+                    <h4 className="font-bold text-base text-[#233858] truncate">
                       {modalDisplayName}
                     </h4>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold shrink-0">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2F855A]/15 border border-[#2F855A]/40 text-[#2F855A] font-semibold shrink-0">
                       Aktif
                     </span>
                   </div>
-                  <p className="text-xs font-mono text-emerald-400 mb-1 font-semibold truncate">
+                  <p className="text-xs font-mono text-[#5A7194] mb-1 font-semibold truncate">
                     {modalFormattedPhone}
                   </p>
-                  <p className="text-[11px] text-slate-400 truncate">
+                  <p className="text-[11px] text-[#5A7194] truncate">
                     {profileTarget.messages?.length || 0} pesan tercatat dalam obrolan
                   </p>
                 </div>
@@ -10418,8 +10207,8 @@ export default function Dashboard() {
                   rel="noreferrer"
                   className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-medium transition ${
                     modalHasRealPhone
-                      ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-600/20'
-                      : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed pointer-events-none'
+                      ? 'bg-[#2F855A]/15 border-[#2F855A]/40 text-[#2F855A] hover:bg-[#2F855A]/25'
+                      : 'bg-[#F5F6F8] border-[#A6AFC1]/40 text-[#A6AFC1] cursor-not-allowed pointer-events-none'
                   }`}
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
@@ -10430,16 +10219,16 @@ export default function Dashboard() {
                   type="button"
                   disabled={!modalHasRealPhone}
                   onClick={() => modalHasRealPhone && handleCopyText(profileTarget.phone, 'Nomor Telepon')}
-                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-medium transition ${
+                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-medium transition cursor-pointer ${
                     modalHasRealPhone
-                      ? 'bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-300'
-                      : 'bg-slate-800/40 border-slate-800 text-slate-500 cursor-not-allowed'
+                      ? 'bg-white hover:bg-[#F5F6F8] border-[#A6AFC1]/60 text-[#233858]'
+                      : 'bg-[#F5F6F8] border-[#A6AFC1]/40 text-[#A6AFC1] cursor-not-allowed'
                   }`}
                 >
                   {copiedField === 'Nomor Telepon' ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <Check className="w-3.5 h-3.5 text-[#2F855A]" />
                   ) : (
-                    <Copy className="w-3.5 h-3.5 text-sky-400" />
+                    <Copy className="w-3.5 h-3.5 text-[#5A7194]" />
                   )}
                   <span>{copiedField === 'Nomor Telepon' ? 'Tersalin!' : 'Salin Nomor'}</span>
                 </button>
@@ -10448,9 +10237,9 @@ export default function Dashboard() {
             {/* Edit Profile Form */}
             <form onSubmit={handleSaveProfile} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                <label className="text-xs font-semibold text-[#233858] flex items-center justify-between">
                   <span>Nama Pelanggan</span>
-                  <span className="text-[10px] text-slate-500">Tampil di dashboard</span>
+                  <span className="text-[10px] text-[#5A7194]">Tampil di dashboard</span>
                 </label>
                 <input
                   type="text"
@@ -10458,17 +10247,17 @@ export default function Dashboard() {
                   value={editProfileName}
                   onChange={(e) => setEditProfileName(e.target.value)}
                   placeholder="Contoh: Kharisma Alung P"
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3.5 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] transition"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                <label className="text-xs font-semibold text-[#233858] flex items-center justify-between">
                   <span>Nomor Telepon (WhatsApp)</span>
-                  <span className="text-[10px] text-emerald-400 font-mono">Real-time sync</span>
+                  <span className="text-[10px] text-[#2F855A] font-mono">Real-time sync</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-mono">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#5A7194] text-xs font-mono">
                     +
                   </span>
                   <input
@@ -10477,45 +10266,45 @@ export default function Dashboard() {
                     value={editProfilePhone.startsWith('+') ? editProfilePhone.slice(1) : editProfilePhone}
                     onChange={(e) => setEditProfilePhone(e.target.value.replace(/[^0-9]/g, ''))}
                     placeholder="6281216526150"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 pl-7 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono transition"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 pl-7 pr-3.5 py-2.5 text-xs text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] font-mono transition"
                   />
                 </div>
-                <p className="text-[11px] text-slate-500">
-                  Gunakan kode negara tanpa spasi atau tanda strip (contoh: <span className="font-mono text-slate-400">6281216526150</span>).
+                <p className="text-[11px] text-[#5A7194]">
+                  Gunakan kode negara tanpa spasi atau tanda strip (contoh: <span className="font-mono text-[#233858] font-bold">6281216526150</span>).
                 </p>
               </div>
 
               {/* JID / Session ID technical details */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400 flex items-center justify-between">
+                <label className="text-xs font-semibold text-[#233858] flex items-center justify-between">
                   <span>ID Sesi Baileys (JID)</span>
                   <button
                     type="button"
                     onClick={() => handleCopyText(profileTarget.jid, 'JID Sesi')}
-                    className="text-[10px] text-sky-400 hover:underline flex items-center gap-1"
+                    className="text-[10px] text-[#5A7194] hover:text-[#233858] hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     <Copy className="w-3 h-3" />
                     <span>{copiedField === 'JID Sesi' ? 'Tersalin!' : 'Salin JID'}</span>
                   </button>
                 </label>
-                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] font-mono text-slate-400 break-all select-all">
+                <div className="p-2.5 rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 text-[11px] font-mono text-[#233858] break-all select-all">
                   {profileTarget.jid || profileTarget.phone}
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#A6AFC1]/30">
                 <button
                   type="button"
                   onClick={() => setShowProfileModal(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                  className="px-4 py-2.5 rounded-xl bg-white hover:bg-[#F5F6F8] text-[#233858] border border-[#A6AFC1]/60 text-xs font-medium transition cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={savingProfile}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold text-xs transition shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   {savingProfile ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -10533,22 +10322,22 @@ export default function Dashboard() {
 
       {/* COMPLAINT SUBMISSION MODAL */}
       {showComplaintModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-lg rounded-3xl border border-slate-800 bg-[#0f172a] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#F5F6F8]/80 backdrop-blur-md">
+          <div className="w-full max-w-lg rounded-3xl border border-[#A6AFC1]/50 bg-white text-[#233858] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
                   <ShieldAlert className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-sm">Formulir Pengaduan & Klaim Garansi</h3>
+                  <h3 className="font-bold text-[#233858] text-sm">Formulir Pengaduan & Klaim Garansi</h3>
                   <p className="text-[11px] text-slate-400">Nomor tiket otomatis terbit & diteruskan ke CS Manager</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowComplaintModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] transition"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -10557,36 +10346,36 @@ export default function Dashboard() {
             <form onSubmit={handleCreateComplaintTicket} className="p-6 space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Nama Pelapor / Pemesan *</label>
+                  <label className="text-[#233858] font-semibold font-semibold">Nama Pelapor / Pemesan *</label>
                   <input
                     type="text"
                     required
                     value={complaintForm.name}
                     onChange={(e) => setComplaintForm((prev) => ({ ...prev, name: e.target.value }))}
                     placeholder="Contoh: DKM Masjid Al-Ikhlas / Bpk Rudi"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194]"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Nomor WhatsApp / Kontak *</label>
+                  <label className="text-[#233858] font-semibold font-semibold">Nomor WhatsApp / Kontak *</label>
                   <input
                     type="text"
                     required
                     value={complaintForm.phone}
                     onChange={(e) => setComplaintForm((prev) => ({ ...prev, phone: e.target.value }))}
                     placeholder="0812xxxxxxxx"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 font-mono"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] font-mono"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Kategori Pengaduan</label>
+                  <label className="text-[#233858] font-semibold font-semibold">Kategori Pengaduan</label>
                   <select
                     value={complaintForm.category}
                     onChange={(e) => setComplaintForm((prev) => ({ ...prev, category: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] focus:outline-none focus:border-[#5A7194]"
                   >
                     <option value="Pengaduan Produk">Pengaduan Produk / Karpet</option>
                     <option value="Klaim Garansi Obras">Klaim Garansi Obras & Jahitan</option>
@@ -10595,11 +10384,11 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Jenis Kendala</label>
+                  <label className="text-[#233858] font-semibold font-semibold">Jenis Kendala</label>
                   <select
                     value={complaintForm.issueType}
                     onChange={(e) => setComplaintForm((prev) => ({ ...prev, issueType: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] focus:outline-none focus:border-[#5A7194]"
                   >
                     <option value="Kualitas / Obras Karpet">Kualitas / Obras Karpet</option>
                     <option value="Ukuran / Kemiringan Kiblat">Ukuran / Potongan Kemiringan Kiblat</option>
@@ -10610,14 +10399,14 @@ export default function Dashboard() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-300 font-semibold">Detail Keluhan / Rincian Kendala *</label>
+                <label className="text-[#233858] font-semibold font-semibold">Detail Keluhan / Rincian Kendala *</label>
                 <textarea
                   rows={3}
                   required
                   value={complaintForm.description}
                   onChange={(e) => setComplaintForm((prev) => ({ ...prev, description: e.target.value }))}
                   placeholder="Ceritakan kendala yang dihadapi secara detail..."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 leading-relaxed"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] leading-relaxed"
                 />
               </div>
 
@@ -10632,7 +10421,7 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={submittingComplaint}
-                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-purple-600/20 disabled:opacity-50"
+                  className="px-5 py-2 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-purple-600/20 disabled:opacity-50"
                 >
                   {submittingComplaint ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                   <span>{submittingComplaint ? 'Menerbitkan...' : 'Kirim Laporan Komplain'}</span>
@@ -10645,15 +10434,15 @@ export default function Dashboard() {
 
       {/* LOCATION FORM MODAL */}
       {showLocationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-lg rounded-3xl border border-slate-800 bg-[#0f172a] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#F5F6F8]/80 backdrop-blur-md">
+          <div className="w-full max-w-lg rounded-3xl border border-[#A6AFC1]/50 bg-white text-[#233858] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
                   <MapPin className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-sm">
+                  <h3 className="font-bold text-[#233858] text-sm">
                     {editingLocationIndex !== null ? 'Edit Lokasi & Alamat' : 'Tambah Lokasi Baru'}
                   </h3>
                   <p className="text-[11px] text-slate-400">Data showroom otomatis sinkron dengan WhatsApp bot</p>
@@ -10662,97 +10451,70 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => setShowLocationModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleSaveLocation} className="p-6 space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Nama / Judul Lokasi *</label>
-                  <input
-                    type="text"
-                    required
-                    value={locationForm.title}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, title: e.target.value }))}
-                    placeholder="Contoh: Showroom Fatmawati Jakarta Selatan"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Tipe / Kategori Lokasi</label>
-                  <select
-                    value={locationForm.type}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, type: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:border-amber-500"
-                  >
-                    <option value="Showroom Utama">Showroom Utama</option>
-                    <option value="Gudang & Obras">Gudang & Workshop Obras</option>
-                    <option value="Cabang Gallery">Cabang Gallery Resmi</option>
-                    <option value="Workshop Jahit">Workshop Jahit & Obras</option>
-                  </select>
-                </div>
+              <div className="space-y-1">
+                <label className="text-[#233858] font-semibold font-semibold">Nama / Judul Lokasi *</label>
+                <input
+                  type="text"
+                  required
+                  value={locationForm.title}
+                  onChange={(e) => setLocationForm((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Contoh: Showroom Fatmawati Jakarta Selatan"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194]"
+                />
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-300 font-semibold">Alamat Lengkap *</label>
+                <label className="text-[#233858] font-semibold font-semibold">Alamat Lengkap *</label>
                 <textarea
                   rows={2}
                   required
                   value={locationForm.address}
                   onChange={(e) => setLocationForm((prev) => ({ ...prev, address: e.target.value }))}
                   placeholder="Contoh: Jl. Fatmawati Raya No. 45, Cilandak, Jakarta Selatan 12430"
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 leading-relaxed"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-2.5 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] leading-relaxed"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Petunjuk / Landmark</label>
-                  <input
-                    type="text"
-                    value={locationForm.landmark}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, landmark: e.target.value }))}
-                    placeholder="Contoh: 500m dari Stasiun MRT Cipete Raya"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Telepon / WhatsApp *</label>
+                  <label className="text-[#233858] font-semibold font-semibold">Telepon / WhatsApp *</label>
                   <input
                     type="text"
                     required
                     value={locationForm.phone}
                     onChange={(e) => setLocationForm((prev) => ({ ...prev, phone: e.target.value }))}
                     placeholder="Contoh: 0812-9876-5432"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] font-mono"
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Jam Operasional</label>
+                  <label className="text-[#233858] font-semibold font-semibold">Jam Operasional</label>
                   <input
                     type="text"
                     value={locationForm.hours}
                     onChange={(e) => setLocationForm((prev) => ({ ...prev, hours: e.target.value }))}
                     placeholder="Contoh: Senin - Sabtu: 08:30 - 20:00 WIB"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194]"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Tautan Google Maps</label>
-                  <input
-                    type="text"
-                    value={locationForm.maps_url}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, maps_url: e.target.value }))}
-                    placeholder="https://maps.google.com/?q=..."
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono text-[11px]"
-                  />
-                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[#233858] font-semibold font-semibold">Tautan Google Maps</label>
+                <input
+                  type="text"
+                  value={locationForm.maps_url}
+                  onChange={(e) => setLocationForm((prev) => ({ ...prev, maps_url: e.target.value }))}
+                  placeholder="https://maps.google.com/?q=..."
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-[#5A7194] font-mono text-[11px]"
+                />
               </div>
 
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
@@ -10765,7 +10527,7 @@ export default function Dashboard() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-amber-600/20"
+                  className="px-5 py-2 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-amber-600/20"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>Simpan Lokasi</span>
@@ -10778,15 +10540,15 @@ export default function Dashboard() {
 
       {/* PROMO FORM MODAL */}
       {showPromoModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-lg rounded-3xl border border-slate-800 bg-[#0f172a] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#F5F6F8]/80 backdrop-blur-md">
+          <div className="w-full max-w-lg rounded-3xl border border-[#A6AFC1]/50 bg-white text-[#233858] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center">
                   <Tag className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-sm">
+                  <h3 className="font-bold text-[#233858] text-sm">
                     {editingPromoIndex !== null ? 'Edit Promo Karpet' : 'Tambah Promo Baru'}
                   </h3>
                   <p className="text-[11px] text-slate-400">Promo langsung aktif di dashboard & bot WhatsApp</p>
@@ -10795,7 +10557,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => setShowPromoModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-[#5A7194] hover:text-[#233858] hover:bg-[#F5F6F8] transition"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -10803,35 +10565,35 @@ export default function Dashboard() {
 
             <form onSubmit={handleSavePromo} className="p-6 space-y-4 text-xs">
               <div className="space-y-1">
-                <label className="text-slate-300 font-semibold">Judul Promo *</label>
+                <label className="text-[#233858] font-semibold font-semibold">Judul Promo *</label>
                 <input
                   type="text"
                   required
                   value={promoForm.title}
                   onChange={(e) => setPromoForm((prev) => ({ ...prev, title: e.target.value }))}
                   placeholder="Contoh: Promo Gebyar Karpet Masjid Berkah"
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-rose-500"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Potongan / Diskon / Benefit *</label>
+                  <label className="text-[#233858] font-semibold font-semibold">Potongan / Diskon / Benefit *</label>
                   <input
                     type="text"
                     required
                     value={promoForm.discount}
                     onChange={(e) => setPromoForm((prev) => ({ ...prev, discount: e.target.value }))}
                     placeholder="Contoh: Diskon 20% + Gratis Obras"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-rose-500"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">Badge Label</label>
+                  <label className="text-[#233858] font-semibold font-semibold">Badge Label</label>
                   <select
                     value={promoForm.badge}
                     onChange={(e) => setPromoForm((prev) => ({ ...prev, badge: e.target.value }))}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:border-rose-500"
+                    className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] focus:outline-none focus:border-rose-500"
                   >
                     <option value="Terpopuler">Terpopuler</option>
                     <option value="Bestseller">Bestseller</option>
@@ -10843,24 +10605,24 @@ export default function Dashboard() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-300 font-semibold">Masa Berlaku</label>
+                <label className="text-[#233858] font-semibold font-semibold">Masa Berlaku</label>
                 <input
                   type="text"
                   value={promoForm.valid_until}
                   onChange={(e) => setPromoForm((prev) => ({ ...prev, valid_until: e.target.value }))}
                   placeholder="Contoh: Akhir Bulan Ini / Stok Terbatas"
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 px-3 py-2 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-rose-500"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-300 font-semibold">Deskripsi Syarat & Ketentuan</label>
+                <label className="text-[#233858] font-semibold font-semibold">Deskripsi Syarat & Ketentuan</label>
                 <textarea
                   rows={3}
                   value={promoForm.desc}
                   onChange={(e) => setPromoForm((prev) => ({ ...prev, desc: e.target.value }))}
                   placeholder="Keterangan lengkap promo dan syarat pemesanan..."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 leading-relaxed"
+                  className="w-full rounded-xl bg-[#F5F6F8] border border-[#A6AFC1]/60 p-3 text-[#233858] placeholder-[#5A7194]/70 focus:outline-none focus:border-rose-500 leading-relaxed"
                 />
               </div>
 
@@ -10874,7 +10636,7 @@ export default function Dashboard() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-rose-600/20"
+                  className="px-5 py-2 rounded-xl bg-[#5A7194] hover:bg-[#485E7E] text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-rose-600/20"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>Simpan Promo</span>
@@ -10928,7 +10690,7 @@ export default function Dashboard() {
 
           {/* Main Image Frame */}
           <div
-            className="relative max-w-4xl max-h-[78vh] flex items-center justify-center overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl"
+            className="relative max-w-4xl max-h-[78vh] flex items-center justify-center overflow-hidden rounded-2xl border border-[#A6AFC1]/60 bg-[#F5F6F8] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <img
@@ -10941,7 +10703,7 @@ export default function Dashboard() {
           {/* Optional Caption */}
           {previewImageModal.caption && (
             <div
-              className="mt-3 max-w-2xl text-center text-xs text-slate-300 bg-slate-900/90 px-4 py-2.5 rounded-xl border border-slate-800 shadow-md whitespace-pre-wrap leading-relaxed"
+              className="mt-3 max-w-2xl text-center text-xs text-[#233858] bg-[#F5F6F8] px-4 py-2.5 rounded-xl border border-[#A6AFC1]/60 shadow-md whitespace-pre-wrap leading-relaxed"
               onClick={(e) => e.stopPropagation()}
             >
               {previewImageModal.caption}

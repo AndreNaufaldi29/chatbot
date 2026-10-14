@@ -17,7 +17,15 @@ const SYSTEM_NAMES = [
 class PhoneService {
   constructor() {
     this.mapping = {};
+    this.isDirty = false;
+    this.saveTimeout = null;
     this.loadMapping();
+
+    process.on('beforeExit', () => {
+      if (this.isDirty) {
+        this.saveMapping(true);
+      }
+    });
   }
 
   isLid(value) {
@@ -55,17 +63,19 @@ class PhoneService {
         this.mapping = JSON.parse(raw || '{}');
       } else {
         this.mapping = { ...INITIAL_MAPPING };
-        this.saveMapping();
+        this.saveMapping(true);
       }
 
       if (!this.mapping.names) this.mapping.names = {};
       if (!this.mapping.contactNames) this.mapping.contactNames = {};
 
+      let cleaned = false;
       // 🛡️ Data Sanitization: Clean any corrupted mappings where value was a LID
       for (const [k, v] of Object.entries(this.mapping)) {
         if (k === 'names' || k === 'contactNames') continue;
         if (this.isLid(v) || (typeof v === 'string' && v.replace(/\D/g, '').length >= 14)) {
           delete this.mapping[k];
+          cleaned = true;
         }
       }
 
@@ -73,6 +83,7 @@ class PhoneService {
       for (const [k, v] of Object.entries(this.mapping.names)) {
         if (this.isLid(v) || /^\d+$/.test(k) || SYSTEM_NAMES.some(s => k.includes(s))) {
           delete this.mapping.names[k];
+          cleaned = true;
         }
       }
 
@@ -80,21 +91,70 @@ class PhoneService {
       for (const [k, v] of Object.entries(this.mapping.contactNames)) {
         if (this.isLid(v) || /^\+?\d+$/.test(v) || SYSTEM_NAMES.some(s => v.toLowerCase().includes(s))) {
           delete this.mapping.contactNames[k];
+          cleaned = true;
         }
       }
 
-      this.saveMapping();
+      if (cleaned) {
+        this.scheduleSave();
+      }
     } catch (err) {
       console.error('[PhoneService] Error loading mapping:', err.message);
       this.mapping = { ...INITIAL_MAPPING };
     }
   }
 
-  saveMapping() {
-    try {
-      fs.writeFileSync(MAPPING_FILE, JSON.stringify(this.mapping, null, 2), 'utf8');
-    } catch (err) {
-      console.error('[PhoneService] Error saving mapping:', err.message);
+  scheduleSave(delay = 500) {
+    this.isDirty = true;
+    if (this.saveTimeout) return;
+    this.saveTimeout = setTimeout(() => {
+      this.saveTimeout = null;
+      this.saveMapping();
+    }, delay);
+  }
+
+  saveMapping(forceSync = false) {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = null;
+    }
+    this.isDirty = false;
+
+    const dir = path.dirname(MAPPING_FILE);
+    if (!fs.existsSync(dir)) {
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+    }
+
+    const content = JSON.stringify(this.mapping, null, 2);
+    const tmpFile = `${MAPPING_FILE}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`;
+
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    while (attempts < maxAttempts) {
+      try {
+        fs.writeFileSync(tmpFile, content, 'utf8');
+        fs.renameSync(tmpFile, MAPPING_FILE);
+        return true;
+      } catch (err) {
+        attempts++;
+        try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (_) {}
+
+        if (attempts >= maxAttempts) {
+          try {
+            fs.writeFileSync(MAPPING_FILE, content, 'utf8');
+            return true;
+          } catch (finalErr) {
+            console.error('[PhoneService] Error saving mapping:', finalErr.message);
+            this.scheduleSave(2000);
+            return false;
+          }
+        }
+
+        // Delay to allow Windows file locks to clear
+        const start = Date.now();
+        while (Date.now() - start < 40 * attempts) {}
+      }
     }
   }
 
@@ -139,22 +199,43 @@ class PhoneService {
     const rawKey = String(key).trim();
     const shortKey = rawKey.split('@')[0];
 
-    this.mapping.contactNames[rawKey] = cleanName;
-    this.mapping.contactNames[shortKey] = cleanName;
+    let changed = false;
+    if (this.mapping.contactNames[rawKey] !== cleanName) {
+      this.mapping.contactNames[rawKey] = cleanName;
+      changed = true;
+    }
+    if (this.mapping.contactNames[shortKey] !== cleanName) {
+      this.mapping.contactNames[shortKey] = cleanName;
+      changed = true;
+    }
 
     const base = this.normalizeName(cleanName);
 
     // If key is mapped to a real phone, link name to real phone as well
     const mappedPhone = this.mapping[rawKey] || this.mapping[shortKey];
     if (mappedPhone && this.isRealPhone(mappedPhone)) {
-      this.mapping.contactNames[mappedPhone] = cleanName;
-      this.mapping.contactNames[`${mappedPhone}@s.whatsapp.net`] = cleanName;
+      if (this.mapping.contactNames[mappedPhone] !== cleanName) {
+        this.mapping.contactNames[mappedPhone] = cleanName;
+        changed = true;
+      }
+      if (this.mapping.contactNames[`${mappedPhone}@s.whatsapp.net`] !== cleanName) {
+        this.mapping.contactNames[`${mappedPhone}@s.whatsapp.net`] = cleanName;
+        changed = true;
+      }
       if (!this.mapping.names) this.mapping.names = {};
-      this.mapping.names[lower] = mappedPhone;
-      if (base) this.mapping.names[base] = mappedPhone;
+      if (this.mapping.names[lower] !== mappedPhone) {
+        this.mapping.names[lower] = mappedPhone;
+        changed = true;
+      }
+      if (base && this.mapping.names[base] !== mappedPhone) {
+        this.mapping.names[base] = mappedPhone;
+        changed = true;
+      }
     }
 
-    this.saveMapping();
+    if (changed) {
+      this.scheduleSave();
+    }
     return cleanName;
   }
 
@@ -198,27 +279,45 @@ class PhoneService {
     const rawKey = String(key).trim();
     const shortKey = rawKey.split('@')[0];
 
-    this.mapping[rawKey] = cleanPhone;
-    this.mapping[shortKey] = cleanPhone;
+    let changed = false;
+    if (this.mapping[rawKey] !== cleanPhone) {
+      this.mapping[rawKey] = cleanPhone;
+      changed = true;
+    }
+    if (this.mapping[shortKey] !== cleanPhone) {
+      this.mapping[shortKey] = cleanPhone;
+      changed = true;
+    }
 
     if (senderName && typeof senderName === 'string') {
       const cleanName = senderName.trim();
       const lowerName = cleanName.toLowerCase();
       if (!SYSTEM_NAMES.some(s => lowerName.includes(s)) && !/^\d+$/.test(lowerName) && lowerName.length >= 2) {
         if (!this.mapping.names) this.mapping.names = {};
-        this.mapping.names[lowerName] = cleanPhone;
+        if (this.mapping.names[lowerName] !== cleanPhone) {
+          this.mapping.names[lowerName] = cleanPhone;
+          changed = true;
+        }
         const base = this.normalizeName(cleanName);
-        if (base) this.mapping.names[base] = cleanPhone;
+        if (base && this.mapping.names[base] !== cleanPhone) {
+          this.mapping.names[base] = cleanPhone;
+          changed = true;
+        }
 
         if (!this.mapping.contactNames) this.mapping.contactNames = {};
-        this.mapping.contactNames[rawKey] = cleanName;
-        this.mapping.contactNames[shortKey] = cleanName;
-        this.mapping.contactNames[cleanPhone] = cleanName;
-        this.mapping.contactNames[`${cleanPhone}@s.whatsapp.net`] = cleanName;
+        const contactKeys = [rawKey, shortKey, cleanPhone, `${cleanPhone}@s.whatsapp.net`];
+        for (const ck of contactKeys) {
+          if (this.mapping.contactNames[ck] !== cleanName) {
+            this.mapping.contactNames[ck] = cleanName;
+            changed = true;
+          }
+        }
       }
     }
 
-    this.saveMapping();
+    if (changed) {
+      this.scheduleSave();
+    }
     return cleanPhone;
   }
 
@@ -361,7 +460,7 @@ class PhoneService {
     }
 
     if (changed) {
-      this.saveMapping();
+      this.scheduleSave();
     }
   }
 }

@@ -6,36 +6,10 @@
     "contact": "+6282333893488",
     "description": "Terima kasih, Andre! Berikut detail pesanan Anda:\n\n- Produk: The Organic Serving Platter – varian Sand\n- Harga: Rp 280.000\n- Alamat pengiriman: Jl. Kepodang No. 7, Candi, Sidoarjo\n\nSelanjutnya, mohon konfirmasi metode pembayaran Anda (transfer bank, pembayaran COD, atau dompet digital). Setelah pembayaran terverifikasi, kami akan segera memproses pengiriman. Estimasi pengiriman untuk Sidoarjo adalah 2‑4 hari kerja.\n\nJika Anda memerlukan bantuan lebih lanjut atau ingin melihat foto produk, beri tahu kami. Kami siap membantu!",
     "category": "Layanan Umum",
-    "status": "Resolved",
+    "status": "Open",
     "priority": "Tinggi",
     "createdAt": "2026-09-27T20:18:35.955Z",
-    "updatedAt": "2026-09-27T20:31:00.082Z",
+    "updatedAt": "2026-10-13T20:45:00.831Z",
     "notes": "Tiket aktif dibuat otomatis via WhatsApp (Layanan Umum)."
-  },
-  {
-    "id": "TKT-6023",
-    "sender": "6281234567891",
-    "name": "Siti Test",
-    "contact": "081234567891",
-    "description": "Saya ingin pesan The Everyday Set 2 box",
-    "category": "Pembelian Produk",
-    "status": "Open",
-    "priority": "Normal",
-    "createdAt": "2026-09-27T18:55:36.651Z",
-    "updatedAt": "2026-09-27T18:55:36.651Z",
-    "notes": "Tiket aktif dibuat otomatis via WhatsApp (Pembelian Produk)."
-  },
-  {
-    "id": "TKT-1314",
-    "sender": "6281234567890",
-    "name": "Budi Test",
-    "contact": "081234567890",
-    "description": "Piring saya pecah saat pengiriman",
-    "category": "Klaim Garansi",
-    "status": "Open",
-    "priority": "Normal",
-    "createdAt": "2026-09-27T18:55:36.644Z",
-    "updatedAt": "2026-09-27T18:55:36.645Z",
-    "notes": "Tiket aktif dibuat otomatis via WhatsApp (Klaim Garansi)."
   }
 ]

@@ -21,7 +21,6 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.use(express.static(path.join(__dirname, '../../public'), { index: false }));
 
 // Store active SSE clients
@@ -91,13 +90,6 @@ app.get('/api/status', (req, res) => {
 // Chat History & Conversations Endpoints (1 User 1 Chat WhatsApp Layout)
 app.get('/api/chats', (req, res) => {
   const conversations = chatService.getConversations();
-  if (bot && typeof bot.resolveLidPhone === 'function') {
-    for (const c of conversations) {
-      if (c.jid && phoneService.isLid(c.jid) && !c.phone) {
-        bot.resolveLidPhone(c.jid, c.senderName).catch(() => {});
-      }
-    }
-  }
   res.json(conversations);
 });
 
@@ -915,10 +907,21 @@ app.post('/api/categories', (req, res) => {
       slug: catSlug,
       name: name.trim(),
       icon: icon || '🏷️',
-      description: description ? description.trim() : 'Koleksi karpet pilihan dari Sultan Carpet Gallery.'
+      description: description ? description.trim() : `Koleksi karpet pilihan ${name.trim()} dari Sultan Carpet Gallery.`
     };
 
+    let catalogChanged = false;
     if (existingIndex !== -1) {
+      const oldCat = config.carpet_categories[existingIndex];
+      // Jika nama kategori berubah, perbarui kategori pada semua produk terkait di katalog
+      if (oldCat && oldCat.name !== newCategory.name && Array.isArray(config.catalog)) {
+        config.catalog.forEach(p => {
+          if ((p.category || '').trim().toLowerCase() === oldCat.name.trim().toLowerCase()) {
+            p.category = newCategory.name;
+            catalogChanged = true;
+          }
+        });
+      }
       config.carpet_categories[existingIndex] = newCategory;
     } else {
       config.carpet_categories.push(newCategory);
@@ -926,7 +929,62 @@ app.post('/api/categories', (req, res) => {
 
     menuHandler.saveConfig(config);
     broadcastSSE('categories_updated', config.carpet_categories);
-    res.json({ success: true, category: newCategory, categories: config.carpet_categories });
+    if (catalogChanged) {
+      broadcastSSE('catalog_updated', config.catalog);
+    }
+    res.json({ success: true, category: newCategory, categories: config.carpet_categories, catalog: config.catalog });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/categories/:id', (req, res) => {
+  req.body.id = req.params.id;
+  // Forward to POST handler logic
+  try {
+    const { id, name, slug, icon, description } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Nama kategori wajib diisi.' });
+    }
+    const config = menuHandler.getConfig();
+    if (!config.carpet_categories) {
+      config.carpet_categories = menuHandler.getCategories();
+    }
+
+    const catId = req.params.id || id;
+    const catSlug = slug || name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const existingIndex = config.carpet_categories.findIndex(c => c.id === catId);
+
+    const newCategory = {
+      id: catId,
+      slug: catSlug,
+      name: name.trim(),
+      icon: icon || '🏷️',
+      description: description ? description.trim() : `Koleksi karpet pilihan ${name.trim()} dari Sultan Carpet Gallery.`
+    };
+
+    let catalogChanged = false;
+    if (existingIndex !== -1) {
+      const oldCat = config.carpet_categories[existingIndex];
+      if (oldCat && oldCat.name !== newCategory.name && Array.isArray(config.catalog)) {
+        config.catalog.forEach(p => {
+          if ((p.category || '').trim().toLowerCase() === oldCat.name.trim().toLowerCase()) {
+            p.category = newCategory.name;
+            catalogChanged = true;
+          }
+        });
+      }
+      config.carpet_categories[existingIndex] = newCategory;
+    } else {
+      config.carpet_categories.push(newCategory);
+    }
+
+    menuHandler.saveConfig(config);
+    broadcastSSE('categories_updated', config.carpet_categories);
+    if (catalogChanged) {
+      broadcastSSE('catalog_updated', config.catalog);
+    }
+    res.json({ success: true, category: newCategory, categories: config.carpet_categories, catalog: config.catalog });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -935,14 +993,38 @@ app.post('/api/categories', (req, res) => {
 app.delete('/api/categories/:id', (req, res) => {
   try {
     const { id } = req.params;
+    const catNameQuery = req.query.name;
     const config = menuHandler.getConfig();
     if (!config.carpet_categories) {
       config.carpet_categories = menuHandler.getCategories();
     }
-    config.carpet_categories = config.carpet_categories.filter(c => c.id !== id);
+
+    const catIndex = config.carpet_categories.findIndex(c => c.id === id || c.name === id || (catNameQuery && c.name === catNameQuery));
+    let catName = catNameQuery || null;
+    if (catIndex !== -1) {
+      catName = config.carpet_categories[catIndex].name;
+      config.carpet_categories.splice(catIndex, 1);
+    } else {
+      config.carpet_categories = config.carpet_categories.filter(c => c.id !== id);
+    }
+
+    let catalogChanged = false;
+    // Alihkan produk yang berkategori ini ke 'Umum' agar tidak otomatis muncul kembali
+    if (catName && Array.isArray(config.catalog)) {
+      config.catalog.forEach(p => {
+        if ((p.category || '').trim().toLowerCase() === catName.trim().toLowerCase()) {
+          p.category = 'Umum';
+          catalogChanged = true;
+        }
+      });
+    }
+
     menuHandler.saveConfig(config);
     broadcastSSE('categories_updated', config.carpet_categories);
-    res.json({ success: true, categories: config.carpet_categories });
+    if (catalogChanged) {
+      broadcastSSE('catalog_updated', config.catalog);
+    }
+    res.json({ success: true, categories: config.carpet_categories, catalog: config.catalog });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1335,8 +1417,8 @@ async function startServer(port = 3000) {
   });
 
   return new Promise((resolve) => {
-    app.listen(port, '0.0.0.0', () => {
-      console.log(`[WebDashboard] Next.js Dashboard dan API aktif di: http://0.0.0.0:${port}`);
+    app.listen(port, () => {
+      console.log(`[WebDashboard] Next.js Dashboard dan API aktif di: http://localhost:${port}`);
       resolve(app);
     });
   });

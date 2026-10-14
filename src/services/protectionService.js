@@ -62,7 +62,7 @@ class ProtectionService extends EventEmitter {
 
   getDefaultConfig() {
     return {
-      cooldown: { enabled: true, min_delay_ms: 55000, max_delay_ms: 65000, jitter_ms: 8000, typing_simulation: true, typing_speed_cpm: 300, global_max_per_minute: 20 },
+      cooldown: { enabled: true, normal_delay_ms: 60000, long_delay_ms: 75000, min_delay_ms: 60000, max_delay_ms: 75000, long_threshold: 160, jitter_ms: 3000, typing_simulation: true, typing_speed_cpm: 300, global_max_per_minute: 20 },
       deduplication: { enabled: true, id_ttl_seconds: 300, content_window_ms: 3000, outbound_window_ms: 4000 },
       conversation_buffer: { enabled: true, debounce_ms: 3000, max_buffer_items: 10, max_context_turns: 6 },
       retry_limit: { max_retries: 2, backoff_base_ms: 1000, circuit_breaker_threshold: 3, circuit_breaker_timeout_ms: 60000 },
@@ -132,15 +132,27 @@ class ProtectionService extends EventEmitter {
 
   /**
    * Enforces per-user cooldown with human-like randomized jitter and multi-stage presence simulation.
-   * Total response time from customer message arrival to sending is calibrated to the configured delay (~1 menit / 60s).
+   * Total response time: 1 menit (60s) untuk jawaban normal, 1 menit 15 detik (75s) untuk jawaban panjang (>160 karakter).
    */
   async waitForUserCooldown(jid, inboundTimestamp = null, textLength = 50, sock = null, originalMsgKey = null) {
     const config = this.getConfig().cooldown || {};
     if (config.enabled === false || !jid) return;
 
-    const minDelay = config.min_delay_ms || 55000;
-    const jitter = config.jitter_ms || 8000;
-    const randomizedDelay = minDelay + Math.floor(Math.random() * (jitter + 1));
+    // Deteksi tipe jawaban:
+    // Jawaban panjang (>160 karakter, misal penjelasan produk/AI/katalog) -> 75 detik (1m 15s)
+    // Jawaban normal (<=160 karakter, misal sapaan/konfirmasi/menu singkat) -> 60 detik (1m)
+    const longThreshold = config.long_threshold || config.long_text_threshold || 160;
+    const isLongAnswer = (textLength || 0) > longThreshold;
+    const normalDelay = config.normal_delay_ms || config.min_delay_ms || 60000;
+    const longDelay = config.long_delay_ms || config.max_delay_ms || 75000;
+    const baseTarget = isLongAnswer ? longDelay : normalDelay;
+
+    // Variasi acak halus (Jitter) ±1.5 detik agar tidak terdeteksi sebagai robot statis oleh Meta
+    const jitterMax = config.jitter_ms !== undefined ? config.jitter_ms : 3000;
+    const randomizedJitter = jitterMax > 0
+      ? (Math.floor(Math.random() * (jitterMax + 1)) - Math.floor(jitterMax / 2))
+      : 0;
+    const randomizedDelay = Math.max(30000, baseTarget + randomizedJitter);
 
     const now = Date.now();
     const startTime = inboundTimestamp || (now - 1500);
@@ -148,11 +160,11 @@ class ProtectionService extends EventEmitter {
 
     const totalRemainingWait = Math.max(1000, randomizedDelay - elapsedSinceInbound);
 
-    console.log(`[Protection:Cooldown] ⏳ Mengatur jeda respons ke ${jid}: Target total ${(randomizedDelay / 1000).toFixed(1)}s (~1 menit). Waktu tunggu tersisa: ${(totalRemainingWait / 1000).toFixed(1)}s`);
+    const label = isLongAnswer ? 'Jawaban panjang (1m 15s)' : 'Jawaban normal (1m)';
+    console.log(`[Protection:Cooldown] ⏳ Mengatur jeda respons ke ${jid} [${label}]: Target total ${(randomizedDelay / 1000).toFixed(1)}s. Waktu tunggu tersisa: ${(totalRemainingWait / 1000).toFixed(1)}s`);
 
     // Tahap 1: Waktu membaca pesan (Read Receipt / Centang Biru)
-    // Tahan sedikit sebelum menandai pesan telah dibaca (seperti manusia membuka WhatsApp setelah beberapa detik)
-    const readWait = Math.min(8000, Math.max(2500, Math.floor(totalRemainingWait * 0.12)));
+    const readWait = Math.min(6000, Math.max(2500, Math.floor(totalRemainingWait * 0.08)));
     if (totalRemainingWait > 6000 && sock && originalMsgKey) {
       await new Promise(r => setTimeout(r, readWait));
       try {
@@ -163,7 +175,9 @@ class ProtectionService extends EventEmitter {
     // Tahap 2: Simulasi durasi mengetik alami (Composing presence)
     let typingDuration = 0;
     if (config.typing_simulation !== false && sock) {
-      typingDuration = Math.min(14000, Math.max(4500, Math.floor(textLength * 25)));
+      typingDuration = isLongAnswer
+        ? Math.min(12000, Math.max(6000, Math.floor(textLength * 20)))
+        : Math.min(6000, Math.max(3000, Math.floor(textLength * 20)));
       const maxAllowedTyping = Math.max(1000, totalRemainingWait - readWait - 1000);
       typingDuration = Math.min(typingDuration, maxAllowedTyping);
     }
@@ -174,7 +188,7 @@ class ProtectionService extends EventEmitter {
       await new Promise(r => setTimeout(r, thinkingWait));
     }
 
-    // Tahap 4: Mulai simulasi mengetik alami sebelum pesan terkirim
+    // Tahap 4: Mulai simulasi mengetik alami tepat sebelum pesan terkirim
     if (typingDuration > 0 && sock) {
       try {
         await sock.sendPresenceUpdate('composing', jid);

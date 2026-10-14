@@ -1,9 +1,20 @@
-// Suppress noisy libsignal / Baileys internal decryption errors (Bad MAC, Over 2000 messages, etc.)
+// Suppress noisy libsignal / Baileys internal decryption errors & SessionEntry dumps
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
-function isNoisySessionError(args) {
+const originalConsoleInfo = console.info;
+const originalConsoleLog = console.log;
+
+function isNoisySessionMessage(args) {
   for (const arg of args) {
     if (!arg) continue;
+    if (typeof arg === 'object') {
+      if (
+        arg.constructor?.name === 'SessionEntry' ||
+        (arg._chains && typeof arg.registrationId !== 'undefined')
+      ) {
+        return true;
+      }
+    }
     const str = typeof arg === 'string' ? arg : (arg.message || arg.stack || String(arg));
     if (
       str.includes('Failed to decrypt message with any known session') ||
@@ -11,34 +22,68 @@ function isNoisySessionError(args) {
       str.includes('Bad MAC') ||
       str.includes('Over 2000 messages into the future') ||
       str.includes('No matching sessions found for message') ||
-      str.includes('Decrypted message with closed session')
+      str.includes('Decrypted message with closed session') ||
+      str.includes('Closing session:') ||
+      str.includes('Opening session:') ||
+      str.includes('Session already closed') ||
+      str.includes('Session already open') ||
+      str.includes('SessionEntry')
     ) {
       return true;
     }
   }
   return false;
 }
+
 console.error = function (...args) {
-  if (isNoisySessionError(args)) return;
+  if (isNoisySessionMessage(args)) return;
   originalConsoleError.apply(console, args);
 };
 console.warn = function (...args) {
-  if (isNoisySessionError(args)) return;
+  if (isNoisySessionMessage(args)) return;
   originalConsoleWarn.apply(console, args);
 };
+console.info = function (...args) {
+  if (isNoisySessionMessage(args)) return;
+  originalConsoleInfo.apply(console, args);
+};
+console.log = function (...args) {
+  if (isNoisySessionMessage(args)) return;
+  originalConsoleLog.apply(console, args);
+};
 
-// Also intercept process.stderr.write in case libsignal writes directly
+// Also intercept process.stdout.write & process.stderr.write in case libsignal writes directly
+const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
-process.stderr.write = function (chunk, encoding, callback) {
+
+function isNoisyStreamChunk(chunk) {
   const str = typeof chunk === 'string' ? chunk : (chunk?.toString ? chunk.toString() : '');
-  if (
+  return (
     str.includes('Failed to decrypt message with any known session') ||
     str.includes('Session error:') ||
     str.includes('Bad MAC') ||
     str.includes('Over 2000 messages into the future') ||
     str.includes('No matching sessions found for message') ||
-    str.includes('Decrypted message with closed session')
-  ) {
+    str.includes('Decrypted message with closed session') ||
+    str.includes('Closing session:') ||
+    str.includes('Opening session:') ||
+    str.includes('Session already closed') ||
+    str.includes('Session already open') ||
+    str.includes('SessionEntry')
+  );
+}
+
+process.stdout.write = function (chunk, encoding, callback) {
+  if (isNoisyStreamChunk(chunk)) {
+    if (typeof encoding === 'function') encoding();
+    else if (typeof callback === 'function') callback();
+    return true;
+  }
+  return originalStdoutWrite(chunk, encoding, callback);
+};
+
+process.stderr.write = function (chunk, encoding, callback) {
+  if (isNoisyStreamChunk(chunk)) {
     if (typeof encoding === 'function') encoding();
     else if (typeof callback === 'function') callback();
     return true;

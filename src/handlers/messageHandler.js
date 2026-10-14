@@ -8,6 +8,7 @@ const aiService = require('../services/aiService');
 const phoneService = require('../services/phoneService');
 const { stripStarsAndEmojis } = require('../utils/textCleaner');
 const protectionService = require('../services/protectionService');
+const timeHelper = require('../utils/timeHelper');
 
 class MessageHandler {
   constructor() {
@@ -387,6 +388,16 @@ class MessageHandler {
         if (this.eventEmitter && isNew) {
           this.eventEmitter.emit('ticket_created', ticket);
         }
+      }
+
+      // 🛡️ Anti-Spam: Jangan membalas pesan penutup atau basa-basi ucapan terima kasih
+      // Mengabaikan pesan seperti: 'terima kasih', 'makasih kak', 'oke siap', 'sip' agar tidak spamming ke pelanggan
+      const isClosingPleasantry = /^(oke\s+)?(terima\s*kasih|makasih|trims|tengkyu|thanks|thank\s*you|thx|tq)(\s*(ya|kak|gan|pak|bu|mas|mbak|banyak))?$/i.test(textTrim) ||
+        /^(siap|oke\s*siap|ok\s*siap|sip|oke\s*sip|baik\s*terima\s*kasih|siap\s*terima\s*kasih|oke\s*makasih|ok\s*makasih|sama-sama|sama\s*sama|sama2)(\s*(ya|kak|gan|pak|bu|mas|mbak))?$/i.test(textTrim);
+
+      if (isClosingPleasantry && session.state === 'IDLE') {
+        console.log(`[Protection:AntiSpam] Mengabaikan pesan penutup dari ${jid} ("${textTrim}") agar percakapan selesai alami tanpa spam.`);
+        return;
       }
 
       // Global Reset / Menu Commands
@@ -772,7 +783,8 @@ class MessageHandler {
 
     // 2. Sticker response
     if (textTrim === '[Stiker WhatsApp]') {
-      const stickerReply = `Halo ${senderName}, terima kasih atas sapaan stikernya. Ada yang dapat kami bantu terkait produk karpet atau layanan Sultan Carpet Gallery hari ini?`;
+      const greeting = timeHelper.getGreeting(senderName);
+      const stickerReply = `${greeting}, terima kasih atas sapaan stikernya. Ada yang dapat kami bantu terkait produk karpet atau layanan Sultan Carpet Gallery hari ini?`;
       await this.sendReply(sock, jid, stickerReply, originalMsg);
       return;
     }
@@ -864,7 +876,21 @@ class MessageHandler {
       }
     }
 
-    // 4. Keyword Fallback
+    // 4. Greeting & Time Information Fallback (jika AI nonaktif atau gagal)
+    const detectedGreeting = timeHelper.detectGreeting(textTrim);
+    const isAskingTime = /\b(jam berapa|sekarang jam|waktu sekarang|pagi apa siang|siang apa malam|pagi apa sore|sore apa malam|sekarang pagi|sekarang siang|sekarang sore|sekarang malam)\b/i.test(textLower);
+
+    if (detectedGreeting || isAskingTime) {
+      const greeting = timeHelper.getGreeting(senderName);
+      const timeInfo = timeHelper.getWIBTime();
+      const status = timeHelper.getStoreStatus();
+
+      let replyText = `${greeting}.\n\nSaat ini pukul ${timeInfo.timeStr} (${timeInfo.dayName}, ${timeInfo.dateStr}) - Waktu ${timeInfo.category}.\nStatus Showroom: ${status.statusLabel} (${status.scheduleText}).\n\nAda yang dapat kami bantu seputar koleksi karpet atau layanan survey kami hari ini?`;
+      await this.sendReply(sock, jid, replyText, originalMsg);
+      return;
+    }
+
+    // 5. Keyword Fallback
     if (
       textLower.includes('pemilik') ||
       textLower.includes('owner') ||
@@ -1131,8 +1157,7 @@ class MessageHandler {
         `${product.title.toUpperCase()}\n` +
         `${product.subtitle}\n\n` +
         `Varian: ${product.footer}\n` +
-        `Harga: ${product.price}\n\n` +
-        `Detail Koleksi: ${product.url || 'https://sultancarpet.co.id'}\n` +
+        `Koleksi Resmi: Sultan Carpet Gallery\n` +
         `───────────────────\n` +
         `Bila Anda ingin memesan ${product.title} atau survey gratis, silakan beri tahu kami.`
       );
