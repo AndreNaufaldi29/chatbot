@@ -237,8 +237,8 @@ class ChatService {
       const raw = fs.readFileSync(CHATS_FILE, 'utf8');
       const messages = JSON.parse(raw || '[]');
       if (!Array.isArray(messages)) return [];
-      // Sanitize: keep valid messages (text or image)
-      return messages.filter(m => m && (m.text || m.image) && (typeof m.text === 'string' ? m.text.trim() !== '[text]' : true));
+      // Sanitize: keep valid messages (text, image, video, audio, or mediaUrl)
+      return messages.filter(m => m && (m.text || m.image || m.video || m.audio || m.mediaUrl) && (typeof m.text === 'string' ? m.text.trim() !== '[text]' : true));
     } catch (err) {
       console.error('[ChatService] Gagal membaca chats.json:', err.message);
       return [];
@@ -249,7 +249,7 @@ class ChatService {
     try {
       this.ensureFileExists();
       const valid = (Array.isArray(messages) ? messages : []).filter(
-        m => m && (m.text || m.image) && (typeof m.text === 'string' ? m.text.trim() !== '[text]' : true)
+        m => m && (m.text || m.image || m.video || m.audio || m.mediaUrl) && (typeof m.text === 'string' ? m.text.trim() !== '[text]' : true)
       );
       // Keep at most 3000 messages to prevent unbounded growth while keeping rich history
       const trimmed = valid.slice(-3000);
@@ -284,8 +284,9 @@ class ChatService {
     ) {
       messageText = '';
     }
-    if (!messageText && !msg.image) return null;
-    if (messageText === '[text]' && !msg.image) return null;
+    const hasMedia = Boolean(msg.image || msg.video || msg.audio || msg.mediaUrl || msg.mediaType === 'image' || msg.mediaType === 'video' || msg.mediaType === 'audio');
+    if (!messageText && !hasMedia) return null;
+    if (messageText === '[text]' && !hasMedia) return null;
 
     const messages = this.getAllMessages();
 
@@ -347,16 +348,22 @@ class ChatService {
     });
 
     if (duplicateIndex !== -1) {
-      // If previous message lacked an image but current has it, update image
-      if (msg.image && !messages[duplicateIndex].image) {
-        messages[duplicateIndex].image = msg.image;
-        messages[duplicateIndex].mediaType = msg.mediaType || 'image';
+      // If previous message lacked media but current has it, update media
+      const curMedia = msg.mediaUrl || msg.video || msg.audio || msg.image;
+      if (curMedia && !messages[duplicateIndex].mediaUrl && !messages[duplicateIndex].image && !messages[duplicateIndex].video && !messages[duplicateIndex].audio) {
+        messages[duplicateIndex].image = msg.image || null;
+        messages[duplicateIndex].video = msg.video || null;
+        messages[duplicateIndex].audio = msg.audio || null;
+        messages[duplicateIndex].mediaUrl = curMedia;
+        messages[duplicateIndex].mediaType = msg.mediaType || 'media';
         this.saveMessages(messages);
       }
       return messages[duplicateIndex];
     }
 
-    // Standardize object with full mediaType and image support
+    // Standardize object with full mediaType (image, video, audio) support
+    const resolvedMediaUrl = msg.mediaUrl || msg.video || msg.audio || msg.image || null;
+    const resolvedMediaType = msg.mediaType || (msg.video ? 'video' : msg.audio ? 'audio' : msg.image ? 'image' : 'text');
     const normalized = {
       id: msg.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       direction: messageDirection,
@@ -365,8 +372,11 @@ class ChatService {
       formattedPhone: phoneService.formatPhone(realPhone, jid),
       senderName,
       text: messageText,
-      mediaType: msg.mediaType || (msg.image ? 'image' : 'text'),
-      image: msg.image || null,
+      mediaType: resolvedMediaType,
+      image: msg.image || (resolvedMediaType === 'image' ? resolvedMediaUrl : null),
+      video: msg.video || (resolvedMediaType === 'video' ? resolvedMediaUrl : null),
+      audio: msg.audio || (resolvedMediaType === 'audio' ? resolvedMediaUrl : null),
+      mediaUrl: resolvedMediaUrl,
       isAi: !!msg.isAi,
       timestamp: messageTimestamp
     };
@@ -393,8 +403,9 @@ class ChatService {
       ) {
         messageText = '';
       }
-      if (!messageText && !msg.image) continue;
-      if (messageText === '[text]' && !msg.image) continue;
+      const hasMedia = Boolean(msg.image || msg.video || msg.audio || msg.mediaUrl || msg.mediaType === 'image' || msg.mediaType === 'video' || msg.mediaType === 'audio');
+      if (!messageText && !hasMedia) continue;
+      if (messageText === '[text]' && !hasMedia) continue;
 
       const jid = msg.jid || (msg.phone ? `${String(msg.phone).replace(/\D/g, '')}@s.whatsapp.net` : 'unknown@s.whatsapp.net');
       if (jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
@@ -446,6 +457,8 @@ class ChatService {
 
       if (isDuplicate) continue;
 
+      const resolvedMediaUrl = msg.mediaUrl || msg.video || msg.audio || msg.image || null;
+      const resolvedMediaType = msg.mediaType || (msg.video ? 'video' : msg.audio ? 'audio' : msg.image ? 'image' : 'text');
       const normalized = {
         id,
         direction: messageDirection,
@@ -454,8 +467,11 @@ class ChatService {
         formattedPhone: phoneService.formatPhone(realPhone, jid),
         senderName,
         text: messageText,
-        mediaType: msg.mediaType || 'text',
-        image: msg.image || null,
+        mediaType: resolvedMediaType,
+        image: msg.image || (resolvedMediaType === 'image' ? resolvedMediaUrl : null),
+        video: msg.video || (resolvedMediaType === 'video' ? resolvedMediaUrl : null),
+        audio: msg.audio || (resolvedMediaType === 'audio' ? resolvedMediaUrl : null),
+        mediaUrl: resolvedMediaUrl,
         isAi: !!msg.isAi,
         timestamp: messageTimestamp
       };
@@ -482,7 +498,7 @@ class ChatService {
     for (const msg of messages) {
       if (!msg) continue;
       const hasText = Boolean(msg.text && typeof msg.text === 'string' && msg.text.trim() && msg.text.trim() !== '[text]');
-      const hasMedia = Boolean(msg.image || msg.mediaType === 'image');
+      const hasMedia = Boolean(msg.image || msg.video || msg.audio || msg.mediaUrl || msg.mediaType === 'image' || msg.mediaType === 'video' || msg.mediaType === 'audio');
       if (!hasText && !hasMedia) continue;
       if (this.isSelfJid(msg.jid) || this.isSelfJid(msg.phone)) continue;
       if (this.isChatDeleted(msg.jid, msg.phone)) continue;
@@ -500,8 +516,8 @@ class ChatService {
         if (ext && phoneService.isRealPhone(ext)) realPhone = ext;
       }
 
-      // Group key: prioritize remote JID to keep distinct contact chats separate
-      const groupKey = msg.jid || (realPhone ? `${realPhone}@s.whatsapp.net` : 'unknown');
+      // Group key: prioritize canonical real phone number to merge LID & normal chats
+      const groupKey = (realPhone ? `${realPhone}@s.whatsapp.net` : msg.jid) || 'unknown';
 
       if (!convMap.has(groupKey)) {
         let contactName = phoneService.getName(msg.jid) || (realPhone ? phoneService.getName(realPhone) : null);
@@ -514,7 +530,7 @@ class ChatService {
           : (realPhone ? phoneService.formatPhone(realPhone) : 'Pelanggan');
 
         convMap.set(groupKey, {
-          jid: msg.jid || (realPhone ? `${realPhone}@s.whatsapp.net` : null),
+          jid: (realPhone ? `${realPhone}@s.whatsapp.net` : msg.jid) || null,
           phone: realPhone || null,
           formattedPhone: phoneService.formatPhone(realPhone, msg.jid),
           senderName: displayName,
@@ -527,11 +543,18 @@ class ChatService {
 
       const conv = convMap.get(groupKey);
 
-      // Prefer @lid jid if encountered for active direct messaging
-      if (msg.jid && msg.jid.includes('@lid')) {
-        conv.jid = msg.jid;
-      } else if (!conv.jid && msg.jid) {
-        conv.jid = msg.jid;
+      // Selalu utamakan JID berbasis nomor HP asli dan singkirkan @lid
+      if (realPhone) {
+        conv.jid = `${realPhone}@s.whatsapp.net`;
+        conv.phone = realPhone;
+      } else if (!conv.jid || conv.jid.includes('@lid')) {
+        const p = phoneService.getPhone(msg.jid);
+        if (p && phoneService.isRealPhone(p)) {
+          conv.jid = `${p}@s.whatsapp.net`;
+          conv.phone = p;
+        } else if (!conv.jid) {
+          conv.jid = msg.jid;
+        }
       }
 
       // If customer sent this message, prioritize customer's real display name
@@ -550,7 +573,7 @@ class ChatService {
         const greetMatch = msg.text.match(/(?:Halo|Hai|Pagi|Siang|Sore|Malam)\s+(?:Pak\s+|Bu\s+|Kak\s+)?([A-Z][a-zA-Z0-9_\s]{1,25})[,.!\n]/i);
         if (greetMatch && greetMatch[1]) {
           const extracted = greetMatch[1].trim();
-          if (!['admin', 'bot', 'gemini', 'groq', 'pelanggan', 'saya', 'sultan carpet bot'].includes(extracted.toLowerCase()) && !/^\d+$/.test(extracted)) {
+          if (!['admin', 'bot', 'gemini', 'groq', 'pelanggan', 'saya', 'rumah indah carpet bot'].includes(extracted.toLowerCase()) && !/^\d+$/.test(extracted)) {
             conv.senderName = extracted;
             if (phoneService.getName(conv.jid) !== extracted) {
               phoneService.setName(conv.jid, extracted);
@@ -651,6 +674,7 @@ class ChatService {
 
         if (mapped && phoneService.isRealPhone(mapped)) {
           conv.phone = mapped;
+          conv.jid = `${mapped}@s.whatsapp.net`;
           conv.formattedPhone = phoneService.formatPhone(mapped, conv.jid);
           phoneService.setMapping(conv.jid, mapped, conv.senderName);
         } else {

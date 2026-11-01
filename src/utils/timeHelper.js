@@ -93,20 +93,24 @@ class TimeHelper {
 
   /**
    * Time Category:
-   * - 04:00 - 10:59: Pagi
+   * - 00:00 - 04:59: Dini Hari
+   * - 05:00 - 10:59: Pagi
    * - 11:00 - 14:59: Siang
    * - 15:00 - 18:29: Sore
-   * - 18:30 - 03:59: Malam
+   * - 18:30 - 23:59: Malam
    */
   getTimeCategory(hour, minute = 0) {
     const totalMinutes = hour * 60 + minute;
-    if (totalMinutes >= 4 * 60 && totalMinutes < 11 * 60) {
+    if (totalMinutes < 5 * 60) {
+      return 'Dini Hari';
+    }
+    if (totalMinutes < 11 * 60) {
       return 'Pagi';
     }
-    if (totalMinutes >= 11 * 60 && totalMinutes < 15 * 60) {
+    if (totalMinutes < 15 * 60) {
       return 'Siang';
     }
-    if (totalMinutes >= 15 * 60 && totalMinutes < 18 * 60 + 30) {
+    if (totalMinutes < 18 * 60 + 30) {
       return 'Sore';
     }
     return 'Malam';
@@ -114,15 +118,19 @@ class TimeHelper {
 
   /**
    * Returns a polite greeting for the customer:
-   * e.g. "Selamat pagi Kak Budi" or "Selamat siang Kak"
+   * e.g. "Selamat pagi Kak Andre" or "Halo Kak Andre"
    */
   getGreeting(senderName = '') {
-    const { greetingWord } = this.getWIBTime();
-    const cleanName = String(senderName || '').trim();
-    if (cleanName && cleanName.toLowerCase() !== 'pelanggan' && cleanName.toLowerCase() !== 'kak') {
-      return `${greetingWord} Kak ${cleanName}`;
+    const { greetingWord, timeCategory } = this.getWIBTime();
+    let cleanName = String(senderName || '').trim();
+    cleanName = cleanName.replace(/^(kak|pak|bu|mas|mbak)\s+/i, '').trim();
+
+    const nameSuffix = (cleanName && cleanName.toLowerCase() !== 'pelanggan') ? ` Kak ${cleanName}` : ' Kak';
+
+    if (timeCategory === 'Dini Hari') {
+      return `Halo${nameSuffix}`;
     }
-    return `${greetingWord} Kak`;
+    return `${greetingWord}${nameSuffix}`;
   }
 
   /**
@@ -148,11 +156,18 @@ class TimeHelper {
       scheduleText = 'Senin - Sabtu: 08:30 - 20:00 WIB';
     }
 
+    // Jam Pelayanan Admin CS: 08:00 - 21:00 WIB setiap hari
+    const isCsActive = totalMin >= 8 * 60 && totalMin <= 21 * 60;
+    const csScheduleText = 'Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB (Di luar jam ini dibantu AI 24 Jam)';
+
     return {
       ...info,
       isOpen,
       statusLabel: isOpen ? 'BUKA' : 'TUTUP',
       scheduleText,
+      isCsActive,
+      csStatusLabel: isCsActive ? 'AKTIF (ADMIN STANDBY)' : 'OFFLINE (DILAYANI AI 24 JAM)',
+      csScheduleText,
       surveyStatus: 'Layanan survey & pasang masjid siap 24 jam (by appointment)'
     };
   }
@@ -190,15 +205,18 @@ class TimeHelper {
     return `=== WAKTU & STATUS OPERASIONAL SAAT INI (REAL-TIME WIB) ===
 Hari & Tanggal: ${status.dateStr}
 Waktu Saat Ini: ${status.timeStr}
-Kategori Waktu: ${status.timeCategory} (Gunakan "${status.greetingWord}" jika menyapa)
-Status Showroom Toko: ${status.statusLabel} (Jadwal Operasional Hari Ini: ${status.scheduleText})
-Layanan Survey & Pasang: Siap 24 jam dengan appointment (pengukuran & survey gratis Jabodetabek)
+1. Status Jam Operasional Toko (Showroom Fisik): ${status.statusLabel} (Jadwal: ${status.scheduleText})
+2. Status Jam Pelayanan Admin CS (WhatsApp): ${status.csStatusLabel} (Jadwal Admin: ${status.csScheduleText})
+Layanan Asisten AI Chatbot: Aktif 24 Jam Nonstop
 
-PETUNJUK WAKTU & SAPAAN:
-1. Selalu sadari waktu saat ini (${status.timeCategory}).
-2. Jika pelanggan mengucapkan salam atau menyapa waktu ("pagi", "siang", "sore", "malam", "halo", dll), balas secara alami dengan sapaan yang sesuai waktu saat ini yaitu "${status.greetingWord}".
-3. Jika pelanggan bertanya apakah toko/galeri buka sekarang atau jam berapa operasional, gunakan data waktu saat ini (${status.timeStr}, status: ${status.statusLabel}) untuk menjawab secara jujur dan akurat.
-4. Jangan pernah mengucapkan sapaan waktu yang salah (misal: jangan mengucapkan selamat malam jika waktu saat ini adalah pagi).`;
+PETUNJUK ETIKA & SAPAAN PROFESIONAL CS:
+1. DILARANG KERAS MENGULANG-ULANG SAPAAN WAKTU ("Selamat malam", "Selamat pagi", dll.) DI SETIAP PESAN!
+2. Jika obrolan sedang berlangsung, LANGSUNG jawab pertanyaan pelanggan dengan ramah, santun, dan to-the-point tanpa diawali sapaan waktu.
+3. Selalu panggil pelanggan dengan sebutan hormat "Kak [Nama]" (contoh: "Kak Andre"), bukan namanya saja.
+4. PEMISAHAN INFORMASI JAM:
+   - Jika pelanggan bertanya jam buka toko/showroom/kunjungan langsung, sebutkan: "Jam Operasional Toko: ${status.scheduleText}".
+   - Jika pelanggan bertanya jam respon admin atau ingin bicara dengan staf manusia, sebutkan: "Jam Pelayanan Admin CS: ${status.csScheduleText}" dan tekankan bahwa asisten AI siap melayani 24 jam nonstop untuk informasi & pencatatan pesanan.
+5. Jangan pernah menyapa "Selamat malam" jika waktu berada pada jam subuh/dini hari (00:00 - 04:59 WIB).`;
   }
 }
 

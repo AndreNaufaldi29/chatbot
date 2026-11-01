@@ -10,7 +10,7 @@ const INITIAL_MAPPING = {
 
 const SYSTEM_NAMES = [
   'admin', 'harbor bot', 'harbor ai', 'bot', 'gemini', 'cs', 'operator',
-  'pelanggan', 'saya', 'sultan carpet bot', 'sultan carpet ai', 'sultan carpet',
+  'pelanggan', 'saya', 'rumah indah carpet bot', 'rumah indah carpet ai', 'rumah indah carpet',
   'groq', 'ai', 'assistant'
 ];
 
@@ -33,12 +33,13 @@ class PhoneService {
     const str = String(value).trim();
     if (str.endsWith('@lid') || str.includes('@lid')) return true;
     const num = str.replace(/\D/g, '');
-    // Indonesian mobile numbers are 628... with length 10 to 13 digits
-    if (num.startsWith('628') && num.length >= 10 && num.length <= 13) return false;
-    // Standard national 08... numbers
-    if (num.startsWith('08') && num.length >= 10 && num.length <= 13) return false;
-    // Any sequence of 14 or more digits is an internal WhatsApp LID
-    if (num.length >= 14) return true;
+    // Nomor HP Indonesia ASLI SELALU diawali dengan 628 atau 08, panjang 10 sampai 14 digit
+    if (num.startsWith('628') && num.length >= 10 && num.length <= 14) return false;
+    if (num.startsWith('08') && num.length >= 10 && num.length <= 14) return false;
+
+    // Setiap digit dengan panjang 13 atau lebih yang BUKAN 628/08 adalah LID internal WhatsApp!
+    if (num.length >= 13) return true;
+
     return false;
   }
 
@@ -47,8 +48,31 @@ class PhoneService {
     if (this.isLid(value)) return false;
     let clean = String(value).replace(/\D/g, '');
     if (clean.startsWith('0')) clean = '62' + clean.slice(1);
-    // Real phone numbers are 9 to 13 digits (Indonesian 10-13, global 9-13)
-    return clean.length >= 9 && clean.length <= 13;
+
+    // Nomor HP Indonesia (628...) panjang 10 sampai 14 digit
+    if (clean.startsWith('628')) {
+      return clean.length >= 10 && clean.length <= 14;
+    }
+
+    // Nomor telepon internasional standar: panjang 9 sampai 12 digit
+    return clean.length >= 9 && clean.length <= 12;
+  }
+
+  cleanPhoneNumber(phone) {
+    if (!phone) return '';
+    let clean = String(phone).replace(/\D/g, '');
+    if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+    return clean;
+  }
+
+  extractPhoneFromJid(jid, senderName = null) {
+    if (!jid) return '';
+    const mapped = this.getPhone(jid, senderName);
+    if (mapped) return mapped;
+    const raw = String(jid).split('@')[0];
+    const cleaned = this.cleanPhoneNumber(raw);
+    if (this.isRealPhone(cleaned)) return cleaned;
+    return raw;
   }
 
   loadMapping() {

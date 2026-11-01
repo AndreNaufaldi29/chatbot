@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { prepareWAMessageMedia, generateWAMessageFromContent } = require('@whiskeysockets/baileys');
 const menuHandler = require('./menuHandler');
 const ticketService = require('../services/ticketService');
 const sessionManager = require('../services/sessionManager');
@@ -93,19 +92,25 @@ class MessageHandler {
       };
     }
 
-    // 7. Interactive / Button responses
+    // 7. Interactive / Button responses (Semua fungsi tombol WhatsApp terlindungi & didukung penuh)
     if (msg.templateButtonReplyMessage?.selectedId) {
       return { text: msg.templateButtonReplyMessage.selectedId, mediaType: 'text' };
     }
+    if (msg.templateButtonReplyMessage?.selectedDisplayText) {
+      return { text: msg.templateButtonReplyMessage.selectedDisplayText, mediaType: 'text' };
+    }
     if (msg.buttonsResponseMessage?.selectedButtonId) {
       return { text: msg.buttonsResponseMessage.selectedButtonId, mediaType: 'text' };
+    }
+    if (msg.buttonsResponseMessage?.selectedDisplayText) {
+      return { text: msg.buttonsResponseMessage.selectedDisplayText, mediaType: 'text' };
     }
     if (msg.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) {
       try {
         const params = JSON.parse(msg.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
         const val = params.id || params.selectedId || params.rowId || params.title;
         if (val) return { text: val, mediaType: 'text' };
-      } catch (e) {}
+      } catch (e) { }
     }
     if (msg.interactiveResponseMessage?.body?.text) {
       return { text: msg.interactiveResponseMessage.body.text, mediaType: 'text' };
@@ -122,50 +127,103 @@ class MessageHandler {
 
   detectServiceIntent(textLower) {
     if (!textLower) return null;
+    const clean = textLower.trim();
 
     // 1. Klaim Garansi
-    if (
-      textLower.includes('garansi') ||
-      textLower.includes('klaim') ||
-      textLower.includes('pecah') ||
-      textLower.includes('rusak saat pengiriman') ||
-      textLower.includes('ganti baru') ||
-      textLower.includes('retak saat datang') ||
-      textLower.includes('patah') ||
-      textLower.includes('barang pecah')
-    ) {
-      return 'Klaim Garansi';
+    const isWarrantyInfoOnly = /^(apakah ada|ada|info|informasi|syarat|ketentuan|berapa lama)\s+garansi/i.test(clean) ||
+      clean === '5' || clean === 'garansi';
+
+    if (!isWarrantyInfoOnly) {
+      if (
+        clean.includes('klaim garansi') ||
+        clean.includes('ajukan klaim') ||
+        clean.includes('klaim') ||
+        clean.includes('retur') ||
+        clean.includes('ganti baru') ||
+        clean.includes('rusak garansi') ||
+        clean.includes('garansi rusak') ||
+        clean.includes('pecah saat pengiriman') ||
+        clean.includes('rusak saat pengiriman') ||
+        clean.includes('retak saat datang') ||
+        clean.includes('barang pecah')
+      ) {
+        return 'Klaim Garansi';
+      }
     }
 
     // 2. Pengaduan Produk / Komplain
     if (
-      textLower.includes('pengaduan') ||
-      textLower.includes('komplain') ||
-      textLower.includes('cacat') ||
-      textLower.includes('kecewa') ||
-      textLower.includes('salah kirim') ||
-      textLower.includes('barang kurang') ||
-      textLower.includes('keluhan') ||
-      textLower.includes('tidak sesuai')
+      clean === '7' ||
+      clean.includes('pengaduan') ||
+      clean.includes('komplain') ||
+      clean.includes('keluhan') ||
+      clean.includes('kecewa') ||
+      clean.includes('cacat') ||
+      clean.includes('salah kirim') ||
+      clean.includes('barang kurang') ||
+      clean.includes('tidak sesuai') ||
+      clean.includes('jahitan lepas') ||
+      clean.includes('sobek') ||
+      clean.includes('lapor kendala') ||
+      clean.includes('lapor masalah') ||
+      clean.includes('rusak') ||
+      clean.includes('pelayanan buruk')
     ) {
-      return 'Pengaduan Produk';
+      return 'Pengaduan & Komplain';
     }
 
-    // 3. Pembelian Produk
-    if (
-      textLower.startsWith('order') ||
-      textLower.startsWith('pesan') ||
-      textLower.startsWith('beli') ||
-      textLower.includes('mau beli') ||
-      textLower.includes('ingin beli') ||
-      textLower.includes('mau pesan') ||
-      textLower.includes('ingin pesan') ||
-      textLower.includes('mau order') ||
-      textLower.includes('checkout') ||
-      textLower.includes('cara beli') ||
-      textLower.includes('cara pesan')
-    ) {
-      return 'Pembelian Produk';
+    // 3. Pembelian / Pemesanan Produk
+    const isOrderHowToOnly = /^(bagaimana|gimana|cara|tutorial)\s+(pesan|order|beli|membeli|memesan)/i.test(clean);
+    const isPureInquiry = /^(apakah|bisa|boleh|ada|berapa minimal)\s+(beli|dibeli|pesan|dipesan|order)\s+(meteran|custom|eceran|sedikit|rollan)/i.test(clean);
+
+    if (!isOrderHowToOnly && !isPureInquiry) {
+      if (
+        clean.includes('membeli') ||
+        clean.includes('memesan') ||
+        clean.includes('mengorder') ||
+        clean.includes('checkout') ||
+        clean.includes('booking') ||
+        clean.includes('mau beli') ||
+        clean.includes('ingin beli') ||
+        clean.includes('mau pesan') ||
+        clean.includes('ingin pesan') ||
+        clean.includes('mau order') ||
+        clean.includes('ingin order') ||
+        clean.includes('beli ini') ||
+        clean.includes('pesan ini') ||
+        clean.includes('order ini') ||
+        clean.includes('ambil ini') ||
+        clean.includes('ambil yang ini') ||
+        clean.includes('beli yang ini') ||
+        clean.includes('pesan yang ini') ||
+        clean.includes('order yang ini') ||
+        clean.includes('beli karpet') ||
+        clean.includes('pesan karpet') ||
+        clean.includes('order karpet') ||
+        clean.includes('beli sekarang') ||
+        clean.includes('pesan sekarang') ||
+        clean.includes('order sekarang') ||
+        clean.includes('jadi beli') ||
+        clean.includes('jadi pesan') ||
+        clean.includes('jadi order') ||
+        clean.includes('fix beli') ||
+        clean.includes('fix pesan') ||
+        clean.includes('fix order') ||
+        clean.includes('proses pembelian') ||
+        clean.includes('proses order') ||
+        clean.includes('proses pesanan') ||
+        clean.includes('minta rekening') ||
+        clean.includes('nomor rekening') ||
+        clean.includes('no rekening') ||
+        clean.includes('transfer kemana') ||
+        clean.startsWith('order') ||
+        clean.startsWith('pesan') ||
+        clean.startsWith('beli') ||
+        clean.startsWith('membeli') ||
+        clean.startsWith('memesan')
+      ) {
+        return 'Pemesanan Produk';
+      }
     }
 
     return null;
@@ -200,16 +258,8 @@ class MessageHandler {
     }
     protectionService.recordInbound(msg.key?.id, jid, rawText);
 
-    // 🛡️ 1.5. Proteksi Inbound Flood / Spammer Rate Limit
-    // Jika pelanggan mengirim pesan bertubi-tubi melebihi batas wajar, tahan dan beri peringatan
-    const floodCheck = protectionService.checkUserFlood(jid);
-    if (floodCheck.isBlocked) {
-      if (floodCheck.justBlocked && floodCheck.warningMessage) {
-        console.warn(`[Protection:Flood] Mengirim pesan peringatan rate limit ke ${jid}`);
-        await this.sendReply(sock, jid, floodCheck.warningMessage, msg).catch(() => {});
-      }
-      return;
-    }
+    // 🛡️ 1.5. Proteksi Inbound Flood: Nomor customer tidak boleh diblokir sama sekali
+    // Semua pesan pelanggan akan selalu diproses secara lancar tanpa pemblokiran
 
     // 🛡️ 2. Proteksi Opt-In / Consent Policy (0pt-in & Opt-Out)
     // Kepatuhan regulasi WA: Jika user kirim STOP/BERHENTI, bot diam selamanya agar nomor tidak dilaporkan SPAM
@@ -307,12 +357,14 @@ class MessageHandler {
       const cleanPhone = (realPhone && phoneService.isRealPhone(realPhone)) ? realPhone : null;
 
       // Emit incoming message to dashboard
-      let incomingImage = null;
-      if (record.mediaType === 'image' && record.lastMsg) {
+      let incomingMedia = null;
+      if ((record.mediaType === 'image' || record.mediaType === 'video' || record.mediaType === 'audio') && record.lastMsg) {
         try {
           const mediaService = require('../services/mediaService');
-          incomingImage = await mediaService.downloadAndSaveImage(record.lastMsg, sock);
-        } catch (e) {}
+          incomingMedia = await mediaService.downloadAndSaveMedia(record.lastMsg, sock);
+        } catch (e) {
+          console.warn('[MessageHandler] Gagal download media:', e.message);
+        }
       }
 
       this.emitLog({
@@ -324,7 +376,10 @@ class MessageHandler {
         senderName,
         text: rawText,
         mediaType: record.mediaType,
-        image: incomingImage,
+        image: incomingMedia?.mediaType === 'image' ? incomingMedia.url : null,
+        video: incomingMedia?.mediaType === 'video' ? incomingMedia.url : null,
+        audio: incomingMedia?.mediaType === 'audio' ? incomingMedia.url : null,
+        mediaUrl: incomingMedia?.url || null,
         timestamp: new Date().toISOString()
       });
 
@@ -332,12 +387,13 @@ class MessageHandler {
       // akan ditunda secara alami (3-8 detik) di dalam waitForUserCooldown agar tidak terbaca 0ms robotik
       const protections = protectionService.getConfig();
       if (config.bot?.auto_read_messages && protections.cooldown?.enabled === false) {
-        await sock.readMessages([msg.key]).catch(() => {});
+        await sock.readMessages([msg.key]).catch(() => { });
       }
 
       // 🛡️ 4. Sesi & Session Timeout Check
       const session = sessionManager.getSession(jid);
       const textLower = rawText.toLowerCase();
+      const textTrim = rawText.trim();
 
       // 🛡️ 5. Proteksi Human Handoff (Transisi & Pelepasan Mode CS Manusia)
       const handoffKeyword = protectionService.checkHandoffKeywords(textLower);
@@ -373,20 +429,73 @@ class MessageHandler {
         return;
       }
 
-      // 🎯 Intent Detection: Activate Ticket with Category Badge
-      const detectedIntent = this.detectServiceIntent(textLower);
-      if (detectedIntent) {
-        const { ticket, isNew } = ticketService.ensureActiveTicket({
-          sender: cleanPhone,
-          name: senderName,
-          contact: cleanPhone,
-          description: rawText,
-          category: detectedIntent,
-          priority: detectedIntent === 'Pembelian Produk' ? 'Normal' : 'Tinggi'
-        });
+      // 🎯 Intent Detection: Pengaduan/Komplain, Klaim Garansi, & Pesanan
+      // Saat customer melakukan salah satu dari 3 hal ini pada status IDLE:
+      // 1. Bot membuat tiket antrian resmi dengan nomor antrian harian (#A-00X)
+      // 2. Bot mengirim tiket antrian ke customer di WhatsApp
+      // 3. Obrolan otomatis dialihkan ke Hands-Off (menunggu konfirmasi dari admin)
+      // 🎯 Intent Detection: Pengaduan/Komplain, Klaim Garansi, & Pesanan
+      // Saat customer melakukan salah satu dari 3 hal ini:
+      // 1. Bot membuat tiket antrian resmi dengan nomor antrian harian (#A-00X)
+      // 2. Bot mengirim tiket antrian ke customer di WhatsApp
+      // 3. Obrolan otomatis dialihkan ke Hands-Off (menunggu konfirmasi dari admin)
+      let detectedIntent = null;
+      if (!['HUMAN_CS', 'TICKET_NAME', 'TICKET_CONTACT', 'TICKET_DESC'].includes(session.state)) {
+        detectedIntent = this.detectServiceIntent(textLower);
+        if (detectedIntent) {
+          let extraInfo = '';
+          if (detectedIntent === 'Pemesanan Produk') {
+            let matchedItem = menuHandler.getCatalogItem(textLower);
+            if (!matchedItem) {
+              matchedItem = session.data?.lastViewedProduct ||
+                            session.data?.selectedProduct ||
+                            session.data?.pendingDetailProduct;
+            }
+            if (matchedItem) {
+              extraInfo = ` [Produk: ${matchedItem.title} - Harga: ${matchedItem.price}]`;
+            }
+          }
 
-        if (this.eventEmitter && isNew) {
-          this.eventEmitter.emit('ticket_created', ticket);
+          let complaintNote = '';
+          if (detectedIntent === 'Pengaduan & Komplain' && (textTrim === '7' || textLower === 'komplain' || textLower === 'pengaduan')) {
+            complaintNote = 'Pengaduan & Komplain Pelanggan';
+          }
+
+          const fullDesc = complaintNote || `${rawText}${extraInfo}`.trim();
+          const priority = (detectedIntent.includes('Garansi') || detectedIntent.includes('Komplain') || detectedIntent.includes('Pengaduan')) ? 'Tinggi' : 'Normal';
+
+          const { ticket, isNew } = ticketService.ensureActiveTicket({
+            sender: cleanPhone || jid,
+            name: senderName,
+            contact: phoneService.formatPhone(cleanPhone, jid),
+            description: fullDesc,
+            category: detectedIntent,
+            priority
+          });
+
+          // 1. Emit ke Dashboard & Admin secara real-time
+          if (this.eventEmitter) {
+            if (isNew) this.eventEmitter.emit('ticket_created', ticket);
+            this.eventEmitter.emit('human_cs_requested', {
+              phone: cleanPhone,
+              senderName,
+              jid,
+              category: detectedIntent,
+              ticketId: ticket.id,
+              queueNumber: ticket.queueNumber,
+              timestamp: new Date().toISOString()
+            });
+          }
+
+          // 2. Kirim pesan Tiket Antrian ke Customer
+          const queueReply = menuHandler.getQueueTicketMessage(ticket, senderName);
+          await this.sendReply(sock, jid, queueReply, msg);
+
+          // 3. Otomatis Hands-Off: Sesi obrolan dialihkan ke CS manusia & bot diam menunggu konfirmasi admin
+          sessionManager.setHumanMode(jid, true, `Tiket ${ticket.id} (${detectedIntent}) dibuat - Hands-off menunggu konfirmasi admin`);
+
+          console.log(`[Hands-Off] Chat ${jid} (${cleanPhone || senderName}) otomatis hands-off menunggu konfirmasi admin. Tiket: ${ticket.id}, Antrian: ${ticket.queueNumber}, Kategori: ${detectedIntent}`);
+          return;
         }
       }
 
@@ -410,15 +519,41 @@ class MessageHandler {
       // Check Order Shortcuts (e.g. order 1, pesan 1, order everyday set)
       if (textLower.startsWith('order_') || textLower.startsWith('pesan ') || textLower.startsWith('order ')) {
         const itemIdentifier = textLower.replace(/^(order_|pesan\s+|order\s+)/i, '').trim();
-        const catalogItem = menuHandler.getCatalogItem(itemIdentifier) || menuHandler.getCatalogItem('1');
+        const catalogItem = menuHandler.getCatalogItem(itemIdentifier) || 
+                            session.data?.lastViewedProduct || 
+                            session.data?.selectedProduct || 
+                            session.data?.pendingDetailProduct || 
+                            menuHandler.getCatalogItem('1');
 
         if (catalogItem) {
-          sessionManager.setState(jid, 'TICKET_NAME', {
-            product: catalogItem.title,
-            price: catalogItem.price
+          const extraInfo = ` [Produk: ${catalogItem.title} - Harga: ${catalogItem.price}]`;
+          const fullDesc = `${rawText}${extraInfo}`.trim();
+
+          const { ticket, isNew } = ticketService.ensureActiveTicket({
+            sender: cleanPhone || jid,
+            name: senderName,
+            contact: phoneService.formatPhone(cleanPhone, jid),
+            description: fullDesc,
+            category: 'Pemesanan Produk',
+            priority: 'Normal'
           });
-          const reply = `Pemesanan Produk: ${catalogItem.title}\nHarga: ${catalogItem.price}\n\nUntuk memproses pesanan Anda, silakan sebutkan nama lengkap Anda:`;
-          await this.sendReply(sock, jid, reply, msg);
+
+          if (this.eventEmitter) {
+            if (isNew) this.eventEmitter.emit('ticket_created', ticket);
+            this.eventEmitter.emit('human_cs_requested', {
+              phone: cleanPhone,
+              senderName,
+              jid,
+              category: 'Pemesanan Produk',
+              ticketId: ticket.id,
+              queueNumber: ticket.queueNumber,
+              timestamp: new Date().toISOString()
+            });
+          }
+
+          const queueReply = menuHandler.getQueueTicketMessage(ticket, senderName);
+          await this.sendReply(sock, jid, queueReply, msg);
+          sessionManager.setHumanMode(jid, true, `Tiket ${ticket.id} (Pemesanan Produk) dibuat - Hands-off menunggu konfirmasi admin`);
           return;
         }
       }
@@ -503,14 +638,14 @@ class MessageHandler {
     const description = text.trim();
     const session = sessionManager.getSession(jid);
     const name = session.data?.name || senderName;
-    const contact = session.data?.contact || '-';
+    const contact = session.data?.contact || (phone ? phoneService.formatPhone(phone, jid) : '-');
     const product = session.data?.product || null;
 
     const fullDesc = product ? `[Pesanan: ${product}] Alamat/Catatan: ${description}` : description;
-    const category = product ? 'Pembelian Produk' : 'Layanan Umum';
+    const category = product ? 'Pemesanan Produk' : 'Layanan Umum';
 
     const newTicket = ticketService.createTicket({
-      sender: phone,
+      sender: phone || jid,
       name,
       contact,
       description: fullDesc,
@@ -522,27 +657,31 @@ class MessageHandler {
 
     if (this.eventEmitter) {
       this.eventEmitter.emit('ticket_created', newTicket);
+      this.eventEmitter.emit('human_cs_requested', {
+        phone,
+        senderName: name,
+        jid,
+        category,
+        ticketId: newTicket.id,
+        queueNumber: newTicket.queueNumber,
+        timestamp: new Date().toISOString()
+      });
     }
 
-    const titleMsg = product ? 'Pesanan Anda telah berhasil kami catat.' : 'Laporan tiket layanan Anda telah dibuat.';
-    const reply = `${titleMsg}\n\n` +
-      `Rincian:\n` +
-      `ID Tiket: ${newTicket.id}\n` +
-      `Kategori: ${newTicket.category}\n` +
-      `Nama: ${newTicket.name}\n` +
-      `Kontak: ${newTicket.contact}\n` +
-      `Status: OPEN\n` +
-      `Rincian: "${newTicket.description}"\n\n` +
-      `Tim kami akan segera memverifikasi dan menghubungi Anda kembali.\n` +
-      `Simpan nomor tiket (${newTicket.id}) untuk pengecekan status sewaktu-waktu.`;
-
+    // Kirim Tiket Antrian resmi ke customer
+    const reply = menuHandler.getQueueTicketMessage(newTicket, name);
     await this.sendReply(sock, jid, reply, originalMsg);
+
+    // Otomatis Hands-Off: Sesi chat dialihkan ke CS manusia & bot diam menunggu konfirmasi admin
+    sessionManager.setHumanMode(jid, true, `Pesanan ${newTicket.id} dibuat - Hands-off menunggu konfirmasi admin`);
+    console.log(`[Hands-Off] Pesanan selesai untuk ${jid} (Tiket: ${newTicket.id}, Antrian: ${newTicket.queueNumber}) - Hands-off menunggu konfirmasi admin.`);
   }
 
   async handleSelectProductState(sock, jid, text, originalMsg) {
     const textTrim = text.trim();
     const textLower = textTrim.toLowerCase();
     const session = sessionManager.getSession(jid);
+    const catalog = menuHandler.getCatalog();
 
     if (['0', 'menu', 'batal', 'kembali'].includes(textLower)) {
       sessionManager.resetSession(jid);
@@ -550,7 +689,13 @@ class MessageHandler {
       return;
     }
 
-    // Check if user is confirming or asking for photo of a pending product from previous discussion
+    if (textLower === 'katalog') {
+      sessionManager.setState(jid, 'SELECT_PRODUCT');
+      const selectionMenu = stripStarsAndEmojis(menuHandler.getCatalogSelectionMenu());
+      await this.sendReply(sock, jid, selectionMenu, originalMsg);
+      return;
+    }
+
     if (session.data?.pendingDetailProduct && /^(foto|detail|fotonya|gambar|gambarnya|poto|potonya|mau|kirim|ok|oke|ya|boleh)$/i.test(textTrim)) {
       const prod = session.data.pendingDetailProduct;
       delete session.data.pendingDetailProduct;
@@ -559,7 +704,32 @@ class MessageHandler {
       return;
     }
 
-    // 1. Check if user selected a Carpet Category
+    // A. If user was viewing products inside a specific category (e.g. Karpet Masjid & Musholla)
+    if (session.data?.selectedCategory) {
+      const cName = (session.data.selectedCategory || '').trim().toLowerCase();
+      const categoryProducts = catalog.filter(p => {
+        const pCat = (p.category || '').trim().toLowerCase();
+        return pCat === cName || (pCat.length > 5 && (cName.includes(pCat) || pCat.includes(cName)));
+      });
+
+      const num = parseInt(textTrim, 10);
+      if (!isNaN(num) && num >= 1 && num <= categoryProducts.length) {
+        const selectedProd = categoryProducts[num - 1];
+        sessionManager.setState(jid, 'IDLE');
+        await this.sendCatalogCard(sock, jid, selectedProd, originalMsg);
+        return;
+      }
+    }
+
+    // B. Check if user selected a Specific Carpet Product by name/code
+    const product = menuHandler.getCatalogItem(textTrim);
+    if (product) {
+      sessionManager.setState(jid, 'IDLE');
+      await this.sendCatalogCard(sock, jid, product, originalMsg);
+      return;
+    }
+
+    // C. Check if user selected a Carpet Category
     const category = menuHandler.getCategoryByIdOrName(textTrim);
     if (category) {
       sessionManager.setState(jid, 'SELECT_PRODUCT', { selectedCategory: category.name });
@@ -568,17 +738,9 @@ class MessageHandler {
       return;
     }
 
-    // 2. Check if user selected a Specific Carpet Product
-    const product = menuHandler.getCatalogItem(textTrim);
-    if (product) {
-      // User memilih produk dari katalog: langsung kirim foto fisik & detail spesifikasi
-      sessionManager.setState(jid, 'IDLE');
-      await this.sendCatalogCard(sock, jid, product, originalMsg);
-      return;
-    } else {
-      const reply = 'Pilihan kategori atau produk tidak ditemukan. Silakan pilih nomor kategori atau nama koleksi karpet berikut:\n\n' + menuHandler.getCatalogSelectionMenu();
-      await this.sendReply(sock, jid, reply, originalMsg);
-    }
+    // D. Fallback if not found
+    const reply = 'Pilihan kategori atau produk tidak ditemukan. Silakan pilih nomor kategori atau nama koleksi karpet berikut:\n\n' + menuHandler.getCatalogSelectionMenu();
+    await this.sendReply(sock, jid, reply, originalMsg);
   }
 
   async handleConfirmProductState(sock, jid, text, originalMsg) {
@@ -593,7 +755,7 @@ class MessageHandler {
       return;
     }
 
-    // 1. Pesan langsung
+    // 1. Pesan langsung: Terbitkan tiket antrian resmi dan alihkan ke CS manusia (hands-off)
     if (
       textLower === '1' ||
       textLower === 'pesan' ||
@@ -601,14 +763,43 @@ class MessageHandler {
       textLower === 'ya' ||
       textLower === 'beli' ||
       textLower.startsWith('order') ||
-      textLower.startsWith('pesan')
+      textLower.startsWith('pesan') ||
+      textLower.startsWith('beli') ||
+      textLower.includes('membeli') ||
+      textLower.includes('memesan')
     ) {
-      sessionManager.setState(jid, 'TICKET_NAME', {
-        product: product.title,
-        price: product.price
+      const targetProduct = product || session.data?.lastViewedProduct || menuHandler.getCatalogItem('1');
+      const extraInfo = targetProduct ? ` [Produk: ${targetProduct.title} - Harga: ${targetProduct.price}]` : '';
+      const fullDesc = `Pemesanan Produk${extraInfo}`.trim();
+
+      const senderName = originalMsg.pushName || 'Pelanggan';
+      const cleanPhone = phoneService.getPhone(jid, senderName) || (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : null);
+
+      const { ticket, isNew } = ticketService.ensureActiveTicket({
+        sender: cleanPhone || jid,
+        name: senderName,
+        contact: phoneService.formatPhone(cleanPhone, jid),
+        description: fullDesc,
+        category: 'Pemesanan Produk',
+        priority: 'Normal'
       });
-      const reply = `Pemesanan Produk: ${product.title}\nHarga: ${product.price}\n\nUntuk memproses pesanan Anda, silakan sebutkan nama lengkap Anda:`;
-      await this.sendReply(sock, jid, reply, originalMsg);
+
+      if (this.eventEmitter) {
+        if (isNew) this.eventEmitter.emit('ticket_created', ticket);
+        this.eventEmitter.emit('human_cs_requested', {
+          phone: cleanPhone,
+          senderName,
+          jid,
+          category: 'Pemesanan Produk',
+          ticketId: ticket.id,
+          queueNumber: ticket.queueNumber,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const queueReply = menuHandler.getQueueTicketMessage(ticket, senderName);
+      await this.sendReply(sock, jid, queueReply, originalMsg);
+      sessionManager.setHumanMode(jid, true, `Tiket ${ticket.id} (Pemesanan Produk) dibuat - Hands-off menunggu konfirmasi admin`);
       return;
     }
 
@@ -689,7 +880,7 @@ class MessageHandler {
     // ─── ANTI-SPAM CONFIRMATION & DETAIL INTERACTION CHECK ───
     const pendingProduct = session.data?.pendingDetailProduct;
 
-    const isDetailConfirmation = 
+    const isDetailConfirmation =
       /^(foto|detail|fotonya|gambar|gambarnya|poto|potonya|spill|lihat|liat|pic|pict|mau|ya|boleh|kirim|ok|oke|siap|tentu|coba|iya|ya mau|mau foto|minta foto|kirim foto|lihat foto|liat foto|kirim fotonya|kirim gambar|kirim gambarnya|mau dong|kirim dong|boleh dong|iya mau|iya boleh|mana fotonya|mana gambarnya|gambarnya mana|fotonya mana)$/i.test(textTrim) ||
       /\b(foto|fotonya|gambar|gambarnya|poto|potonya|spill|pic|pict|detail)\b/i.test(textLower) ||
       (/\b(mau|lihat|liat|kirim|tampilkan|spill)\b/i.test(textLower) && /\b(foto|gambar|poto|pic|fotonya|gambarnya)\b/i.test(textLower));
@@ -721,6 +912,15 @@ class MessageHandler {
       const askMsg = `Kami menyediakan beragam koleksi karpet berkualitas tinggi. Silakan sebutkan nomor atau jenis karpet yang ingin Kakak lihat foto dan spesifikasi detailnya:\n\n` +
         menuHandler.getCatalogSelectionMenu();
       await this.sendReply(sock, jid, askMsg, originalMsg);
+      return;
+    }
+
+    // Pengecekan status tiket instan jika pesan memuat ID tiket (misal TKT-1234 atau status tiket TKT-1234)
+    const ticketMatch = textTrim.match(/\b(TKT-\d{3,6})\b/i);
+    if (ticketMatch) {
+      const ticket = ticketService.getTicketById(ticketMatch[1]);
+      const reply = menuHandler.getTicketStatusMessage(ticket);
+      await this.sendReply(sock, jid, reply, originalMsg);
       return;
     }
 
@@ -784,7 +984,7 @@ class MessageHandler {
     // 2. Sticker response
     if (textTrim === '[Stiker WhatsApp]') {
       const greeting = timeHelper.getGreeting(senderName);
-      const stickerReply = `${greeting}, terima kasih atas sapaan stikernya. Ada yang dapat kami bantu terkait produk karpet atau layanan Sultan Carpet Gallery hari ini?`;
+      const stickerReply = `${greeting}, terima kasih atas sapaan stikernya. Ada yang dapat kami bantu terkait produk karpet atau layanan Rumah Indah Carpet Gallery hari ini?`;
       await this.sendReply(sock, jid, stickerReply, originalMsg);
       return;
     }
@@ -810,36 +1010,45 @@ class MessageHandler {
           const customerRequestedPhoto = /\b(foto|fotonya|gambar|gambarnya|poto|potonya|pic|pict|spill)\b/i.test(textLower) ||
             (/\b(lihat|liat|minta|kirim|mau)\b/i.test(textLower) && /\b(foto|gambar|poto|pic|fotonya|gambarnya)\b/i.test(textLower));
 
+          // Check if customer is asking for a list / catalog / collection of products
+          const isListOrCatalogRequest = /\b(list|daftar|katalog|apa saja|ada apa|koleksi|pilihan|semua produk|semuanya|macam)\b/i.test(textLower);
+
           // Detect if any specific product is mentioned or recommended
           let matchedProduct = photoProduct || menuHandler.getCatalogItem(textLower);
 
-          if (!matchedProduct) {
+          // Do not arbitrarily assign matchedProduct to a single product if customer requested a list/catalog
+          if (!matchedProduct && !isListOrCatalogRequest) {
             for (const item of catalog) {
               const code = (item.code || '').toLowerCase();
-              if (code && (textLower.includes(code) || aiReply.toLowerCase().includes(code))) {
+              if (code && code.length >= 3 && (textLower.includes(code) || aiReply.toLowerCase().includes(code))) {
                 matchedProduct = item;
                 break;
               }
             }
           }
 
-          if (!matchedProduct) {
-            if (textLower.includes('masjid') || aiReply.toLowerCase().includes('masjid')) {
-              matchedProduct = catalog.find(c => (c.code || '').includes('MASJID') || c.title.toLowerCase().includes('masjid')) || catalog[0];
-            } else if (textLower.includes('kantor') || aiReply.toLowerCase().includes('kantor')) {
-              matchedProduct = catalog.find(c => (c.code || '').includes('OFFICE') || c.title.toLowerCase().includes('kantor')) || catalog[0];
-            } else if (textLower.includes('persia') || aiReply.toLowerCase().includes('persia')) {
-              matchedProduct = catalog.find(c => (c.code || '').includes('PERSIA') || c.title.toLowerCase().includes('persia')) || catalog[0];
-            } else if (textLower.includes('nordic') || textLower.includes('scandi') || aiReply.toLowerCase().includes('nordic')) {
-              matchedProduct = catalog.find(c => (c.code || '').includes('NORDIC') || c.title.toLowerCase().includes('nordic')) || catalog[0];
-            } else if (textLower.includes('shaggy') || textLower.includes('bulu') || aiReply.toLowerCase().includes('shaggy')) {
-              matchedProduct = catalog.find(c => (c.code || '').includes('SHAGGY') || c.title.toLowerCase().includes('shaggy')) || catalog[0];
-            }
+          // If customer explicitly requested a list, ensure matchedProduct is null so no single product is pinned
+          if (isListOrCatalogRequest) {
+            matchedProduct = null;
           }
 
           // Clean up reply: strip [KIRIM_FOTO: ...] tags
           let cleanReply = aiReply.replace(/\[KIRIM_FOTO:[^\]]+\]/gi, '').trim();
           cleanReply = stripStarsAndEmojis(cleanReply);
+
+          // Cek apakah balasan merupakan penolakan di luar konteks
+          const isOutOfContext = /tidak bisa menjawab pertanyaan tersebut|di luar konteks/i.test(cleanReply);
+          if (isOutOfContext) {
+            cleanReply = 'Mohon maaf, saya tidak bisa menjawab pertanyaan tersebut.';
+            const provider = aiService.getActiveProvider();
+            const providerDisplayName = provider === 'groq' ? 'Rumah Indah Carpet AI (Groq)' : 'Rumah Indah Carpet AI (Gemini)';
+            await this.sendReply(sock, jid, cleanReply, originalMsg, {
+              id: `out_ai_${Date.now()}`,
+              senderName: providerDisplayName,
+              isAi: true
+            });
+            return;
+          }
 
           // If AI explicitly requested to send photo OR customer explicitly requested photo and product is identified:
           if (photoProduct || (customerRequestedPhoto && matchedProduct)) {
@@ -849,19 +1058,22 @@ class MessageHandler {
             return;
           }
 
-          // General product discussion: save pendingDetailProduct in session so user can confirm with "FOTO" or "DETAIL"
-          if (matchedProduct) {
+          // General single product discussion: save pendingDetailProduct & lastViewedProduct in session so user can confirm with "FOTO" or order immediately
+          if (matchedProduct && !isListOrCatalogRequest) {
             session.data.pendingDetailProduct = matchedProduct;
+            session.data.lastViewedProduct = matchedProduct;
+          } else {
+            delete session.data.pendingDetailProduct;
           }
 
-          // Append confirmation prompt if product is discussed and confirmation hint is missing
-          if (matchedProduct && !cleanReply.toLowerCase().includes('foto') && !cleanReply.toLowerCase().includes('detail')) {
+          // Append confirmation prompt ONLY when discussing one specific product (NOT when displaying a list/catalog)
+          if (!isListOrCatalogRequest && matchedProduct && !cleanReply.toLowerCase().includes('foto') && !cleanReply.toLowerCase().includes('detail')) {
             cleanReply += `\n\nBila Kakak ingin melihat foto fisik dan rincian spesifikasi lengkap ${matchedProduct.title}, silakan balas dengan 'FOTO' atau 'DETAIL'.`;
           }
 
           // Send STRICTLY 1 text message with all protections enabled
           const provider = aiService.getActiveProvider();
-          const providerDisplayName = provider === 'groq' ? 'Sultan Carpet AI (Groq)' : 'Sultan Carpet AI (Gemini)';
+          const providerDisplayName = provider === 'groq' ? 'Rumah Indah Carpet AI (Groq)' : 'Rumah Indah Carpet AI (Gemini)';
 
           await this.sendReply(sock, jid, cleanReply, originalMsg, {
             id: `out_ai_${Date.now()}`,
@@ -1060,7 +1272,7 @@ class MessageHandler {
         jid,
         phone: resolvedPhone,
         formattedPhone: phoneService.formatPhone(resolvedPhone, jid),
-        senderName: logOptions.senderName || 'Sultan Carpet Bot',
+        senderName: logOptions.senderName || 'Rumah Indah Carpet Bot',
         text: textContent,
         isAi: !!logOptions.isAi,
         image: finalImg,
@@ -1082,7 +1294,7 @@ class MessageHandler {
       jid,
       { text: menuText },
       originalMsg,
-      { id: `out_menu_${Date.now()}`, senderName: 'Sultan Carpet Bot' }
+      { id: `out_menu_${Date.now()}`, senderName: 'Rumah Indah Carpet Bot' }
     );
   }
 
@@ -1093,7 +1305,7 @@ class MessageHandler {
       jid,
       { text: reply },
       originalMsg,
-      { id: `out_branches_${Date.now()}`, senderName: 'Sultan Carpet Bot' }
+      { id: `out_branches_${Date.now()}`, senderName: 'Rumah Indah Carpet Bot' }
     );
   }
 
@@ -1143,6 +1355,14 @@ class MessageHandler {
 
     const hasImage = Boolean(imagePayload);
 
+    // Simpan produk terakhir yang dilihat untuk kejelasan konteks pemesanan
+    const session = sessionManager.getSession(jid);
+    if (session) {
+      if (!session.data) session.data = {};
+      session.data.lastViewedProduct = product;
+      session.data.selectedProduct = product;
+    }
+
     let caption;
     if (customCaption) {
       caption = stripStarsAndEmojis(
@@ -1155,11 +1375,12 @@ class MessageHandler {
     } else {
       caption = stripStarsAndEmojis(
         `${product.title.toUpperCase()}\n` +
-        `${product.subtitle}\n\n` +
+        `Harga: ${product.price}\n\n` +
+        `Spesifikasi: ${product.subtitle}\n` +
         `Varian: ${product.footer}\n` +
-        `Koleksi Resmi: Sultan Carpet Gallery\n` +
+        `Koleksi Resmi: Rumah Indah Carpet Gallery\n` +
         `───────────────────\n` +
-        `Bila Anda ingin memesan ${product.title} atau survey gratis, silakan beri tahu kami.`
+        `Bila Kakak ingin memesan ${product.title} atau survey gratis, silakan beri tahu kami.`
       );
     }
 
@@ -1176,7 +1397,7 @@ class MessageHandler {
       originalMsg,
       {
         id: `out_cat_${Date.now()}`,
-        senderName: 'Sultan Carpet Bot',
+        senderName: 'Rumah Indah Carpet Bot',
         image: catalogImg,
         mediaType: hasImage ? 'image' : 'text'
       }
@@ -1192,7 +1413,7 @@ class MessageHandler {
       originalMsg,
       {
         id: options.id || `out_${Date.now()}`,
-        senderName: options.senderName || 'Sultan Carpet Bot',
+        senderName: options.senderName || 'Rumah Indah Carpet Bot',
         isAi: options.isAi || false
       }
     );

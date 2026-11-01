@@ -1,15 +1,16 @@
 [
   {
-    "id": "TKT-8240",
-    "sender": "92011503861900@lid",
-    "name": "Andre N",
-    "contact": "+6282333893488",
-    "description": "Terima kasih, Andre! Berikut detail pesanan Anda:\n\n- Produk: The Organic Serving Platter – varian Sand\n- Harga: Rp 280.000\n- Alamat pengiriman: Jl. Kepodang No. 7, Candi, Sidoarjo\n\nSelanjutnya, mohon konfirmasi metode pembayaran Anda (transfer bank, pembayaran COD, atau dompet digital). Setelah pembayaran terverifikasi, kami akan segera memproses pengiriman. Estimasi pengiriman untuk Sidoarjo adalah 2‑4 hari kerja.\n\nJika Anda memerlukan bantuan lebih lanjut atau ingin melihat foto produk, beri tahu kami. Kami siap membantu!",
-    "category": "Layanan Umum",
+    "id": "TKT-6118",
+    "queueNumber": "A-001",
+    "sender": "082333893488",
+    "name": "Andre Naufaldi",
+    "contact": "082333893488",
+    "description": "ingin beli",
+    "category": "Pembelian Produk",
     "status": "Open",
-    "priority": "Tinggi",
-    "createdAt": "2026-09-27T20:18:35.955Z",
-    "updatedAt": "2026-10-13T20:45:00.831Z",
-    "notes": "Tiket aktif dibuat otomatis via WhatsApp (Layanan Umum)."
+    "priority": "Normal",
+    "createdAt": "2026-11-01T17:02:51.518Z",
+    "updatedAt": "2026-11-01T18:52:34.036Z",
+    "notes": "Tiket antrian #A-001 aktif dibuat otomatis via WhatsApp (Pembelian Produk) - Menunggu konfirmasi admin."
   }
 ]

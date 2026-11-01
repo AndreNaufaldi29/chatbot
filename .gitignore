@@ -1,7 +1,13 @@
 node_modules/
 auth_info_baileys/
+auth_info_wwebjs/
+.wwebjs_cache/
+auth_info_openwa/
+.open-wa/
 .DS_Store
 *.log
 .next/
 .env
 .env.local
+.vscode/
+

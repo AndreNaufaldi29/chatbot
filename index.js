@@ -1,100 +1,9 @@
-// Suppress noisy libsignal / Baileys internal decryption errors & SessionEntry dumps
-const originalConsoleError = console.error;
-const originalConsoleWarn = console.warn;
-const originalConsoleInfo = console.info;
-const originalConsoleLog = console.log;
-
-function isNoisySessionMessage(args) {
-  for (const arg of args) {
-    if (!arg) continue;
-    if (typeof arg === 'object') {
-      if (
-        arg.constructor?.name === 'SessionEntry' ||
-        (arg._chains && typeof arg.registrationId !== 'undefined')
-      ) {
-        return true;
-      }
-    }
-    const str = typeof arg === 'string' ? arg : (arg.message || arg.stack || String(arg));
-    if (
-      str.includes('Failed to decrypt message with any known session') ||
-      str.includes('Session error:') ||
-      str.includes('Bad MAC') ||
-      str.includes('Over 2000 messages into the future') ||
-      str.includes('No matching sessions found for message') ||
-      str.includes('Decrypted message with closed session') ||
-      str.includes('Closing session:') ||
-      str.includes('Opening session:') ||
-      str.includes('Session already closed') ||
-      str.includes('Session already open') ||
-      str.includes('SessionEntry')
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-console.error = function (...args) {
-  if (isNoisySessionMessage(args)) return;
-  originalConsoleError.apply(console, args);
-};
-console.warn = function (...args) {
-  if (isNoisySessionMessage(args)) return;
-  originalConsoleWarn.apply(console, args);
-};
-console.info = function (...args) {
-  if (isNoisySessionMessage(args)) return;
-  originalConsoleInfo.apply(console, args);
-};
-console.log = function (...args) {
-  if (isNoisySessionMessage(args)) return;
-  originalConsoleLog.apply(console, args);
-};
-
-// Also intercept process.stdout.write & process.stderr.write in case libsignal writes directly
-const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-const originalStderrWrite = process.stderr.write.bind(process.stderr);
-
-function isNoisyStreamChunk(chunk) {
-  const str = typeof chunk === 'string' ? chunk : (chunk?.toString ? chunk.toString() : '');
-  return (
-    str.includes('Failed to decrypt message with any known session') ||
-    str.includes('Session error:') ||
-    str.includes('Bad MAC') ||
-    str.includes('Over 2000 messages into the future') ||
-    str.includes('No matching sessions found for message') ||
-    str.includes('Decrypted message with closed session') ||
-    str.includes('Closing session:') ||
-    str.includes('Opening session:') ||
-    str.includes('Session already closed') ||
-    str.includes('Session already open') ||
-    str.includes('SessionEntry')
-  );
-}
-
-process.stdout.write = function (chunk, encoding, callback) {
-  if (isNoisyStreamChunk(chunk)) {
-    if (typeof encoding === 'function') encoding();
-    else if (typeof callback === 'function') callback();
-    return true;
-  }
-  return originalStdoutWrite(chunk, encoding, callback);
-};
-
-process.stderr.write = function (chunk, encoding, callback) {
-  if (isNoisyStreamChunk(chunk)) {
-    if (typeof encoding === 'function') encoding();
-    else if (typeof callback === 'function') callback();
-    return true;
-  }
-  return originalStderrWrite(chunk, encoding, callback);
-};
-
+require('dotenv').config();
 const net = require('net');
 const bot = require('./src/bot');
 const { startServer } = require('./src/web/server');
 const menuHandler = require('./src/handlers/menuHandler');
+const dbService = require('./src/services/dbService');
 
 function checkPortAvailable(port) {
   return new Promise((resolve) => {
@@ -117,7 +26,20 @@ async function main() {
   console.clear();
   console.log('====================================================');
   console.log('  🤖 CHATBOT WHATSAPP PELAYANAN (CUSTOMER SERVICE)  ');
+  console.log('          POWERED BY WHATSAPP-WEB.JS (CHROME)       ');
   console.log('====================================================');
+
+  // Inisialisasi & Sinkronisasi Database Informasi Toko
+  try {
+    await dbService.syncStoreInfoToDb();
+    const dbStoreInfo = await dbService.loadAllStoreInfo();
+    if (dbStoreInfo && Object.keys(dbStoreInfo).length > 0) {
+      menuHandler.saveConfig(dbStoreInfo);
+      console.log(`[Database] Sinkronisasi ${dbStoreInfo.catalog?.length || 0} produk katalog dari database ke runtime bot berhasil!`);
+    }
+  } catch (dbErr) {
+    console.warn('[Database] Peringatan sinkronisasi database toko:', dbErr.message);
+  }
 
   const config = menuHandler.getConfig();
   const port = Number(process.env.PORT || config.server?.port || 3000);
@@ -131,15 +53,14 @@ async function main() {
     process.exit(1);
   }
 
-  // 1. Start Web Dashboard
+  // 1. Start Web Dashboard & Webhook Server
   await startServer(port);
 
   console.log(`\n🌐 Web Dashboard Siap: http://localhost:${port}`);
-  console.log(`💡 Anda dapat memindai (scan) QR code langsung di browser atau melalui terminal.`);
   console.log('----------------------------------------------------\n');
 
-  // 2. Initialize WhatsApp Socket
-  console.log('[Sistem] Menginisialisasi koneksi WhatsApp...');
+  // 2. Initialize whatsapp-web.js Connection
+  console.log('[Sistem] Menginisialisasi koneksi WhatsApp (whatsapp-web.js)...');
   await bot.init();
 }
 
@@ -154,37 +75,11 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-// Handle uncaught exceptions to prevent process termination on transient socket disconnects
 process.on('uncaughtException', (err) => {
-  const msg = err?.message || String(err || '');
-  if (
-    msg.includes('Bad MAC') ||
-    msg.includes('Over 2000 messages') ||
-    msg.includes('SessionError') ||
-    msg.includes('No matching sessions') ||
-    msg.includes('Decrypted message with closed session') ||
-    msg.includes('Connection Closed') ||
-    msg.includes('ECONNRESET') ||
-    msg.includes('EPIPE')
-  ) {
-    console.warn('[System] Mengabaikan error soket sementara:', msg);
-    return;
-  }
   console.error('[Uncaught Exception]', err);
 });
 
-// Auto-clean corrupted ratchet session on unhandled rejection
 process.on('unhandledRejection', (reason) => {
-  const msg = reason?.message || String(reason || '');
-  if (
-    msg.includes('Bad MAC') ||
-    msg.includes('Over 2000 messages') ||
-    msg.includes('SessionError') ||
-    msg.includes('No matching sessions')
-  ) {
-    bot.cleanCorruptedRatchetSessions();
-    return;
-  }
   console.error('[Unhandled Rejection]', reason);
 });
 

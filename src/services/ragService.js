@@ -3,7 +3,7 @@ const ticketService = require('./ticketService');
 
 /**
  * RAG (Retrieval-Augmented Generation) Service
- * Mengindeks seluruh data dari 11 halaman/fitur Sultan Carpet Gallery:
+ * Mengindeks seluruh data dari 11 halaman/fitur Rumah Indah Carpet Gallery:
  * 1. Profil & Pemilik Toko (store_profile)
  * 2. Katalog Produk & Spesifikasi (catalog)
  * 3. Kategori Produk (categories)
@@ -37,7 +37,7 @@ class RagService {
       const p = config.promo_info || {};
       const c = config.complaint_info || {};
       const catalog = config.catalog || [];
-      const categories = config.categories || [];
+      const categories = config.carpet_categories || config.categories || [];
       const services = config.services || [];
       const branches = config.branches || [];
       const locInfo = config.location_info || {};
@@ -50,25 +50,25 @@ class RagService {
       docs.push({
         id: 'page_store_profile',
         page: 'Profil Toko & Pemilik',
-        title: 'Profil Toko Sultan Carpet Gallery & Pendiri',
+        title: 'Profil Toko Rumah Indah Carpet Gallery & Pendiri',
         keywords: ['profil', 'pemilik', 'founder', 'sejarah', 'ahmad fauzi', 'maryam', 'reputasi', 'legalitas', 'masjid', 'tentang toko', 'tentang kami'],
-        content: `Nama Toko: ${b.name || 'Sultan Carpet Gallery'}.
+        content: `Nama Toko: ${b.name || 'Rumah Indah Carpet Gallery'}.
 Tagline: ${b.tagline || 'Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan'}.
 Pemilik & Founder: ${o.owner_name || 'H. Ahmad Fauzi & Hj. Maryam'} (Jabatan: ${o.role || 'Founder & Managing Director'}).
 Tahun Berdiri: Sejak tahun ${b.established || '2012'} (${o.experience || '12+ tahun pengalaman'}).
 Reputasi & Pengalaman: Telah dipercaya melayani lebih dari 1.500 masjid di seluruh Indonesia, ribuan hunian mewah, serta ratusan kantor korporat.
 Legalitas Resmi: ${b.legal || 'NIB: 9120003481923 / SIUP: 510/089/PK/X/2012'}.
 Komitmen Toko: ${o.commitment || 'Menyediakan karpet 100% original berkualitas grade A dengan harga transparan, layanan purnajual prima, survey gratis, dan garansi penuh'}.
-Kontak Resmi: Telepon/WA ${b.phone || '0812-9876-5432'}, Email ${b.email || 'info@sultancarpet.co.id'}, Website ${b.website || 'https://sultancarpet.co.id'}.`
+Kontak Resmi: Telepon/WA ${b.phone || '0812-9876-5432'}, Email ${b.email || 'info@rumahindahcarpet.co.id'}, Website ${b.website || 'https://rumahindahcarpet.co.id'}.`
       });
 
       // 2. HALAMAN: KATALOG PRODUK (Per Produk & Ringkasan)
       catalog.forEach((item, idx) => {
-        const code = item.code || item.id || `PROD-${idx + 1}`;
+        const code = item.code || `PROD-${item.id || idx + 1}`;
         docs.push({
-          id: `product_${code.toLowerCase()}`,
+          id: `product_${item.id || idx + 1}`,
           page: 'Katalog Produk',
-          title: `Produk: ${item.title} (${code})`,
+          title: `Produk: ${item.title}`,
           keywords: [
             code.toLowerCase(),
             item.title.toLowerCase(),
@@ -81,27 +81,39 @@ Kontak Resmi: Telepon/WA ${b.phone || '0812-9876-5432'}, Email ${b.email || 'inf
             ...(item.category ? [item.category.toLowerCase()] : [])
           ],
           content: `Nama Produk: ${item.title}
-Kode Produk: ${code}
-Tag Foto Otomatis: [KIRIM_FOTO: ${code}]
+Kategori: ${item.category || '-'}
 Harga: ${item.price}
 Spesifikasi & Ketebalan: ${item.subtitle || '-'}
 Varian Ukuran / Warna: ${item.footer || '-'}
 Deskripsi: ${item.description || item.subtitle || '-'}
-Aturan Pengiriman Foto: Jika pelanggan meminta foto/gambar karpet ini, berikan deskripsi ringkas dan cantumkan tag [KIRIM_FOTO: ${code}] di akhir pesan.`
+Instruksi Sistem (Internal): Jika pelanggan meminta foto/gambar karpet ini, sertakan tag internal [KIRIM_FOTO: ${code}] di akhir pesan. DILARANG KERAS menyebutkan kode produk "${code}" ke pelanggan karena katalog toko tidak memakai kode produk.`
         });
       });
 
       // 3. HALAMAN: KATEGORI PRODUK
       categories.forEach((cat) => {
+        const cName = (cat.name || '').trim().toLowerCase();
+        const cSlug = (cat.slug || '').trim().toLowerCase();
+        const catProducts = catalog.filter(p => {
+          const pCat = (p.category || '').trim().toLowerCase();
+          return pCat === cName || pCat === cSlug || (pCat.length > 5 && (cName.includes(pCat) || pCat.includes(cName)));
+        });
+
+        const productListStr = catProducts.map((p, i) => `${i + 1}. ${p.title} - Harga: ${p.price} | Spesifikasi: ${p.subtitle || '-'} | Varian: ${p.footer || '-'}`).join('\n');
+
         docs.push({
           id: `category_${cat.slug || cat.id}`,
           page: 'Katalog Produk - Kategori',
           title: `Kategori Karpet: ${cat.name}`,
-          keywords: ['kategori', cat.name.toLowerCase(), cat.slug ? cat.slug.toLowerCase() : '', 'koleksi'],
+          keywords: ['kategori', cat.name.toLowerCase(), cat.slug ? cat.slug.toLowerCase() : '', 'koleksi', 'list', 'daftar', 'pilihan', 'semua', 'produk'],
           content: `Kategori: ${cat.name}
 Slug: ${cat.slug || '-'}
 Deskripsi Kategori: ${cat.description || '-'}
-Produk Terkait dalam Kategori: ${catalog.filter(p => (p.category && p.category.toLowerCase().includes(cat.name.toLowerCase())) || (p.title && p.title.toLowerCase().includes(cat.name.toLowerCase()))).map(p => p.title).join(', ') || 'Tersedia beragam pilihan di galeri'}.`
+Total Produk: ${catProducts.length} produk
+Daftar Lengkap Seluruh Produk dalam Kategori ${cat.name}:
+${productListStr || 'Tersedia beragam pilihan di galeri'}
+
+Instruksi Penting: Jika pelanggan meminta list/daftar produk karpet kategori ini, Anda WAJIB menyebutkan SELURUH ${catProducts.length} produk di atas secara lengkap beserta harga resminya tanpa ada produk yang terlewat!`
         });
       });
 
@@ -123,12 +135,10 @@ Keunggulan: Dilakukan oleh tim teknisi spesialis bersertifikat dengan peralatan 
       docs.push({
         id: 'page_schedule',
         page: 'Jadwal & Jam Operasional',
-        title: 'Jadwal Operasional Showroom, Survey, dan Teknisi Pasang',
-        keywords: ['jadwal', 'jam buka', 'jam operasional', 'tutup', 'buka', 'hari libur', 'hari kerja', 'survey', 'pasang malam', 'waktu'],
-        content: `Jam Buka Showroom: ${s.store_hours || b.hours || 'Senin - Sabtu: 08:30 - 20:00 WIB, Minggu & Libur Nasional: 09:00 - 18:00 WIB'}.
-Jadwal Survey Gratis ke Lokasi: ${s.survey_hours || 'Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB (Bisa disesuaikan dengan janji temu DKM masjid / pengurus / pemilik rumah)'}.
-Jadwal Pasang & Obras Karpet di Tempat: ${s.installation_hours || 'Tersedia layanan teknisi 24 jam by appointment (dapat dikerjakan malam hari setelah sholat Isya agar tidak mengganggu kegiatan ibadah di masjid atau aktivitas kerja di kantor)'}.
-Jadwal Pengiriman Karpet: ${s.shipping_schedule || 'Pengiriman Jabodetabek setiap hari kerja armada sendiri. Pengiriman luar kota/pulau menggunakan ekspedisi kargo resmi'}.`
+        title: 'Jadwal Operasional Toko dan Jam Pelayanan Admin CS',
+        keywords: ['jadwal', 'jam buka', 'jam operasional', 'tutup', 'buka', 'hari libur', 'hari kerja', 'jam cs', 'jam admin', 'pelayanan admin', 'waktu'],
+        content: `Jam Operasional Toko (Showroom & Galeri): ${s.store_hours || b.hours || 'Senin - Sabtu: 08:30 - 20:00 WIB, Minggu & Libur Nasional: 09:00 - 18:00 WIB'}.
+Jam Pelayanan Admin Customer Service (CS WhatsApp): ${s.cs_hours || 'Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB (Layanan Asisten AI Chatbot aktif 24 jam nonstop melayani pertanyaan & mencatat pesanan)'}.`
       });
 
       // 6. HALAMAN: LOKASI SHOWROOM & CABANG
@@ -165,7 +175,7 @@ Link Google Maps: ${br.maps_url}`
       docs.push({
         id: 'page_warranty',
         page: 'Ketentuan Garansi',
-        title: 'Kebijakan Garansi Resmi & Alur Klaim Sultan Carpet',
+        title: 'Kebijakan Garansi Resmi & Alur Klaim Rumah Indah Carpet',
         keywords: ['garansi', 'klaim', 'jaminan', 'rusak', 'cacat', 'benang asli', 'obras', 'tukar baru', 'retur'],
         content: `Ringkasan Garansi: ${w.summary || 'Garansi 100% benang asli impor Turki & Persia, garansi obras & pasang 1 tahun, serta garansi tukar baru 14 hari bila ada cacat pabrik'}.
 Rincian 3 Pilar Garansi Resmi:
@@ -183,9 +193,9 @@ Alur Pengajuan Klaim: ${w.claim_steps || 'Pelanggan cukup mengirimkan foto/video
         title: 'Penawaran Diskon & Promo Aktif Toko',
         keywords: ['promo', 'diskon', 'potongan harga', 'voucher', 'penawaran', 'spesial', 'cashback', 'gratis obras', 'parfum'],
         content: `Daftar Promo Aktif:
-${promoItems.map((pr, i) => `${i + 1}. [${pr.badge || 'PROMO'}] ${pr.title}: ${pr.discount} (${pr.desc}) - Berlaku s/d: ${pr.valid_until}`).join('\n')}
+${promoItems.map((pr, i) => `${i + 1}. ${pr.title}: ${pr.discount} (${pr.desc}) - Berlaku s/d: ${pr.valid_until}`).join('\n')}
 Fasilitas Tambahan Promo Masjid: Gratis obras sambungan keliling di lokasi, gratis parfum karpet masjid wangi tahan lama, serta subsidi ongkos kirim se-Jawa.
-Voucher Rumah: SULTANHOME (Potongan dan layanan pengiriman instan area Jabodetabek).`
+Voucher Rumah: INDAHHOME (Potongan dan layanan pengiriman instan area Jabodetabek).`
       });
 
       // 9. HALAMAN: PUSAT KOMPLAIN & CUSTOMER SERVICE (TIKET)
@@ -215,7 +225,7 @@ Status Modul: ${handoffCfg.enabled !== false ? 'Aktif' : 'Nonaktif'}.
 Kata Kunci Pemicu Alih Kendali: ${(handoffCfg.keywords || ['cs', 'operator', 'admin', 'bantuan manusia', 'komplain']).join(', ')}.
 Kata Kunci Pengaktifan Kembali Bot: ${(handoffCfg.release_keywords || ['aktifkan bot', 'bot on', 'reset bot']).join(', ')}.
 Batas Waktu Otomatis (Auto-Expire): ${handoffCfg.auto_expire_hours || 2} jam.
-Notifikasi Alih Kendali: "${handoffCfg.takeover_notice || 'Halo! Permintaan Anda telah kami teruskan ke Customer Service Sultan Carpet. Tim kami akan segera merespons Anda.'}"
+Notifikasi Alih Kendali: "${handoffCfg.takeover_notice || 'Halo! Permintaan Anda telah kami teruskan ke Customer Service Rumah Indah Carpet. Tim kami akan segera merespons Anda.'}"
 Peran Bot saat Handoff: Jika pelanggan secara spesifik ingin berbicara dengan staf/manusia atau komplain kritis, bot harus bersikap sangat sopan menginformasikan bahwa pesan diteruskan ke admin manusia, lalu sistem otomatis mematikan AI bot pada nomor tersebut.`
       });
 
@@ -363,6 +373,9 @@ Waktu Crawl: ${page.crawledAt || '-'}`
       }
 
       // 4. Intent-specific category booster
+      if (/(list|daftar|katalog|apa saja|pilihan|koleksi|semua|macam)/i.test(queryLower) && doc.page.includes('Kategori')) {
+        score += 40;
+      }
       if (/(foto|gambar|lihat|spill|warna|motif|tebal|tipe|beli|order)/i.test(queryLower) && doc.page.includes('Katalog')) {
         score += 15;
       }
@@ -411,19 +424,46 @@ Waktu Crawl: ${page.crawledAt || '-'}`
   /**
    * Mengambil konteks teks terformat untuk langsung diinjeksi ke System Prompt LLM (RAG Context)
    */
-  retrieveContext(query = '', topK = 4) {
-    const matchedDocs = this.search(query, topK);
-    if (!matchedDocs || matchedDocs.length === 0) {
-      return '';
-    }
+  retrieveContext(query = '', topK = 8) {
+    // If user query asks for list/catalog or mentions a category, ensure larger topK
+    const isListOrProductQuery = /(list|daftar|katalog|apa saja|ada apa|koleksi|pilihan|semua|produk|karpet|masjid|kantor|shaggy|persia|minimalis)/i.test(query);
+    const effectiveTopK = isListOrProductQuery ? Math.max(topK, 10) : topK;
+
+    const matchedDocs = this.search(query, effectiveTopK);
 
     let text = '=== INFORMASI TERVERIFIKASI SISTEM RAG (RETRIEVED KNOWLEDGE DARI SELURUH HALAMAN) ===\n';
     text += 'Gunakan data faktual di bawah ini sebagai rujukan utama Anda untuk menjawab pertanyaan pelanggan:\n\n';
 
-    matchedDocs.forEach((doc, idx) => {
-      text += `[DOKUMEN ${idx + 1} - HALAMAN: ${doc.page} | ${doc.title}]\n`;
-      text += `${doc.content}\n\n`;
-    });
+    // Injeksi otomatis data resmi katalog kategori jika terdeteksi
+    const categoryMatch = menuHandler.getCategoryByIdOrName(query);
+    if (categoryMatch) {
+      const config = menuHandler.getConfig() || {};
+      const catalog = config.catalog || [];
+      const cName = (categoryMatch.name || '').trim().toLowerCase();
+      const cSlug = (categoryMatch.slug || '').trim().toLowerCase();
+      const catProducts = catalog.filter(p => {
+        const pCat = (p.category || '').trim().toLowerCase();
+        return pCat === cName || pCat === cSlug || (pCat.length > 5 && (cName.includes(pCat) || pCat.includes(cName)));
+      });
+
+      if (catProducts.length > 0) {
+        text += `[DOKUMEN UTAMA - KATALOG RESMI KATEGORI: ${categoryMatch.name.toUpperCase()} (${catProducts.length} PRODUK)]\n`;
+        text += `Kategori: ${categoryMatch.name}\n`;
+        text += `Deskripsi: ${categoryMatch.description}\n`;
+        text += `Daftar Lengkap Seluruh Produk Resmi (${catProducts.length} Produk):\n`;
+        catProducts.forEach((p, idx) => {
+          text += `${idx + 1}. ${p.title} - Harga: ${p.price} | Spesifikasi: ${p.subtitle || '-'} | Varian: ${p.footer || '-'}\n`;
+        });
+        text += `\nATURAN SISTEM MUTLAK: Jika pelanggan meminta list/daftar/koleksi/pilihan produk untuk kategori ini atau bertanya produk apa saja yang ada, Anda WAJIB menyebutkan SELURUH ${catProducts.length} produk di atas secara lengkap beserta harga resminya tanpa ada yang terlewat atau dikurangi! Tampilkan dalam daftar yang rapi.\n\n`;
+      }
+    }
+
+    if (matchedDocs && matchedDocs.length > 0) {
+      matchedDocs.forEach((doc, idx) => {
+        text += `[DOKUMEN ${idx + 1} - HALAMAN: ${doc.page} | ${doc.title}]\n`;
+        text += `${doc.content}\n\n`;
+      });
+    }
 
     return text.trim();
   }

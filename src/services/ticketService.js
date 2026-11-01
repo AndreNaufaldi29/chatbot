@@ -70,7 +70,7 @@ class TicketService {
     return tickets.filter(t => String(t.sender).replace(/\D/g, '') === clean);
   }
 
-  createTicket({ sender, name, contact, description, priority = 'Normal', category = 'Layanan Umum' }) {
+  createTicket({ sender, name, contact, description, priority = 'Normal', category = 'Layanan Umum', queueNumber = null }) {
     const tickets = this.getAllTickets();
     let newId;
     let attempts = 0;
@@ -80,18 +80,53 @@ class TicketService {
       attempts++;
     } while (tickets.some(t => t.id === newId) && attempts < 100);
 
+    // Hitung nomor urut antrian harian (misal A-001, A-002, dst) secara akurat di WIB (Asia/Jakarta)
+    let assignedQueue = queueNumber ? String(queueNumber).replace(/^#+/, '').trim() : null;
+    if (!assignedQueue) {
+      const now = new Date();
+      const todayWIB = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now); // 'YYYY-MM-DD'
+
+      const todayTickets = tickets.filter(t => {
+        if (!t.createdAt) return false;
+        try {
+          const tDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(t.createdAt));
+          return tDate === todayWIB;
+        } catch (e) {
+          return false;
+        }
+      });
+
+      // Cari nomor urut terbesar hari ini agar tidak pernah duplikat/ganda
+      let maxNum = 0;
+      for (const t of todayTickets) {
+        if (t.queueNumber) {
+          const m = String(t.queueNumber).match(/\d+/);
+          if (m) {
+            const val = parseInt(m[0], 10);
+            if (val > maxNum) maxNum = val;
+          }
+        }
+      }
+
+      const queueSeq = maxNum + 1;
+      assignedQueue = `A-${String(queueSeq).padStart(3, '0')}`;
+    }
+
+    const isUrgent = category.includes('Garansi') || category.includes('Komplain') || category.includes('Pengaduan');
+
     const newTicket = {
       id: newId,
+      queueNumber: assignedQueue,
       sender: sender || 'Unknown',
       name: (name || 'Pelanggan').trim(),
       contact: (contact || '-').trim(),
       description: (description || '-').trim(),
       category: category || 'Layanan Umum',
       status: 'Open',
-      priority: priority || (category === 'Klaim Garansi' || category === 'Pengaduan Produk' ? 'Tinggi' : 'Normal'),
+      priority: priority || (isUrgent ? 'Tinggi' : 'Normal'),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      notes: `Tiket aktif dibuat otomatis via WhatsApp (${category}).`
+      notes: `Tiket antrian #${assignedQueue} aktif dibuat otomatis via WhatsApp (${category}) - Menunggu konfirmasi admin.`
     };
 
     tickets.unshift(newTicket);
@@ -100,19 +135,47 @@ class TicketService {
     return newTicket;
   }
 
-  ensureActiveTicket({ sender, name, contact, description, category = 'Layanan Umum', priority = 'Normal' }) {
+  ensureActiveTicket({ sender, name, contact, description, category = 'Layanan Umum', priority = 'Normal', queueNumber = null }) {
     const tickets = this.getAllTickets();
     const cleanSender = String(sender || '').replace(/\D/g, '');
 
-    // Check if there is already an Open ticket with same category for this user
+    // Cek apakah sudah ada tiket Open untuk pelanggan ini (agar nomor antrian tidak duplikat)
     const existing = tickets.find(t => 
       t.status === 'Open' &&
-      t.category === category &&
       String(t.sender || '').replace(/\D/g, '') === cleanSender
     );
 
     if (existing) {
       existing.updatedAt = new Date().toISOString();
+      if (!existing.queueNumber) {
+        const now = new Date();
+        const todayWIB = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now);
+        const todayTickets = tickets.filter(t => {
+          if (!t.createdAt) return false;
+          try {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(t.createdAt)) === todayWIB;
+          } catch (e) {
+            return false;
+          }
+        });
+        let maxNum = 0;
+        for (const t of todayTickets) {
+          if (t.queueNumber) {
+            const m = String(t.queueNumber).match(/\d+/);
+            if (m) {
+              const val = parseInt(m[0], 10);
+              if (val > maxNum) maxNum = val;
+            }
+          }
+        }
+        existing.queueNumber = `A-${String(maxNum + 1).padStart(3, '0')}`;
+      } else {
+        existing.queueNumber = String(existing.queueNumber).replace(/^#+/, '').trim();
+      }
+
+      if (category && category !== 'Layanan Umum') {
+        existing.category = category;
+      }
       if (description && !existing.description.includes(description.slice(0, 30))) {
         existing.description = `${existing.description} | Update: ${description}`.slice(0, 500);
       }
@@ -121,11 +184,11 @@ class TicketService {
       return { ticket: existing, isNew: false };
     }
 
-    const newTicket = this.createTicket({ sender, name, contact, description, category, priority });
+    const newTicket = this.createTicket({ sender, name, contact, description, category, priority, queueNumber });
     return { ticket: newTicket, isNew: true };
   }
 
-  updateTicketStatus(ticketId, status, notes = null, category = null, priority = null) {
+  updateTicketStatus(ticketId, status, notes = null, category = null, priority = null, description = null) {
     const tickets = this.getAllTickets();
     const cleanId = String(ticketId).trim().toUpperCase();
     const index = tickets.findIndex(t => t.id.toUpperCase() === cleanId);
@@ -134,13 +197,14 @@ class TicketService {
     if (status) tickets[index].status = status;
     if (category) tickets[index].category = category;
     if (priority) tickets[index].priority = priority;
+    if (description !== null && description !== undefined) tickets[index].description = description;
     tickets[index].updatedAt = new Date().toISOString();
     if (notes !== null) {
       tickets[index].notes = notes;
     }
 
     this.saveTickets(tickets);
-    dbService.updateTicketStatus(cleanId, status, notes, category, priority).catch(() => {});
+    dbService.updateTicketStatus(cleanId, status, notes, category, priority, description).catch(() => {});
     return tickets[index];
   }
 

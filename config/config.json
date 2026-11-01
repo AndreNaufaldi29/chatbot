@@ -1,33 +1,22 @@
 {
   "business": {
-    "name": "Sultan Carpet Gallery",
-    "owner": "H. Ahmad Fauzi & Hj. Maryam",
-    "tagline": "Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan",
-    "phone": "0812-9876-5432",
-    "phone_cs": "0811-2345-6789",
-    "email": "info@sultancarpet.co.id",
-    "website": "https://sultancarpet.co.id",
-    "address": "Jl. Fatmawati Raya No. 45, Cilandak, Jakarta Selatan 12430",
-    "maps_url": "https://maps.google.com/?q=Fatmawati+Jakarta+Selatan",
-    "hours": "Senin - Sabtu: 08:30 - 20:00 WIB\nMinggu & Libur Nasional: 09:00 - 18:00 WIB\nLayanan Survey & Pasang Masjid: 20 Jam (By Appointment)",
-    "established": "2012",
-    "legal": "NIB: 9120003481923 / SIUP: 510/089/PK/X/2012",
-    "description": "Sultan Carpet Gallery adalah penyedia karpet masjid import Turki kualitas terbaik, karpet klasik Persia sutra, karpet minimalis Scandinavia, karpet bulu shaggy, dan karpet tile kantor dengan pengalaman lebih dari 12 tahun."
+    "name": "Rumah Indah Carpet",
+    "phone": "081298765432",
+    "email": "info@rumahindahcarpet.co.id",
+    "description": "Rumah Indah Carpet Gallery adalah penyedia karpet masjid import Turki kualitas terbaik, karpet klasik Persia sutra, karpet minimalis Scandinavia, karpet bulu shaggy, dan karpet tile kantor dengan pengalaman lebih dari 12 tahun."
   },
   "owner_info": {
-    "owner_name": "H. Ahmad Fauzi & Hj. Maryam",
+    "owner_name": "Rumah Indah Carpet",
     "role": "Founder & Managing Director",
     "experience": "12+ Tahun Melayani Seluruh Nusantara",
-    "story": "Didirikan pada tahun 2012 oleh H. Ahmad Fauzi dan Hj. Maryam, berawal dari kecintaan terhadap keindahan seni rajut karpet Turki dan Persia. Kini Sultan Carpet Gallery telah melayani lebih dari 1.500 masjid di seluruh Indonesia, ribuan hunian mewah, serta ratusan kantor korporat multinasional.",
-    "phone": "0812-9876-5432",
-    "email": "owner@sultancarpet.co.id",
+    "story": "Rumah Indah Carpet Gallery adalah penyedia karpet masjid import Turki kualitas terbaik, karpet klasik Persia sutra, karpet minimalis Scandinavia, karpet bulu shaggy, dan karpet tile kantor dengan pengalaman lebih dari 12 tahun.",
+    "phone": "081298765432",
+    "email": "info@rumahindahcarpet.co.id",
     "commitment": "Kami berkomitmen menghadirkan produk karpet 100% original berkualitas grade A dengan harga transparan, diiringi layanan purnajual terbaik, survey gratis, dan garansi penuh."
   },
   "schedule_info": {
     "store_hours": "Senin - Sabtu: 08:30 - 20:00 WIB\nMinggu & Hari Libur: 09:00 - 18:00 WIB",
-    "survey_hours": "Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB (Bisa disesuaikan dengan waktu pengurus DKM masjid atau pemilik rumah)",
-    "installation_hours": "Pemasangan karpet masjid & kantor dapat dilakukan malam hari atau setelah waktu Isya agar tidak mengganggu ibadah/aktivitas kantor (Tersedia teknisi 20 jam)",
-    "shipping_schedule": "Pengiriman Jabodetabek: Setiap hari kerja (Sameday/Nextday armada sendiri)\nPengiriman Luar Kota/Pulau: Ekspedisi kargo terpercaya (Indah Cargo, Dakota, Baraka, Sentral Cargo)"
+    "cs_hours": "Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB\n(Chat di luar jam kerja admin dilayani otomatis oleh AI Chatbot 24 jam nonstop)"
   },
   "location_info": {
     "main_showroom": {
@@ -74,7 +63,7 @@
       {
         "id": "loc-3",
         "type": "Cabang Gallery",
-        "title": "Galeri Sultan Carpet Bandung",
+        "title": "Galeri Rumah Indah Carpet Bandung",
         "address": "Jl. L.L.R.E. Martadinata (Riau) No. 82, Citarum, Bandung 40115",
         "landmark": "Samping Heritage Factory Outlet, seberang Bank Mandiri",
         "hours": "Senin - Minggu: 09:00 - 20:00 WIB",
@@ -84,7 +73,7 @@
       {
         "id": "loc-4",
         "type": "Cabang Gallery",
-        "title": "Galeri Sultan Carpet Surabaya",
+        "title": "Galeri Rumah Indah Carpet Surabaya",
         "address": "Jl. Mayjen HR. Muhammad No. 102, Pradahkalikendal, Dukuhpakis, Surabaya 60226",
         "landmark": "Dekat bundaran HR Muhammad, seberang Mayapada Hospital",
         "hours": "Senin - Minggu: 09:00 - 20:00 WIB",
@@ -94,8 +83,8 @@
     ]
   },
   "warranty_info": {
-    "title": "Jaminan Kualitas & Garansi Resmi Sultan Carpet",
-    "summary": "Garansi 100% benang asli impor Turki & Persia, garansi obras & pasang 1 tahun, serta garansi tukar baru 14 hari.",
+    "title": "Jaminan Kualitas & Garansi Resmi Rumah Indah Carpet",
+    "summary": "Garansi 100% benang asli impor Turki & Persia, garansi obras & pasang 1 tahun, serta garansi tukar baru 15 hari.",
     "items": [
       {
         "title": "Garansi 100% Benang Asli Impor",
@@ -125,7 +114,7 @@
         "discount": "Diskon hingga 25% + Gratis Obras Keliling",
         "desc": "Dapatkan potongan harga spesial untuk pemesanan karpet masjid minimal 5 roll. Gratis obras sambungan, gratis parfum karpet masjid wangi tahan lama, dan subsidi ongkir se-Jawa.",
         "badge": "Terpopuler",
-        "valid_until": "Akhir Bulan Ini"
+        "valid_until": "01/11/2026 sampai 30/11/2026"
       },
       {
         "id": "PROMO-RUMAH",
@@ -133,7 +122,7 @@
         "discount": "Cashback Rp 200.000 + Free Keset Mewah",
         "desc": "Beli karpet ruang tamu Nordic Scandinavia atau Bulu Shaggy, gratis keset kaki memory foam microfiber anti-slip premium.",
         "badge": "Bestseller",
-        "valid_until": "Stok Terbatas"
+        "valid_until": "01/11/2026 sampai 15/12/2026"
       },
       {
         "id": "PROMO-KANTOR",
@@ -141,7 +130,7 @@
         "discount": "Gratis Pemasangan untuk Luas > 100 m²",
         "desc": "Pemesanan karpet tile komersial heavy duty diatas 100 m² mendapatkan gratis lem khusus karpet dan jasa pasang teknisi berpengalaman.",
         "badge": "Spesial B2B",
-        "valid_until": "Berlaku Selama Kuota Ada"
+        "valid_until": "01/11/2026 sampai 31/12/2026"
       },
       {
         "id": "PROMO-SURVEY",
@@ -149,7 +138,7 @@
         "discount": "Gratis 100% Tanpa Syarat",
         "desc": "Bingung memilih motif dan mengukur ruangan? Tim kami siap datang membawakan contoh bahan karpet fisik dan melakukan pengukuran langsung ke lokasi Anda (Jabodetabek).",
         "badge": "Gratis",
-        "valid_until": "Setiap Hari"
+        "valid_until": "01/11/2026 sampai 31/12/2026"
       }
     ]
   },
@@ -204,7 +193,7 @@
       "circuit_breaker_timeout_ms": 60000
     },
     "opt_in": {
-      "enabled": true,
+      "enabled": false,
       "default_opted_in": true,
       "opt_out_keywords": [
         "stop",
@@ -233,7 +222,10 @@
         "manusia",
         "orang",
         "live agent",
-        "bantuan manusia"
+        "bantuan manusia",
+        "staf",
+        "bicara orang",
+        "hubungi admin"
       ],
       "release_keywords": [
         "!bot",
@@ -254,9 +246,9 @@
       "gc_interval_minutes": 10
     },
     "flood_protection": {
-      "enabled": true,
-      "max_messages_per_minute": 15,
-      "cooldown_seconds": 60,
+      "enabled": false,
+      "max_messages_per_minute": 999999,
+      "cooldown_seconds": 0,
       "warning_message": "Mohon maaf, Anda mengirim pesan terlalu cepat. Silakan tunggu 1 menit sebelum mengirim pesan kembali agar layanan kami dapat memproses pertanyaan Anda dengan baik."
     }
   },
@@ -266,9 +258,10 @@
   "carpet_categories": [
     {
       "id": "kat-masjid",
-      "slug": "karpet-masjid",
+      "slug": "karpet-masjid---musholla",
       "name": "Karpet Masjid & Musholla",
-      "description": "Karpet shaf impor Turki Grade A+, tebal 14-16mm, motif mihrab rapi, empuk & nyaman untuk ibadah berjamaah."
+      "icon": "🏷️",
+      "description": "Karpet shaf, motif mihrab rapi, empuk & nyaman untuk ibadah berjamaah."
     },
     {
       "id": "kat-persia",
@@ -296,54 +289,6 @@
     }
   ],
   "catalog": [
-    {
-      "id": "1",
-      "category": "Karpet Masjid & Musholla",
-      "code": "MASJID-TURKI-A",
-      "title": "Karpet Masjid Sultan Turki Grade A+",
-      "subtitle": "Tebal 14mm, benang Polypropylene Heatset ultra-soft, motif kubah mihrab gold rapi & empuk untuk sujud.",
-      "footer": "Warna: Hijau Emerald & Merah Ruby. Ukuran: Roll 1.2m x 6m (bisa potong meteran).",
-      "price": "Rp 3.850.000",
-      "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/karpet-masjid-turki",
-      "image": "catalog/karpet-masjid-turki.jpg"
-    },
-    {
-      "id": "2",
-      "category": "Karpet Masjid & Musholla",
-      "code": "MASJID-MADINAH-16",
-      "title": "Karpet Masjid Madinah Royal Tebal 16mm",
-      "subtitle": "Grade super premium 16mm benang twist ganda anti-rontok, density 1.2 juta dot/m² standar masjid agung.",
-      "footer": "Warna: Hijau Tosca & Merah Marun. Ukuran: Roll 1.2m x 6m (custom sambung obras).",
-      "price": "Rp 4.650.000",
-      "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/karpet-masjid-madinah",
-      "image": "catalog/karpet-masjid-turki.jpg"
-    },
-    {
-      "id": "3",
-      "category": "Karpet Klasik & Permadani Persia",
-      "code": "PERSIA-TABRIZ",
-      "title": "Karpet Klasik Persia Royal Tabriz Sutra & Wol",
-      "subtitle": "Rajutan tangan padat 1.5 juta knot, motif medali floral mewah warisan Persia kuno bernilai estetika tinggi.",
-      "footer": "Warna: Royal Navy Blue & Cream Gold. Ukuran: 200 x 300 cm.",
-      "price": "Rp 7.500.000",
-      "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/karpet-persia-tabriz",
-      "image": "catalog/karpet-persia-mewah.jpg"
-    },
-    {
-      "id": "4",
-      "category": "Karpet Klasik & Permadani Persia",
-      "code": "PERSIA-ISFAHAN-SILK",
-      "title": "Permadani Persia Isfahan Masterpiece Silk Touch",
-      "subtitle": "Detail rajutan medali Shah Abbas megah dengan kilau benang sutra murni, rumbai kepang tangan eksklusif.",
-      "footer": "Warna: Antique Ivory, Ruby Wine & Persian Gold. Ukuran: 250 x 350 cm.",
-      "price": "Rp 9.800.000",
-      "buttonText": "Lihat Koleksi ›",
-      "url": "",
-      "image": "catalog/karpet-persia-mewah.jpg"
-    },
     {
       "id": "5",
       "category": "Karpet Ruang Tamu Minimalis Modern",
@@ -413,14 +358,89 @@
       "footer": "Warna: Patterned Gold & Deep Burgundy. Lebar: 4 meter (pembelian roll).",
       "price": "Rp 320.000",
       "buttonText": "Lihat Koleksi ›",
-      "url": "https://sultancarpet.co.id/products/karpet-broadloom-hotel",
+      "url": "https://rumahindahcarpet.co.id/products/karpet-broadloom-hotel",
       "image": "catalog/karpet-kantor-tile.jpg"
+    },
+    {
+      "id": "11",
+      "category": "Karpet Masjid & Musholla",
+      "code": "MASJID-1",
+      "title": "karpet masjid 1",
+      "subtitle": "Karpet mutu tinggi berkualitas prima dari Rumah Indah Carpet Gallery.",
+      "footer": "Tersedia berbagai pilihan ukuran dan warna eksklusif.",
+      "price": "Rp 1.450.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://rumahindahcarpet.co.id/products/11",
+      "image": "catalog/product-11-1-1793408270705.jpg",
+      "images": [
+        "catalog/product-11-1-1793408270705.jpg"
+      ]
+    },
+    {
+      "id": "12",
+      "category": "Karpet Masjid & Musholla",
+      "code": "MASJID-2",
+      "title": "karpet masjid 2",
+      "subtitle": "Karpet mutu tinggi berkualitas prima dari Rumah Indah Carpet Gallery.",
+      "footer": "Tersedia berbagai pilihan ukuran dan warna eksklusif.",
+      "price": "Rp 500.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://rumahindahcarpet.co.id/products/12",
+      "image": "catalog/product-12-1-1793408307022.jpg",
+      "images": [
+        "catalog/product-12-1-1793408307022.jpg"
+      ]
+    },
+    {
+      "id": "13",
+      "category": "Karpet Masjid & Musholla",
+      "code": "MASJID-3",
+      "title": "karpet masjid 3",
+      "subtitle": "Karpet mutu tinggi berkualitas prima dari Rumah Indah Carpet Gallery.",
+      "footer": "Tersedia berbagai pilihan ukuran dan warna eksklusif.",
+      "price": "Rp 700.000",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://rumahindahcarpet.co.id/products/13",
+      "image": "catalog/product-13-1-1793408358934.jpg",
+      "images": [
+        "catalog/product-13-1-1793408358934.jpg"
+      ]
+    },
+    {
+      "id": "14",
+      "category": "Karpet Masjid & Musholla",
+      "code": "MASJID-4",
+      "title": "karpet masjid 4",
+      "subtitle": "Karpet mutu tinggi berkualitas prima dari Rumah Indah Carpet Gallery.",
+      "footer": "Tersedia berbagai pilihan ukuran dan warna eksklusif.",
+      "price": "Rp 459.844",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://rumahindahcarpet.co.id/products/14",
+      "image": "catalog/product-14-1-1793408410715.jpg",
+      "images": [
+        "catalog/product-14-1-1793408410715.jpg"
+      ]
+    },
+    {
+      "id": "15",
+      "category": "Karpet Masjid & Musholla",
+      "code": "K",
+      "title": "karpet masjid 5",
+      "subtitle": "Karpet mutu tinggi berkualitas prima dari Rumah Indah Carpet Gallery.",
+      "footer": "Tersedia berbagai pilihan ukuran dan warna eksklusif.",
+      "price": "Rp 802.049",
+      "buttonText": "Lihat Koleksi ›",
+      "url": "https://rumahindahcarpet.co.id/products/15",
+      "image": "catalog/product-15-1-1793408447103.jpg",
+      "images": [
+        "catalog/product-15-1-1793408447103.jpg"
+      ]
     }
   ],
   "branches": [
     {
       "id": "1",
-      "name": "Sultan Carpet Gallery - Jakarta Selatan (Pusat)",
+      "name": "Rumah Indah Carpet Gallery - Jakarta Selatan (Pusat)",
       "city": "Jakarta Selatan",
       "area": "Fatmawati",
       "address": "Jl. Fatmawati Raya No. 45, RT.04/RW.02, Cilandak, Jakarta Selatan 12430",
@@ -430,7 +450,7 @@
     },
     {
       "id": "2",
-      "name": "Sultan Carpet Gallery - Bandung",
+      "name": "Rumah Indah Carpet Gallery - Bandung",
       "city": "Bandung",
       "area": "Riau / Martadinata",
       "address": "Jl. L.L.R.E. Martadinata (Riau) No. 82, Citarum, Bandung 40115",
@@ -440,7 +460,7 @@
     },
     {
       "id": "3",
-      "name": "Sultan Carpet Gallery - Surabaya",
+      "name": "Rumah Indah Carpet Gallery - Surabaya",
       "city": "Surabaya",
       "area": "HR Muhammad",
       "address": "Jl. Mayjen HR. Muhammad No. 102, Pradahkalikendal, Dukuhpakis, Surabaya 60226",

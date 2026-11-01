@@ -1,952 +1,705 @@
-const {
-  default: makeWASocket,
-  DisconnectReason,
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  Browsers
-} = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const qrcodeTerminal = require('qrcode-terminal');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const EventEmitter = require('events');
 const QRCode = require('qrcode');
+const qrcodeTerminal = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
-const EventEmitter = require('events');
-let messageHandler = require('./handlers/messageHandler');
-const sessionManager = require('./services/sessionManager');
+const messageHandler = require('./handlers/messageHandler');
+const menuHandler = require('./handlers/menuHandler');
 const phoneService = require('./services/phoneService');
-const protectionService = require('./services/protectionService');
 const chatService = require('./services/chatService');
 const dbService = require('./services/dbService');
-const mediaService = require('./services/mediaService');
 
-const AUTH_FOLDER = path.join(__dirname, '../auth_info_baileys');
+const AUTH_FOLDER = path.join(__dirname, '../auth_info_wwebjs');
 
-// Cache versi Baileys agar tidak memblokir handshake websocket saat restart / reset sesi
-let cachedBaileysVersion = [2, 3000, 1043857760];
-(async () => {
-  try {
-    const vInfo = await fetchLatestBaileysVersion();
-    if (vInfo?.version) cachedBaileysVersion = vInfo.version;
-  } catch (_) {}
-})();
+function getChromePath() {
+  const candidates = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      console.log(`[whatsapp-web.js] Menggunakan browser: ${c}`);
+      return c;
+    }
+  }
+  return undefined;
+}
 
 class WhatsAppBot extends EventEmitter {
   constructor() {
     super();
-    this.sock = null;
+
+    this.client = null;
     this.status = 'disconnected'; // 'disconnected' | 'connecting' | 'waiting_qr' | 'connected'
     this.qrCodeRaw = null;
     this.qrCodeDataUrl = null;
     this.userInfo = null;
     this.connectedAt = null;
-    this.connectedTimestamp = 0;
-    this.isReconnecting = false;
+    this.engine = 'whatsapp-web.js (Puppeteer Chrome)';
     this.isInitializing = false;
-    this.isLoggingOut = false;
-    this.isRestarting = false;
-    this.reconnectTimer = null;
+
+    // Baileys-compatible adapter socket for messageHandler & services
+    this.sock = this._createSockAdapter();
 
     // Link messageHandler with bot's event emitter for real-time web logs
     messageHandler.setEventEmitter(this);
+    this.currentMessageHandler = messageHandler;
   }
 
-  async destroySocket() {
-    this.isInitializing = false;
-    if (!this.sock) return;
-    const oldSock = this.sock;
-    this.sock = null;
+  // --- Reload All Handlers & Modules from Disk ---
+  reloadHandlers() {
     try {
-      console.log('[WhatsAppBot] Menutup dan membersihkan socket WhatsApp aktif...');
-      if (oldSock.ev && typeof oldSock.ev.removeAllListeners === 'function') {
-        oldSock.ev.removeAllListeners();
-        if (typeof oldSock.ev.on === 'function') {
-          oldSock.ev.on('error', () => {});
+      const srcDir = path.resolve(__dirname);
+      Object.keys(require.cache).forEach((key) => {
+        if (key.startsWith(srcDir) && !key.includes('bot.js')) {
+          delete require.cache[key];
         }
-      }
-      if (oldSock.ws) {
-        if (typeof oldSock.ws.on === 'function') {
-          oldSock.ws.on('error', () => {});
-        }
-        if (typeof oldSock.ws.close === 'function') {
-          try { oldSock.ws.close(); } catch (_) {}
-        }
-      }
-      oldSock.end(undefined);
+      });
+      const newMessageHandler = require('./handlers/messageHandler');
+      newMessageHandler.setEventEmitter(this);
+      this.currentMessageHandler = newMessageHandler;
+      console.log('[whatsapp-web.js] Seluruh modul & handler berhasil dimuat ulang segar dari disk!');
+      return true;
     } catch (err) {
-      console.warn('[WhatsAppBot] Catatan saat menutup socket:', err.message);
+      console.error('[whatsapp-web.js] Gagal memuat ulang modul:', err.message);
+      return false;
     }
   }
 
-  async init() {
-    if (this.isInitializing) {
-      console.log('[WhatsAppBot] Inisialisasi sedang berjalan, mengabaikan panggilan duplikat.');
-      return;
+  // --- Format recipient for whatsapp-web.js (requires @c.us or @g.us, NEVER @lid) ---
+  formatRecipient(jidOrPhone) {
+    if (!jidOrPhone) return '';
+    const str = String(jidOrPhone).trim();
+
+    if (str.endsWith('@g.us')) return str;
+
+    // 1. Selalu periksa apakah target/LID/JID sudah terpetakan ke nomor HP asli di phoneService
+    const mapped = phoneService.getPhone(str);
+    if (mapped && phoneService.isRealPhone(mapped)) {
+      return `${mapped}@c.us`;
     }
 
-    this.isInitializing = true;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
+    const cleanNum = str.split('@')[0].replace(/\D/g, '');
+    const mappedClean = phoneService.getPhone(cleanNum);
+    if (mappedClean && phoneService.isRealPhone(mappedClean)) {
+      return `${mappedClean}@c.us`;
     }
+
+    // 2. Jika cleanNum adalah nomor telepon asli yang valid
+    if (phoneService.isRealPhone(cleanNum)) {
+      let p = cleanNum;
+      if (p.startsWith('0')) p = '62' + p.slice(1);
+      return `${p}@c.us`;
+    }
+
+    // 3. Jika ini adalah LID tanpa pemetaan, JANGAN PERNAH dibuat menjadi <lid>@c.us karena WhatsApp Web akan crash
+    if (phoneService.isLid(cleanNum) || str.includes('@lid')) {
+      console.warn(`[formatRecipient] Menolak target LID tanpa nomor telepon terdaftar: ${str}`);
+      throw new Error(`Target WhatsApp tidak valid (LID tanpa nomor telepon terdaftar: ${str})`);
+    }
+
+    let clean = cleanNum;
+    if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+    return `${clean}@c.us`;
+  }
+
+  // --- Create Baileys-compatible Adapter Socket ---
+  _createSockAdapter() {
+    const self = this;
+    return {
+      get user() {
+        return self.userInfo || { id: 'bot@s.whatsapp.net', name: 'Chatbot WhatsApp' };
+      },
+
+      sendMessage: async (jid, messagePayload, options = {}) => {
+        return await self.sendMessage(jid, messagePayload, options);
+      },
+
+      readMessages: async (keys = []) => {
+        if (!self.client || !Array.isArray(keys) || keys.length === 0) return;
+        const target = keys[0]?.remoteJid;
+        if (!target) return;
+        try {
+          const chat = await self.client.getChatById(self.formatRecipient(target)).catch(() => null);
+          if (chat && typeof chat.sendSeen === 'function') {
+            await chat.sendSeen().catch(() => {});
+          }
+        } catch (_) {}
+      },
+
+      sendPresenceUpdate: async (state, jid) => {
+        if (!self.client || !jid) return;
+        try {
+          const chat = await self.client.getChatById(self.formatRecipient(jid)).catch(() => null);
+          if (chat) {
+            if (state === 'composing') {
+              await chat.sendStateTyping().catch(() => {});
+            } else {
+              await chat.clearState().catch(() => {});
+            }
+          }
+        } catch (_) {}
+      }
+    };
+  }
+
+  // --- Initialization & Lifecycle ---
+  async init() {
+    if (this.isInitializing) return;
+    this.isInitializing = true;
 
     try {
-      // Jika masih ada socket lama yang aktif, tutup terlebih dahulu
-      if (this.sock) {
-        await this.destroySocket();
-      }
-
-      this.status = 'connecting';
-      this.emit('status_change', { status: this.status, qrDataUrl: this.qrCodeDataUrl, user: this.userInfo });
-
-      // Reload handlers to pick up latest code changes without needing full process restart
-      try {
-        delete require.cache[require.resolve('./handlers/messageHandler')];
-        delete require.cache[require.resolve('./handlers/menuHandler')];
-        messageHandler = require('./handlers/messageHandler');
-        messageHandler.setEventEmitter(this);
-      } catch (e) {
-        console.warn('[WhatsAppBot] Handler reload notice:', e.message);
-      }
-
-      // Cek integritas file creds.json: hanya bersihkan jika file kosong atau JSON rusak/korup.
-      // JANGAN membersihkan sesi jika registered masih false karena saat pairing/scan QR,
-      // Baileys memerlukan credentials yang tersimpan tersebut untuk menyelesaikan handshake login!
-      const credsPath = path.join(AUTH_FOLDER, 'creds.json');
-      if (fs.existsSync(credsPath)) {
-        let shouldWipe = false;
+      if (this.client) {
         try {
-          const rawCreds = fs.readFileSync(credsPath, 'utf8');
-          if (!rawCreds || !rawCreds.trim()) {
-            shouldWipe = true;
-          } else {
-            JSON.parse(rawCreds);
-          }
-        } catch (parseErr) {
-          console.warn('[WhatsAppBot] File creds.json korup atau tidak valid JSON. Membersihkan sesi...', parseErr.message);
-          shouldWipe = true;
-        }
-
-        if (shouldWipe) {
-          await this.safeClearSessionFolder();
-        }
+          await this.client.destroy();
+        } catch (_) {}
+        this.client = null;
       }
 
-      const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-      const version = cachedBaileysVersion || [2, 3000, 1043857760];
-      console.log(`[WhatsAppBot] Menggunakan WA Web v${version.join('.')}`);
+      console.log('[whatsapp-web.js] Menginisialisasi browser WhatsApp Web...');
+      this.status = 'connecting';
+      this.emit('status_change', this.getStatus());
 
-      const isAlreadyRegistered = Boolean(state.creds && (state.creds.registered || state.creds.me));
+      const chromeExecutable = getChromePath();
 
-      this.sock = makeWASocket({
-        version,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // We'll handle terminal QR explicitly with qrcode-terminal
-        auth: state,
-        browser: Browsers.windows('Chrome'),
-        defaultQueryTimeoutMs: 30000,
-        connectTimeoutMs: 30000,
-        syncFullHistory: false, // Wajib false agar server WhatsApp tidak memutus koneksi dengan error 428
-        shouldSyncHistoryMessage: () => true, // Izinkan Baileys mengunduh & memproses seluruh paket riwayat obrolan & kontak
-        shouldIgnoreJid: (jid) => {
-          // Abaikan status cerita & siaran newsletter agar tidak memicu error dekripsi sesi
-          return (
-            !jid ||
-            jid.endsWith('@broadcast') ||
-            jid.includes('status@broadcast') ||
-            jid.endsWith('@newsletter') ||
-            this.isSelf(jid)
-          );
-        },
-        getMessage: async (key) => {
-          return sessionManager.getMessage(key?.id);
+      this.client = new Client({
+        authStrategy: new LocalAuth({
+          dataPath: AUTH_FOLDER
+        }),
+        puppeteer: {
+          headless: true,
+          executablePath: chromeExecutable,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--disable-extensions'
+          ]
         }
       });
 
-      // Handle credentials update
-      this.sock.ev.on('creds.update', saveCreds);
-
-      // Handle connection updates (QR, open, close)
-      this.sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        if (qr) {
+      // 1. QR Code Event
+      this.client.on('qr', async (qr) => {
+        try {
           this.qrCodeRaw = qr;
+          this.qrCodeDataUrl = await QRCode.toDataURL(qr);
           this.status = 'waiting_qr';
 
-          try {
-            // Generate QR Code as base64 image for the Web Dashboard
-            this.qrCodeDataUrl = await QRCode.toDataURL(qr, { margin: 2, scale: 7 });
-          } catch (err) {
-            console.error('[WhatsAppBot] Gagal membuat QR DataURL:', err.message);
+          this.emit('qr', { qrDataUrl: this.qrCodeDataUrl });
+          this.emit('status_change', this.getStatus());
+
+          console.log('\n📲 SCAN QR CODE WHATSAPP (WHATSAPP-WEB.JS):');
+          qrcodeTerminal.generate(qr, { small: true });
+        } catch (err) {
+          console.error('[whatsapp-web.js] Gagal membuat QR Code:', err.message);
+        }
+      });
+
+      // 2. Ready Event (Koneksi Berhasil)
+      this.client.on('ready', async () => {
+        console.log('✅ [whatsapp-web.js] WhatsApp Berhasil Terhubung!');
+        this.status = 'connected';
+        this.connectedAt = new Date().toISOString();
+        this.qrCodeDataUrl = null;
+        this.qrCodeRaw = null;
+
+        const wid = this.client.info?.wid;
+        const num = wid?.user || '';
+        const name = this.client.info?.pushname || 'WhatsApp Business';
+
+        this.userInfo = {
+          id: `${num}@s.whatsapp.net`,
+          name,
+          phone: num
+        };
+
+        // Pasang patch runtime anti-LID memoizer agar WhatsApp Web tidak throw error "Data passed to getter..." atau "No LID for users"
+        try {
+          await this.client.pupPage.evaluate(() => {
+            try {
+              if (window.WWebJS) {
+                const origGetChat = window.WWebJS.getChat;
+                window.WWebJS.getChat = async (chatId, opts = {}) => {
+                  let targetId = chatId;
+                  // Jika targetId berupa LID, alihkan ke WID nomor telepon asli (@c.us) dari kontak memory
+                  if (typeof targetId === 'string' && (targetId.endsWith('@lid') || targetId.includes('@lid'))) {
+                    try {
+                      const collections = window.require('WAWebCollections');
+                      const contacts = collections?.Contact?.getModelsArray() || [];
+                      const c = contacts.find(x => x.lid?._serialized === targetId || x.id?._serialized === targetId);
+                      const phone = c?.phoneNumber?.user || (c?.id?.server === 'c.us' ? c.id.user : null);
+                      if (phone) {
+                        targetId = `${phone}@c.us`;
+                      }
+                    } catch (_) {}
+                  }
+
+                  try {
+                    return await origGetChat(targetId, opts);
+                  } catch (e) {
+                    try {
+                      const widFactory = window.require('WAWebWidFactory');
+                      const chatWid = widFactory.createWid(targetId);
+                      const collections = window.require('WAWebCollections');
+                      const chat = collections?.Chat?.get(chatWid);
+                      if (chat) {
+                        return opts?.getAsModel ? await window.WWebJS.getChatModel(chat) : chat;
+                      }
+                    } catch (_) {}
+                    throw e;
+                  }
+                };
+              }
+            } catch (_) {}
+          });
+          console.log('[whatsapp-web.js] Patch anti-LID memoizer & No LID aktif.');
+        } catch (_) {}
+
+        // Sinkronisasi otomatis seluruh kontak WhatsApp ke phoneService (anti-LID total)
+        try {
+          const syncContacts = await this.client.pupPage.evaluate(() => {
+            try {
+              const collections = window.require('WAWebCollections');
+              const contacts = collections.Contact.getModelsArray();
+              return contacts.map(c => ({
+                id: c.id?._serialized,
+                phone: c.phoneNumber ? c.phoneNumber.user : (c.id?.server === 'c.us' ? c.id.user : null),
+                lid: c.lid?._serialized || (c.id?.server === 'lid' ? c.id._serialized : null),
+                name: c.name || c.pushname
+              })).filter(x => x.phone);
+            } catch (_) {
+              return [];
+            }
+          });
+          let mappedCount = 0;
+          for (const item of syncContacts) {
+            if (item.phone && phoneService.isRealPhone(item.phone)) {
+              if (item.id) phoneService.setMapping(item.id, item.phone, item.name);
+              if (item.lid) phoneService.setMapping(item.lid, item.phone, item.name);
+              mappedCount++;
+            }
+          }
+          phoneService.saveMapping();
+          console.log(`[whatsapp-web.js] Berhasil sinkronisasi ${mappedCount} kontak & pemetaan LID.`);
+        } catch (_) {}
+
+        this.emit('status_change', this.getStatus());
+      });
+
+      // 3. Authenticated Event
+      this.client.on('authenticated', () => {
+        console.log('[whatsapp-web.js] Sesi berhasil diautentikasi.');
+      });
+
+      // 4. Auth Failure Event
+      this.client.on('auth_failure', (msg) => {
+        console.error('[whatsapp-web.js] Gagal autentikasi sesi:', msg);
+        this.status = 'disconnected';
+        this.emit('status_change', this.getStatus());
+      });
+
+      // 5. Disconnected Event
+      this.client.on('disconnected', (reason) => {
+        console.warn('[whatsapp-web.js] WhatsApp terputus:', reason);
+        this.status = 'disconnected';
+        this.userInfo = null;
+        this.connectedAt = null;
+        this.emit('status_change', this.getStatus());
+      });
+
+      // 6. Inbound Message Event
+      this.client.on('message', async (wMsg) => {
+        try {
+          if (!wMsg) return;
+          if (wMsg.from === 'status@broadcast') return;
+          if (wMsg.fromMe) return;
+
+          const isGroup = wMsg.from.endsWith('@g.us');
+          const config = menuHandler.getConfig();
+          if (isGroup && config.bot?.ignore_groups) return;
+
+          const text = (wMsg.body || '').trim();
+          if (!text && !wMsg.hasMedia) return;
+
+          let pushName = wMsg._data?.notifyName || '';
+
+          // 1. Cari nomor HP asli via phoneService terlebih dahulu
+          let realPhone = phoneService.getPhone(wMsg.from, pushName) || (wMsg.author ? phoneService.getPhone(wMsg.author, pushName) : null);
+
+          // 2. Jika belum ada di phoneService, baca langsung dari Contact memory collection (tanpa memicu findImpl)
+          if (!realPhone || !phoneService.isRealPhone(realPhone)) {
+            try {
+              const lookupJid = wMsg.author || wMsg.from;
+              const contactData = await this.client.pupPage.evaluate((jidToFind) => {
+                try {
+                  const widFactory = window.require('WAWebWidFactory');
+                  const collections = window.require('WAWebCollections');
+                  const wid = widFactory.createWid(jidToFind);
+                  const c = collections.Contact.get(wid);
+                  if (c) {
+                    const pn = c.phoneNumber ? c.phoneNumber.user : (c.id?.server === 'c.us' ? c.id.user : null);
+                    return { phone: pn, name: c.name || c.pushname };
+                  }
+                  return null;
+                } catch (_) {
+                  return null;
+                }
+              }, lookupJid);
+
+              if (contactData?.phone && phoneService.isRealPhone(contactData.phone)) {
+                realPhone = phoneService.cleanPhoneNumber(contactData.phone);
+                if (contactData.name && !pushName) pushName = contactData.name;
+              }
+            } catch (_) {}
           }
 
-          console.log('\n==================================================');
-          console.log('📱 SCAN QR CODE DI BAWAH INI DENGAN WHATSAPP ANDA:');
-          console.log('   (Atau buka Web Dashboard di browser: http://localhost:3000)');
-          console.log('==================================================\n');
-          qrcodeTerminal.generate(qr, { small: true });
+          // 3. Fallback panggil wMsg.getContact() jika perlu
+          if (!realPhone || !phoneService.isRealPhone(realPhone)) {
+            const contact = await wMsg.getContact().catch(() => null);
+            if (contact?.number && phoneService.isRealPhone(contact.number)) {
+              realPhone = phoneService.cleanPhoneNumber(contact.number);
+            } else if (contact?.id?.user && phoneService.isRealPhone(contact.id.user)) {
+              realPhone = phoneService.cleanPhoneNumber(contact.id.user);
+            }
+            if (!pushName) pushName = contact?.pushname || contact?.name || '';
+          }
 
-          this.emit('qr', { qrRaw: this.qrCodeRaw, qrDataUrl: this.qrCodeDataUrl });
-          this.emit('status_change', { status: this.status, qrDataUrl: this.qrCodeDataUrl, user: null });
-        }
+          // Catat mapping ke phoneService agar target @lid langsung terhubung ke nomor HP asli
+          if (realPhone && phoneService.isRealPhone(realPhone)) {
+            phoneService.setMapping(wMsg.from, realPhone, pushName);
+            if (wMsg.author) phoneService.setMapping(wMsg.author, realPhone, pushName);
+          }
 
-        if (connection === 'connecting') {
-          console.log('[WhatsAppBot] Sedang menyambungkan ke server WhatsApp...');
-          this.status = 'connecting';
-          this.emit('status_change', { status: this.status, qrDataUrl: this.qrCodeDataUrl, user: this.userInfo });
-        }
+          // Tetapkan JID: JANGAN GUNAKAN @lid. Selalu gunakan format <nomor>@s.whatsapp.net untuk chat pribadi
+          let jid;
+          if (isGroup) {
+            jid = wMsg.from;
+          } else if (realPhone && phoneService.isRealPhone(realPhone)) {
+            jid = `${realPhone}@s.whatsapp.net`;
+          } else if (wMsg.from.endsWith('@c.us') && phoneService.isRealPhone(wMsg.from.split('@')[0])) {
+            jid = wMsg.from.replace('@c.us', '@s.whatsapp.net');
+          } else {
+            const mapped = phoneService.getPhone(wMsg.from, pushName);
+            if (mapped && phoneService.isRealPhone(mapped)) {
+              jid = `${mapped}@s.whatsapp.net`;
+            } else {
+              jid = wMsg.from;
+            }
+          }
 
-        if (connection === 'open') {
-          console.log('\n==================================================');
-          console.log('✅ WHATSAPP BERHASIL TERHUBUNG & LOGIN!');
-          console.log(`   Nomor Bot: ${this.sock.user?.id ? this.sock.user.id.split(':')[0] : 'Aktif'}`);
-          console.log(`   Nama Akun: ${this.sock.user?.name || 'WhatsApp CS'}`);
-          console.log('   Chatbot siap melayani pesan masuk.');
-          console.log('==================================================\n');
+          const senderPhone = realPhone || phoneService.extractPhoneFromJid(jid);
+          const senderName = pushName || (phoneService.isRealPhone(senderPhone) ? phoneService.formatPhone(senderPhone) : 'Pelanggan');
 
-          this.status = 'connected';
-          this.qrCodeRaw = null;
-          this.qrCodeDataUrl = null;
-          this.isReconnecting = false;
-          this.isLoggingOut = false;
-          this.isRestarting = false;
-          this.connectedAt = new Date().toISOString();
-          this.connectedTimestamp = Date.now();
-          this.userInfo = {
-            id: this.sock.user?.id?.split(':')[0] || 'Unknown',
-            name: this.sock.user?.name || 'WhatsApp CS'
+          // Real-time chat log to web dashboard
+          this.emit('chat_log', {
+            id: wMsg.id?._serialized || `msg_${Date.now()}`,
+            jid,
+            phone: senderPhone,
+            sender: senderName,
+            text: text || (wMsg.hasMedia ? '(Media Gambar/Dokumen)' : ''),
+            fromMe: false,
+            timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+            isAiReplied: false,
+            status: 'received'
+          });
+
+          // Baileys-compatible adapter message for messageHandler
+          const adapterMsg = {
+            key: {
+              remoteJid: jid,
+              fromMe: false,
+              id: wMsg.id?._serialized || `msg_${Date.now()}`
+            },
+            pushName: senderName,
+            message: {
+              conversation: text
+            },
+            messageTimestamp: wMsg.timestamp,
+            _wMsg: wMsg
           };
 
-          this.emit('status_change', {
-            status: this.status,
-            user: this.userInfo,
-            qrDataUrl: null,
-            connectedAt: this.connectedAt
+          const activeHandler = this.currentMessageHandler || messageHandler;
+          await activeHandler.handleMessage(this.sock, adapterMsg);
+        } catch (err) {
+          console.error('[whatsapp-web.js] Error memproses pesan masuk:', err.message);
+        }
+      });
+
+      // Watchdog: jika WhatsApp Web sudah terautentikasi dari sesi sebelumnya, langsung sinkronkan status
+      const syncWatcher = setInterval(async () => {
+        if (!this.client?.pupPage) return;
+        try {
+          const isSynced = await this.client.pupPage.evaluate(() => {
+            if (typeof window.onAppStateHasSyncedEvent === 'function') {
+              const hasUser = window.require?.('WAWebUserPrefsMeUser')?.getMaybeMePnUser?.() || window.require?.('WAWebUserPrefsMeUser')?.getMaybeMeLidUser?.();
+              if (hasUser && typeof window.WWebJS === 'undefined') {
+                window.onAppStateHasSyncedEvent();
+                return true;
+              }
+            }
+            return false;
           });
-          this.emit('chats_updated', { source: 'connection_open' });
-        }
-
-        if (connection === 'close') {
-          const statusCode = lastDisconnect?.error?.output?.statusCode;
-          const errorMsg = lastDisconnect?.error?.message || '';
-
-          console.log(`[WhatsAppBot] Koneksi terputus. Kode alasan: ${statusCode} (${errorMsg || 'No detail'})`);
-
-          // Jika pemutusan koneksi ini dipicu oleh logout atau restart yang sedang aktif, biarkan fungsi tersebut menangani
-          if (this.isLoggingOut || this.isRestarting) {
-            console.log('[WhatsAppBot] Penutupan koneksi ditangani oleh alur logout/restart aktif.');
-            return;
+          if (isSynced) {
+            clearInterval(syncWatcher);
           }
+        } catch (_) {}
+      }, 1500);
 
-          // 1. Restart required oleh Baileys (515 atau Stream Errored / restart required)
-          // INI NORMAL & WAJIB SAAT SCAN QR BERHASIL DITERIMA OLEH SERVER WHATSAPP!
-          const isRestartRequired =
-            statusCode === DisconnectReason.restartRequired ||
-            statusCode === 515 ||
-            (errorMsg && (errorMsg.includes('restart required') || errorMsg.includes('Stream Errored')));
+      this.client.once('ready', () => clearInterval(syncWatcher));
+      this.client.once('auth_failure', () => clearInterval(syncWatcher));
+      this.client.once('disconnected', () => clearInterval(syncWatcher));
 
-          if (isRestartRequired) {
-            console.log('[WhatsAppBot] 🔄 Scan QR diterima / restart Baileys (515). Menyambungkan kembali untuk menyelesaikan login...');
-            this.status = 'connecting';
-            this.emit('status_change', { status: 'connecting', user: this.userInfo, qrDataUrl: null });
-            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(() => {
-              this.init();
-            }, 800);
-            return;
-          }
-
-          this.status = 'disconnected';
-          this.userInfo = null;
-          this.emit('status_change', { status: this.status, user: null, qrDataUrl: null, reason: statusCode });
-
-          // 2. Sesi logout dari WhatsApp (401 / loggedOut)
-          if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-            console.log('[WhatsAppBot] Sesi telah logout atau kedaluwarsa dari WhatsApp. Membersihkan sesi...');
-            await this.destroySocket();
-            await this.safeClearSessionFolder();
-            this.qrCodeRaw = null;
-            this.qrCodeDataUrl = null;
-            this.emit('status_change', { status: 'disconnected', user: null, qrDataUrl: null });
-
-            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(() => {
-              this.init();
-            }, 2500);
-            return;
-          }
-
-          // 3. QR Code timeout (408) tanpa user login
-          if ((statusCode === DisconnectReason.timedOut || statusCode === 408) && !this.userInfo) {
-            console.log('[WhatsAppBot] QR Code kedaluwarsa (timed out). Menyiapkan QR Code baru...');
-            this.qrCodeRaw = null;
-            this.qrCodeDataUrl = null;
-            this.emit('status_change', { status: 'connecting', user: null, qrDataUrl: null });
-
-            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(() => {
-              this.init();
-            }, 2000);
-            return;
-          }
-
-          // 4. Connection replaced / duplikasi sesi (440)
-          if (statusCode === DisconnectReason.connectionReplaced || statusCode === 440) {
-            console.warn('[WhatsAppBot] Sesi koneksi digantikan oleh sesi lain (440). Menata ulang...');
-            await this.destroySocket();
-            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(() => {
-              this.init();
-            }, 3000);
-            return;
-          }
-
-          // 5. Bad session (500)
-          if (statusCode === DisconnectReason.badSession || statusCode === 500) {
-            console.warn('[WhatsAppBot] Sesi korup (500). Membersihkan sesi...');
-            await this.destroySocket();
-            await this.safeClearSessionFolder();
-            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(() => {
-              this.init();
-            }, 2000);
-            return;
-          }
-
-          // 6. Default reconnect (jaringan putus sementara dsb.)
-          if (!this.isReconnecting) {
-            this.isReconnecting = true;
-            console.log('[WhatsAppBot] Mencoba menyambung kembali dalam 5 detik...');
-            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(() => {
-              this.isReconnecting = false;
-              this.init();
-            }, 5000);
-          }
-        }
-      });
-
-      // Handle phone number share event
-      this.sock.ev.on('chats.phoneNumberShare', ({ lid, jid }) => {
-        if (lid && jid) {
-          const pn = jid.split('@')[0];
-          console.log(`[WhatsAppBot] Nomor telepon terhubung untuk LID ${lid} -> ${pn}`);
-          phoneService.setMapping(lid, pn);
-        }
-      });
-
-      // Helper for syncing contact identity (Name, Phone, LID)
-      const syncContact = (c) => {
-        if (!c || !c.id || c.id === '0@s.whatsapp.net' || c.id.endsWith('@broadcast') || c.id.endsWith('@newsletter')) return;
-        if (this.isSelf(c.id)) return;
-        if (chatService.isChatDeleted(c.id)) return;
-        const name = c.name || c.notify || c.verifiedName;
-        const lid = c.lid || (c.id.endsWith('@lid') ? c.id : null);
-        const pn = (c.jid || c.phoneNumber || (c.id.endsWith('@s.whatsapp.net') ? c.id : null));
-        let realPhone = pn ? pn.split('@')[0].replace(/\D/g, '') : null;
-
-        if (!realPhone && c.id.endsWith('@s.whatsapp.net')) {
-          const clean = c.id.split('@')[0].replace(/\D/g, '');
-          if (phoneService.isRealPhone(clean)) realPhone = clean;
-        }
-
-        if (lid && realPhone && phoneService.isRealPhone(realPhone)) {
-          phoneService.setMapping(lid, realPhone, name);
-        } else if (realPhone && phoneService.isRealPhone(realPhone)) {
-          phoneService.setMapping(c.id, realPhone, name);
-        }
-
-        if (name && !phoneService.isLid(name) && !/^\+?\d+$/.test(name)) {
-          phoneService.setName(c.id, name);
-          if (lid) phoneService.setName(lid, name);
-          if (realPhone) phoneService.setName(realPhone, name);
-        }
-      };
-
-      // 1. Handle Full Messaging History Sync from WhatsApp
-      this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest, progress }) => {
-        console.log(`[WhatsAppBot] 📥 Menerima sinkronisasi riwayat WhatsApp: ${chats?.length || 0} obrolan, ${contacts?.length || 0} kontak, ${messages?.length || 0} pesan (progress: ${progress || 100}%).`);
-
-        // a. Sinkronisasi Kontak & Nama ke phoneService TERLEBIH DAHULU
-        if (Array.isArray(contacts)) {
-          contacts.forEach(syncContact);
-        }
-
-        // b. Sinkronisasi Pesan Riwayat (Messages batch) KEDUA agar nomor telepon & pushName stanza terdaftar di phoneService
-        if (Array.isArray(messages) && messages.length > 0) {
-          const parsedList = [];
-          for (const m of messages) {
-            if (m.key?.id && m.message) {
-              sessionManager.storeMessage(m.key.id, m.message);
-            }
-            const parsed = await this.parseWAMessage(m);
-            if (parsed) {
-              parsedList.push(parsed);
-              dbService.saveChatMessage(parsed).catch(() => {});
-            }
-          }
-
-          if (parsedList.length > 0) {
-            const added = chatService.addMessagesBatch(parsedList);
-            console.log(`[WhatsAppBot] ✅ ${added.length} pesan riwayat WhatsApp berhasil disimpan.`);
-          }
-        }
-
-        // c. Sinkronisasi Obrolan (Chats metadata) KETIGA setelah semua kontak & pesan terpetakan
-        if (Array.isArray(chats)) {
-          for (const ch of chats) {
-            if (ch.id && ch.id !== '0@s.whatsapp.net' && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
-              if (this.isSelf(ch.id)) continue;
-              if (chatService.isChatDeleted(ch.id)) continue;
-              const contactName = phoneService.getName(ch.id);
-              const realPhone = phoneService.getPhone(ch.id, ch.name);
-              chatService.setSyncedChat(ch.id, {
-                name: ch.name || contactName || (realPhone ? phoneService.formatPhone(realPhone) : null),
-                unreadCount: ch.unreadCount || 0,
-                updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
-              });
-            }
-          }
-        }
-
-        // d. Trigger real-time re-render di semua dashboard
-        this.emit('chats_updated', { source: 'history_sync', count: messages?.length || 0 });
-      });
-
-      // 2. Handle Chats Upsert & Update
-      this.sock.ev.on('chats.upsert', (newChats) => {
-        if (Array.isArray(newChats)) {
-          for (const ch of newChats) {
-            if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
-              if (this.isSelf(ch.id)) continue;
-              if (chatService.isChatDeleted(ch.id)) continue;
-              const contactName = phoneService.getName(ch.id);
-              chatService.setSyncedChat(ch.id, {
-                name: ch.name || contactName || null,
-                unreadCount: ch.unreadCount,
-                updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
-              });
-            }
-          }
-          this.emit('chats_updated', { source: 'chats_upsert', count: newChats.length });
-        }
-      });
-
-      this.sock.ev.on('chats.update', (updates) => {
-        if (Array.isArray(updates)) {
-          for (const ch of updates) {
-            if (ch.id && !ch.id.endsWith('@broadcast') && !ch.id.endsWith('@newsletter')) {
-              if (this.isSelf(ch.id)) continue;
-              if (chatService.isChatDeleted(ch.id)) continue;
-              const contactName = phoneService.getName(ch.id);
-              chatService.setSyncedChat(ch.id, {
-                name: ch.name || contactName || null,
-                unreadCount: ch.unreadCount,
-                updatedAt: ch.conversationTimestamp ? new Date(Number(ch.conversationTimestamp) * 1000).toISOString() : null
-              });
-            }
-          }
-          this.emit('chats_updated', { source: 'chats_update', count: updates.length });
-        }
-      });
-
-      // 3. Handle Contacts Upsert & Update
-      this.sock.ev.on('contacts.upsert', (newContacts) => {
-        if (Array.isArray(newContacts)) {
-          newContacts.forEach(syncContact);
-          this.emit('chats_updated', { source: 'contacts_upsert', count: newContacts.length });
-        }
-      });
-
-      this.sock.ev.on('contacts.update', (updates) => {
-        if (Array.isArray(updates)) {
-          updates.forEach(syncContact);
-          this.emit('chats_updated', { source: 'contacts_update', count: updates.length });
-        }
-      });
-
-      // 4. Handle incoming messages (Both history append and real-time notify)
-      this.sock.ev.on('messages.upsert', async (m) => {
-        // Handle history append messages
-        if (m.type === 'append') {
-          const parsedList = [];
-          for (const msg of m.messages) {
-            if (msg.key?.remoteJid?.endsWith('@broadcast') || msg.key?.remoteJid?.endsWith('@newsletter')) continue;
-            if (msg.key?.id && msg.message) {
-              sessionManager.storeMessage(msg.key.id, msg.message);
-            }
-            const parsed = await this.parseWAMessage(msg);
-            if (parsed) {
-              parsedList.push(parsed);
-              dbService.saveChatMessage(parsed).catch(() => {});
-            }
-          }
-          if (parsedList.length > 0) {
-            chatService.addMessagesBatch(parsedList);
-            this.emit('chats_updated', { source: 'messages_append', count: parsedList.length });
-          }
-          return;
-        }
-
-        // Handle live notify messages
-        if (m.type === 'notify') {
-          for (const msg of m.messages) {
-            // Abaikan pesan broadcast status & newsletter
-            if (msg.key?.remoteJid?.endsWith('@broadcast') || msg.key?.remoteJid?.endsWith('@newsletter')) {
-              continue;
-            }
-            if (msg.key?.id && msg.message) {
-              sessionManager.storeMessage(msg.key.id, msg.message);
-            }
-
-            // Pesan keluar dari HP pengguna langsung (sinkronisasi balasan WhatsApp manual)
-            if (msg.key?.fromMe) {
-              const parsed = await this.parseWAMessage(msg);
-              if (parsed) {
-                chatService.addMessage(parsed);
-                dbService.saveChatMessage(parsed).catch(() => {});
-                this.emit('chat_log', parsed);
-              }
-              continue;
-            }
-
-            // Cek apakah pesan ini dikirim sebelum bot terhubung (antrean offline)
-            const botConnTime = this.connectedTimestamp || 0;
-            const rawTs = msg.messageTimestamp
-              ? (typeof msg.messageTimestamp === 'object' && msg.messageTimestamp.low !== undefined ? msg.messageTimestamp.low : Number(msg.messageTimestamp))
-              : 0;
-            const msgTimeMs = rawTs > 0 ? rawTs * 1000 : Date.now();
-            const isOldMessage = botConnTime > 0 && msgTimeMs < (botConnTime - 90000);
-
-            if (isOldMessage) {
-              // Simpan dan tampilkan pesan offline di dashboard tanpa memicu auto-reply bot
-              const parsed = await this.parseWAMessage(msg);
-              if (parsed) {
-                chatService.addMessage(parsed);
-                dbService.saveChatMessage(parsed).catch(() => {});
-                this.emit('chat_log', parsed);
-              }
-              continue;
-            }
-
-            // Pesan baru saat online: proses respons otomatis asisten
-            messageHandler.handleMessage(this.sock, msg).catch((err) => {
-              console.error('[WhatsAppBot] Error handling message:', err.message);
-            });
-          }
-        }
-      });
-
+      // Start client
+      await this.client.initialize();
     } catch (err) {
-      console.error('[WhatsAppBot] Error inisialisasi Baileys:', err);
+      console.error('[whatsapp-web.js] Gagal inisialisasi:', err.message);
       this.status = 'disconnected';
-      this.emit('status_change', { status: this.status, error: err.message });
+      this.emit('status_change', this.getStatus());
     } finally {
       this.isInitializing = false;
     }
   }
 
-  async parseWAMessage(msg) {
-    if (!msg || !msg.key) return null;
-    const jid = msg.key.remoteJid;
-    if (!jid || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return null;
-
-    const isFromMe = Boolean(msg.key.fromMe);
-    const info = messageHandler.extractMessageInfo(msg.message);
-    const text = (info.text || '').trim();
-    if (!text && info.mediaType !== 'image') return null;
-    if (text === '[text]') return null;
-
-    let cleanText = text;
-    if (!cleanText) {
-      if (info.mediaType === 'image') cleanText = info.caption || '';
-      else if (info.mediaType === 'video') cleanText = info.caption ? `[Video: ${info.caption}]` : '[Video]';
-      else if (info.mediaType === 'audio') cleanText = '[Pesan Suara]';
-      else if (info.mediaType === 'sticker') cleanText = '[Stiker WhatsApp]';
-      else if (info.mediaType === 'document') cleanText = `[Dokumen: ${info.fileName || 'File'}]`;
-      else return null;
+  // --- Send Message via whatsapp-web.js ---
+  async sendMessage(target, messagePayload, options = {}) {
+    if (!this.client) {
+      throw new Error('WhatsApp client belum aktif. Tunggu hingga browser siap.');
     }
 
-    let downloadedImage = null;
-    if (info.mediaType === 'image') {
-      try {
-        downloadedImage = await mediaService.downloadAndSaveImage(msg, this.sock);
-      } catch (err) {
-        console.warn('[WhatsAppBot] Gagal download gambar:', err.message);
+    // A. Pesan Gambar / Media
+    const isImage = Boolean(
+      messagePayload?.image ||
+      messagePayload?.media ||
+      options?.image ||
+      options?.imageBase64 ||
+      options?.imagePath
+    );
+
+    let media = null;
+    const raw = messagePayload?.image || messagePayload?.media || options?.imageBase64 || options?.image || options?.imagePath;
+    const caption = messagePayload?.caption || options?.caption || (typeof messagePayload === 'string' ? messagePayload : '');
+
+    if (isImage && raw) {
+      if (Buffer.isBuffer(raw)) {
+        media = new MessageMedia('image/jpeg', raw.toString('base64'));
+      } else if (typeof raw === 'string' && fs.existsSync(raw)) {
+        media = MessageMedia.fromFilePath(raw);
+      } else if (typeof raw === 'string' && raw.startsWith('data:')) {
+        const parts = raw.split(';base64,');
+        const mime = parts[0].replace('data:', '');
+        media = new MessageMedia(mime, parts[1]);
+      } else if (typeof raw === 'string' && raw.length > 100) {
+        media = new MessageMedia('image/jpeg', raw);
       }
     }
 
-    let timestampIso = new Date().toISOString();
-    if (msg.messageTimestamp) {
-      const rawTs = typeof msg.messageTimestamp === 'object' && msg.messageTimestamp.low !== undefined
-        ? msg.messageTimestamp.low
-        : Number(msg.messageTimestamp);
-      if (!isNaN(rawTs) && rawTs > 0) {
-        timestampIso = new Date(rawTs * 1000).toISOString();
-      }
+    const text = typeof messagePayload === 'string' ? messagePayload : (messagePayload?.text || '');
+
+    // B. Kirim via recipient terverifikasi (hindari wMsg.reply yang memicu error getter id pada LID)
+    let recipient = this.formatRecipient(target);
+    if (!recipient) {
+      throw new Error(`Target nomor WhatsApp tidak valid: ${target}`);
     }
 
-    // 1. Resolve real phone number from stanza attributes, remoteJid, participant, or mapping
-    const rawPn = msg.key?.senderPn || msg.key?.participantPn;
-    let realPhone = null;
-    if (rawPn) {
-      const clean = rawPn.split('@')[0].replace(/\D/g, '');
-      if (phoneService.isRealPhone(clean)) realPhone = clean;
-    }
-    if (!realPhone && jid && jid.endsWith('@s.whatsapp.net')) {
-      const clean = jid.split('@')[0].replace(/\D/g, '');
-      if (phoneService.isRealPhone(clean)) realPhone = clean;
-    }
-    if (!realPhone && msg.key?.participant && msg.key.participant.endsWith('@s.whatsapp.net')) {
-      const clean = msg.key.participant.split('@')[0].replace(/\D/g, '');
-      if (phoneService.isRealPhone(clean)) realPhone = clean;
-    }
-    if (!realPhone && msg.participant && typeof msg.participant === 'string' && msg.participant.endsWith('@s.whatsapp.net')) {
-      const clean = msg.participant.split('@')[0].replace(/\D/g, '');
-      if (phoneService.isRealPhone(clean)) realPhone = clean;
-    }
-    if (!realPhone) {
-      realPhone = phoneService.getPhone(jid, msg.pushName);
-    }
-    if (realPhone && phoneService.isRealPhone(realPhone)) {
-      phoneService.setMapping(jid, realPhone, msg.pushName);
-    }
-
-    // 2. Resolve sender name (Reject raw LID or digit strings)
-    let senderName = 'Saya';
-    if (!isFromMe) {
-      const candidateName = msg.pushName;
-      if (candidateName && !phoneService.isLid(candidateName) && !/^\+?\d+$/.test(candidateName.trim())) {
-        senderName = candidateName.trim();
-        phoneService.setName(jid, senderName);
-        if (realPhone) phoneService.setName(realPhone, senderName);
+    // Anti-LID: Jangan pernah mengirim ke JID @lid karena WhatsApp Web internal memoizer akan crash
+    if (recipient.endsWith('@lid') || phoneService.isLid(recipient)) {
+      const real = phoneService.getPhone(recipient);
+      if (real && phoneService.isRealPhone(real)) {
+        recipient = `${real}@c.us`;
       } else {
-        const storedName = phoneService.getName(jid) || (realPhone ? phoneService.getName(realPhone) : null);
-        if (storedName) {
-          senderName = storedName;
-        } else if (realPhone) {
-          senderName = phoneService.formatPhone(realPhone);
+        const clean = recipient.split('@')[0].replace(/\D/g, '');
+        if (phoneService.isRealPhone(clean)) {
+          recipient = `${clean}@c.us`;
         } else {
-          senderName = 'Pelanggan';
+          throw new Error(`Target pengiriman adalah LID (${recipient}) tanpa nomor HP yang valid`);
         }
       }
     }
 
-    return {
-      id: msg.key.id || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      direction: isFromMe ? 'out' : 'in',
-      jid,
-      phone: realPhone || null,
-      formattedPhone: phoneService.formatPhone(realPhone, jid),
-      senderName,
-      text: cleanText,
-      mediaType: info.mediaType || 'text',
-      image: downloadedImage || null,
-      isAi: false,
-      timestamp: timestampIso
-    };
+    if (!isImage && !text) {
+      throw new Error('Pesan teks atau gambar tidak boleh kosong.');
+    }
+
+    // Opsi pengiriman (sertakan quotedMessageId jika tersedia dan bukan LID)
+    const sendOpts = {};
+    if (caption) sendOpts.caption = caption;
+    if (
+      options?.quoted?.key?.id &&
+      !String(options?.quoted?.key?.id || '').includes('@lid') &&
+      !String(options?.quoted?.key?.remoteJid || '').includes('@lid')
+    ) {
+      sendOpts.quotedMessageId = options.quoted.key.id;
+    }
+
+    try {
+      if (isImage && media) {
+        return await this.client.sendMessage(recipient, media, sendOpts);
+      }
+      return await this.client.sendMessage(recipient, text, sendOpts);
+    } catch (sendErr) {
+      const errStr = String(sendErr.message || sendErr);
+      console.warn(`[whatsapp-web.js] sendMessage ke ${recipient} dengan quote gagal (${errStr}), mencoba kirim langsung tanpa quote...`);
+
+      // Fallback 1: Kirim langsung tanpa quotedMessageId
+      try {
+        if (isImage && media) {
+          return await this.client.sendMessage(recipient, media, { caption: caption || '' });
+        }
+        return await this.client.sendMessage(recipient, text);
+      } catch (f1Err) {
+        console.warn(`[whatsapp-web.js] Fallback tanpa quote gagal: ${f1Err.message}, mencoba via Chat model...`);
+      }
+
+      // Fallback 2: Kirim melalui Chat model langsung jika sendMessage throw error
+      try {
+        const chat = await this.client.getChatById(recipient).catch(() => null);
+        if (chat && typeof chat.sendMessage === 'function') {
+          if (isImage && media) {
+            return await chat.sendMessage(media, { caption: caption || '' });
+          }
+          return await chat.sendMessage(text);
+        }
+      } catch (chatErr) {
+        console.warn(`[whatsapp-web.js] chat.sendMessage juga gagal: ${chatErr.message}`);
+      }
+
+      // Fallback 3: Jika pengiriman media/gambar gagal (misal bug memoize WhatsApp Web), kirim teksnya saja agar pelanggan tetap menerima informasi!
+      if (isImage && (caption || text)) {
+        try {
+          console.warn(`[whatsapp-web.js] Pengiriman media ke ${recipient} gagal, mencoba fallback kirim pesan teks informasi...`);
+          return await this.client.sendMessage(recipient, caption || text);
+        } catch (textErr) {
+          console.warn(`[whatsapp-web.js] Fallback teks ke ${recipient} juga gagal: ${textErr.message}`);
+        }
+      }
+
+      throw sendErr;
+    }
   }
 
-  isSelf(jid) {
-    if (!jid) return false;
-    const myJid = this.sock?.user?.id?.split(':')[0]?.replace(/\D/g, '') || this.userInfo?.id?.replace(/\D/g, '');
-    const myLid = this.sock?.user?.lid?.split(':')[0]?.replace(/\D/g, '');
-    const clean = String(jid).split(':')[0].replace(/[@a-zA-Z._-]/g, '');
-    if (clean === '6285189520708' || clean === '90560006230229') return true;
-    if (myJid && clean === myJid) return true;
-    if (myLid && clean === myLid) return true;
-    return false;
+  // --- Send Custom Message from Web Dashboard (Manual / AI CS) ---
+  async sendCustomMessage(target, text, senderName = 'Admin', explicitPhone = null, customMessageId = null, mediaOpts = {}) {
+    if (!target && !explicitPhone) throw new Error('Target pengiriman wajib diisi.');
+
+    // Utamakan nomor telepon asli (anti-LID)
+    let resolvedTarget = target;
+    let resolvedPhone = explicitPhone ? phoneService.cleanPhoneNumber(explicitPhone) : null;
+
+    if (!resolvedPhone || !phoneService.isRealPhone(resolvedPhone)) {
+      resolvedPhone = phoneService.getPhone(target) || phoneService.extractPhoneFromJid(target);
+    }
+
+    if (resolvedPhone && phoneService.isRealPhone(resolvedPhone)) {
+      resolvedTarget = `${resolvedPhone}@c.us`;
+    }
+
+    const msgId = customMessageId || `custom_${Date.now()}`;
+
+    // Kirim pesan via whatsapp-web.js
+    const result = await this.sendMessage(resolvedTarget, text, mediaOpts);
+
+    // Kirim event chat_log agar dashboard langsung menampilkan balon chat secara real-time
+    this.emit('chat_log', {
+      id: msgId,
+      jid: resolvedPhone ? `${resolvedPhone}@s.whatsapp.net` : (resolvedTarget.includes('@') ? resolvedTarget.replace('@c.us', '@s.whatsapp.net') : `${resolvedTarget}@s.whatsapp.net`),
+      phone: resolvedPhone,
+      sender: senderName,
+      text: text || '(Media Gambar)',
+      fromMe: true,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      isAiReplied: false,
+      status: 'sent',
+      mediaType: mediaOpts?.imageBase64 || mediaOpts?.image ? 'image' : 'text'
+    });
+
+    return result;
   }
 
+  // --- Sync Presence ---
+  async syncPresenceNow() {
+    // whatsapp-web.js auto-manages presence
+  }
+
+  // --- Restart Connection ---
+  async restart() {
+    console.log('[whatsapp-web.js] Memuat ulang modul & memulai ulang sesi WhatsApp...');
+    this.reloadHandlers();
+    if (this.client) {
+      try {
+        await this.client.destroy();
+      } catch (_) {}
+      this.client = null;
+    }
+    this.status = 'connecting';
+    this.qrCodeRaw = null;
+    this.qrCodeDataUrl = null;
+    this.emit('status_change', this.getStatus());
+
+    setTimeout(() => {
+      this.init();
+    }, 1000);
+
+    return { success: true, message: 'Koneksi WhatsApp sedang dimuat ulang...' };
+  }
+
+  // --- Logout Session ---
+  async logout() {
+    console.log('[whatsapp-web.js] Memutuskan sesi WhatsApp...');
+    if (this.client) {
+      try {
+        await this.client.logout();
+      } catch (_) {}
+      try {
+        await this.client.destroy();
+      } catch (_) {}
+      this.client = null;
+    }
+
+    this.status = 'disconnected';
+    this.userInfo = null;
+    this.connectedAt = null;
+    this.qrCodeDataUrl = null;
+    this.qrCodeRaw = null;
+    this.emit('status_change', this.getStatus());
+
+    // Bersihkan folder sesi lokal
+    try {
+      if (fs.existsSync(AUTH_FOLDER)) {
+        fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+      }
+    } catch (_) {}
+
+    setTimeout(() => {
+      this.init();
+    }, 1000);
+
+    return { success: true, message: 'Sesi WhatsApp berhasil diputuskan. Memuat QR Code baru...' };
+  }
+
+  // --- Dummy handleWebhook for backward compatibility ---
+  async handleWebhook() {
+    // No webhook needed for whatsapp-web.js
+  }
+
+  // --- Get Status Summary for Web Dashboard ---
   getStatus() {
     return {
       status: this.status,
       user: this.userInfo,
       qrDataUrl: this.qrCodeDataUrl,
-      connectedAt: this.connectedAt
+      connectedAt: this.connectedAt,
+      engine: this.engine
     };
-  }
-
-  async sendCustomMessage(target, text, senderName = 'Admin (Balasan Web)', explicitPhone = null, customMessageId = null, options = {}) {
-    if (!this.sock || this.status !== 'connected') {
-      throw new Error('Bot belum terhubung ke WhatsApp.');
-    }
-
-    if (!target) {
-      throw new Error('Tujuan pengiriman pesan tidak valid.');
-    }
-
-    let jid;
-    let targetStr = String(target).trim();
-
-    // Check if target is already a full JID (e.g. @lid, @s.whatsapp.net, @g.us)
-    if (targetStr.includes('@s.whatsapp.net') || targetStr.includes('@lid') || targetStr.includes('@g.us')) {
-      jid = targetStr;
-    } else {
-      let cleanPhone = targetStr.replace(/\D/g, '');
-      if (cleanPhone.startsWith('0')) {
-        cleanPhone = '62' + cleanPhone.slice(1);
-      }
-      jid = `${cleanPhone}@s.whatsapp.net`;
-    }
-
-    // Determine real phone number to display
-    const candidatePhone = explicitPhone || phoneService.getPhone(jid, senderName) || phoneService.getPhone(targetStr);
-    const resolvedPhone = (candidatePhone && phoneService.isRealPhone(candidatePhone))
-      ? candidatePhone
-      : (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : null);
-
-    console.log(`[WhatsAppBot] Mengirim pesan web ke ${jid} (Phone: ${resolvedPhone || 'LID'}): "${text}"`);
-
-    // Prepare message payload (text or image)
-    let messagePayload = { text: text || '' };
-    let hasImage = false;
-    let imageLog = null;
-
-    if (options.image || options.imageBase64) {
-      let imageBuffer = null;
-      if (options.imageBase64 && typeof options.imageBase64 === 'string') {
-        const matches = options.imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-        const b64 = matches ? matches[2] : options.imageBase64;
-        imageBuffer = Buffer.from(b64, 'base64');
-      } else if (Buffer.isBuffer(options.image)) {
-        imageBuffer = options.image;
-      } else if (typeof options.image === 'string') {
-        if (options.image.startsWith('http://') || options.image.startsWith('https://')) {
-          messagePayload = { image: { url: options.image }, caption: text || '', mimetype: 'image/jpeg' };
-          hasImage = true;
-          imageLog = options.image;
-        } else {
-          let resolvedPath = options.image;
-          if (!fs.existsSync(resolvedPath)) {
-            const cleanRel = String(options.image).replace(/^[/\\]+/, '').replace(/^assets[/\\]+/, '');
-            const candidates = [
-              path.join(process.cwd(), 'public', cleanRel),
-              path.join(process.cwd(), 'assets', cleanRel),
-              path.join(__dirname, '../public', cleanRel),
-              path.join(__dirname, '../assets', cleanRel)
-            ];
-            for (const cand of candidates) {
-              if (fs.existsSync(cand)) {
-                resolvedPath = cand;
-                break;
-              }
-            }
-          }
-          if (fs.existsSync(resolvedPath)) {
-            imageBuffer = fs.readFileSync(resolvedPath);
-            imageLog = options.image;
-          }
-        }
-      }
-
-      if (imageBuffer) {
-        messagePayload = { image: imageBuffer, caption: text || '', mimetype: 'image/jpeg' };
-        hasImage = true;
-        const savedUrl = mediaService.saveBufferImage(imageBuffer);
-        imageLog = savedUrl || options.imagePath || imageLog || null;
-      }
-      if (imageLog && !imageLog.startsWith('http') && !imageLog.startsWith('/') && !imageLog.startsWith('data:')) {
-        imageLog = '/' + imageLog;
-      }
-    }
-
-    // 🛡️ Global rate limit wait & send with retry limit
-    await protectionService.waitForGlobalRateLimit();
-    await protectionService.withRetry(async () => {
-      return await this.sock.sendMessage(jid, messagePayload);
-    }, {
-      maxRetries: 2,
-      baseDelayMs: 1000,
-      context: `Web dashboard send to ${jid}`
-    });
-
-    // 🛡️ Otomatis aktifkan mode Human CS (Handoff) agar bot tidak menimpa percakapan admin
-    sessionManager.setHumanMode(jid, true, 'Balasan manual via Dashboard Admin');
-
-    const logData = {
-      id: customMessageId || `manual_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      direction: 'out',
-      jid,
-      phone: resolvedPhone,
-      senderName,
-      text: text || '',
-      mediaType: hasImage ? 'image' : 'text',
-      image: imageLog,
-      isAi: false,
-      timestamp: new Date().toISOString()
-    };
-
-    // Emit to live log & web dashboard
-    this.emit('chat_log', logData);
-    dbService.saveChatMessage(logData).catch(() => {});
-
-    return { success: true, jid, phone: resolvedPhone, message: logData };
-  }
-
-  async resolveLidPhone(lid, senderName = null) {
-    if (!lid || !phoneService.isLid(lid)) return null;
-    return phoneService.getPhone(lid, senderName);
-  }
-
-  cleanCorruptedRatchetSessions() {
-    try {
-      if (!fs.existsSync(AUTH_FOLDER)) return;
-      const files = fs.readdirSync(AUTH_FOLDER);
-      let count = 0;
-      for (const f of files) {
-        // Hapus session-*.json yang menyimpan counter ratchet usang
-        // creds.json (kunci login akun) dan pre-key-*.json TETAP dipertahankan aman!
-        if (f.startsWith('session-')) {
-          try {
-            fs.unlinkSync(path.join(AUTH_FOLDER, f));
-            count++;
-          } catch (_) {}
-        }
-      }
-      if (count > 0) {
-        console.log(`[WhatsAppBot] Membersihkan ${count} cache sesi ratchet lama agar terhindar dari Bad MAC & Over 2000 messages.`);
-      }
-    } catch (err) {
-      console.warn('[WhatsAppBot] Gagal membersihkan sesi ratchet:', err.message);
-    }
-  }
-
-  async safeClearSessionFolder(retries = 4, delayMs = 120) {
-    if (!fs.existsSync(AUTH_FOLDER)) return;
-
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-        console.log('[WhatsAppBot] Folder sesi auth_info_baileys berhasil dibersihkan.');
-        return;
-      } catch (err) {
-        // Pada Windows, jika ada file handle yang sedang dilepaskan, hapus file individual
-        try {
-          const files = fs.readdirSync(AUTH_FOLDER);
-          for (const f of files) {
-            try {
-              fs.unlinkSync(path.join(AUTH_FOLDER, f));
-            } catch (_) {}
-          }
-        } catch (_) {}
-      }
-      if (attempt < retries) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-  }
-
-  async clearSessionFolder() {
-    await this.safeClearSessionFolder();
-  }
-
-  async logout() {
-    if (this.isLoggingOut) {
-      console.log('[WhatsAppBot] Logout sedang diproses, abaikan panggilan duplikat.');
-      return { success: true, message: 'Logout sedang berlangsung.' };
-    }
-
-    this.isLoggingOut = true;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
-    console.log('[WhatsAppBot] Memulai proses logout dan reset sesi WhatsApp...');
-
-    // Hanya panggil sock.logout() jika status benar-benar terhubung
-    // Batasi timeout 800ms agar tidak menggantung jika server WA tidak merespons
-    if (this.sock && this.status === 'connected') {
-      try {
-        await Promise.race([
-          this.sock.logout().catch((err) => {
-            console.warn('[WhatsAppBot] Catatan Baileys logout:', err.message);
-          }),
-          new Promise((resolve) => setTimeout(resolve, 800))
-        ]);
-      } catch (err) {
-        console.error('[WhatsAppBot] Error saat logout socket:', err.message);
-      }
-    }
-
-    await this.destroySocket();
-
-    // Jeda minimal agar handle file OS Windows terlepas
-    await new Promise((resolve) => setTimeout(resolve, 150));
-
-    await this.safeClearSessionFolder();
-
-    this.status = 'connecting';
-    this.userInfo = null;
-    this.qrCodeRaw = null;
-    this.qrCodeDataUrl = null;
-    this.connectedAt = null;
-    this.connectedTimestamp = 0;
-    this.isReconnecting = false;
-
-    this.emit('status_change', {
-      status: this.status,
-      user: null,
-      qrDataUrl: null
-    });
-
-    // Inisialisasi ulang socket secara cepat untuk langsung menghasilkan QR Code baru
-    setTimeout(async () => {
-      this.isLoggingOut = false;
-      await this.init();
-    }, 200);
-
-    return { success: true, message: 'Sesi WhatsApp dibersihkan. Memuat QR Code baru...' };
-  }
-
-  async restart() {
-    if (this.isRestarting || this.isLoggingOut) {
-      console.log('[WhatsAppBot] Restart/Logout sedang diproses, abaikan panggilan duplikat.');
-      return { success: true, message: 'Proses sedang berlangsung.' };
-    }
-
-    this.isRestarting = true;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
-    console.log('[WhatsAppBot] Memulai ulang socket koneksi WhatsApp...');
-
-    this.status = 'connecting';
-    this.qrCodeRaw = null;
-    this.qrCodeDataUrl = null;
-    this.emit('status_change', {
-      status: this.status,
-      user: this.userInfo,
-      qrDataUrl: null
-    });
-
-    await this.destroySocket();
-
-    // Hanya bersihkan folder jika creds.json rusak/kosong (jangan bersihkan jika sedang pairing)
-    try {
-      const credsPath = path.join(AUTH_FOLDER, 'creds.json');
-      if (fs.existsSync(credsPath)) {
-        const raw = fs.readFileSync(credsPath, 'utf8');
-        if (!raw || !raw.trim()) {
-          await this.safeClearSessionFolder();
-        } else {
-          JSON.parse(raw);
-        }
-      }
-    } catch (_) {
-      await this.safeClearSessionFolder();
-    }
-
-    setTimeout(async () => {
-      this.isRestarting = false;
-      await this.init();
-    }, 200);
-
-    return { success: true, message: 'Koneksi WhatsApp sedang dimuat ulang...' };
   }
 }
 
-module.exports = new WhatsAppBot();
+// Export singleton instance
+const bot = new WhatsAppBot();
+module.exports = bot;

@@ -143,96 +143,51 @@ class GroqService {
     }
   }
 
-  buildSystemInstruction(userText = '') {
+  buildSystemInstruction(userText = '', politeCustomer = 'Kak') {
     const config = menuHandler.getConfig();
     const b = config.business || {};
-    const o = config.owner_info || {};
-    const s = config.schedule_info || {};
-    const w = config.warranty_info || {};
-    const p = config.promo_info || {};
-    const c = config.complaint_info || {};
-    const catalog = config.catalog || [];
-    const branches = config.branches || [];
-    const faqs = config.faqs || [];
-
-    let catalogSummary = catalog.map((item, idx) => 
-      `${idx + 1}. [${item.code || item.id}] ${item.title} - Harga: ${item.price} | Varian: ${item.footer} | Spesifikasi: ${item.subtitle}`
-    ).join('\n');
-
-    let branchSummary = branches.map((br, idx) => 
-      `${idx + 1}. ${br.name} (${br.city} - ${br.area})\n   Alamat: ${br.address}\n   Jam Buka: ${br.hours}\n   Telepon: ${br.phone}\n   Maps: ${br.maps_url}`
-    ).join('\n\n');
-
-    let promoSummary = (p.active_promos || []).map((pr, idx) =>
-      `${idx + 1}. [${pr.badge || 'PROMO'}] ${pr.title}: ${pr.discount} (${pr.desc}) - Periode: ${pr.valid_until}`
-    ).join('\n');
-
-    let faqSummary = faqs.map((f, idx) => 
-      `${idx + 1}. [${f.category || 'Umum'}] Tanya: ${f.q}\n   Jawab: ${f.a}`
-    ).join('\n\n');
-
     const customPrompt = config.ai?.system_instructions || '';
-    const ragContext = userText ? ragService.retrieveContext(userText, 4) : '';
+    const ragContext = userText ? ragService.retrieveContext(userText, 10) : '';
     const timeContext = timeHelper.getAiTimeContext();
 
     return `${customPrompt}
 
 ${timeContext}
 
-${ragContext ? `${ragContext}\n\n` : ''}=== INFORMASI RESMI TOKO & PEMILIK ===
-Nama Toko: ${b.name} (${b.tagline})
-Pemilik / Founder: ${o.owner_name || b.owner || 'H. Ahmad Fauzi & Hj. Maryam'}
-Jabatan: ${o.role || 'Founder & Managing Director'}
-Tahun Berdiri: Sejak ${b.established || '2012'} (${o.experience || '12+ Tahun Melayani Seluruh Indonesia'})
-Alamat Utama: ${b.address}
-Telepon/WA: ${b.phone}
-Email: ${b.email}
-Website: ${b.website}
+=== INFORMASI TERVERIFIKASI RAG (RUJUKAN UTAMA JAWABAN ANDA) ===
+${ragContext ? ragContext : `Nama Toko: ${b.name || 'Rumah Indah Carpet Gallery'} (${b.tagline || 'Pusat Karpet Masjid & Hunian Mewah'})`}
 
-=== JADWAL DAN JAM KERJA OPERASIONAL ===
-Jam Operasional Showroom: ${s.store_hours || b.hours}
-Jadwal Survey Gratis & Ukur Lokasi: ${s.survey_hours || 'Setiap Hari: 08:00 - 21:00 WIB (Gratis Jabodetabek)'}
-Jadwal Pasang & Obras: ${s.installation_hours || 'Tersedia teknisi 24 jam (bisa malam hari setelah Isya agar tidak mengganggu ibadah/kerja)'}
-
-=== KETENTUAN GARANSI RESMI SULTAN CARPET ===
-${w.summary || 'Garansi 100% benang asli impor Turki & Persia, garansi obras & pasang 1 tahun, serta garansi tukar baru 14 hari bila ada cacat pabrik.'}
-Alur Klaim: ${w.claim_steps || 'Kirimkan foto/video kendala, tim kami proses dalam 1x24 jam.'}
-
-=== PROMO & DISKON SPESIAL AKTIF ===
-${promoSummary || 'Promo Berkah Masjid diskon 25% + free obras, promo karpet rumah cashback Rp 200rb, promo karpet kantor free pasang.'}
-
-=== PUSAT KOMPLAIN & PENGADUAN KONSUMEN ===
-Waktu Respon (SLA): ${c.sla || 'Maksimal 1x24 Jam Kerja'}
-Hotline Manajer CS: ${c.contact_manager || b.phone_cs || b.phone}
-Kebijakan: Setiap keluhan pelanggan akan segera diterbitkan tiket penanganan resmi dan ditindaklanjuti hingga tuntas.
-
-=== KATALOG PRODUK KOLEKSI KARPET ===
-${catalogSummary}
-
-=== DAFTAR CABANG & SHOWROOM FISIK ===
-${branchSummary}
-
-=== BASIS PENGETAHUAN TANYA-JAWAB (KNOWLEDGE BASE) ===
-Gunakan referensi tanya-jawab resmi berikut untuk menjawab pertanyaan pelanggan secara akurat dan konsisten:
-${faqSummary}
-
-=== ATURAN MUTLAK FORMAT DAN GAYA BAHASA ===
-1. Berinteraksilah secara luwes, santun, ramah, dan solutif dalam Bahasa Indonesia.
-2. DILARANG KERAS menggunakan tanda bintang (*) untuk menebalkan teks maupun untuk simbol apapun. Tulis teks polos tanpa simbol asterisk (*).
-3. DILARANG KERAS menggunakan icon emoji apapun dalam seluruh balasan Anda. Pesan harus bersih dan elegan.
-4. DILARANG KERAS menyuruh pelanggan mengetik perintah tertentu seperti 'Ketik ORDER', 'Ketik MENU', 'Ketik CS', atau sejenisnya. Tawarkan bantuan secara alami seperti konsultan karpet profesional berpengalaman.
-5. Pahami maksud pelanggan dengan cerdas:
-   - Jika pelanggan ingin memesan karpet atau minta survey lokasi gratis, tanyakan ukuran ruangan atau jenis karpet yang diminati serta nomor kontak dan alamatnya.
-   - Jika pelanggan ingin tahu jadwal buka, lokasi alamat, garansi resmi, promo aktif, atau ingin menyampaikan komplain, berikan penjelasan yang lengkap, transparan, dan menenangkan.
-6. ATURAN ANTI-SPAM & 1 PESAN TUNGGAL:
-   - Balas selalu dalam TEPAT 1 pesan chat yang ringkas, jelas, dan padat (maksimal 2 paragraf singkat).
-   - DILARANG KERAS membanjiri pelanggan dengan pesan panjang atau mengirim banyak pesan beruntun.
-7. KEBIJAKAN FOTO & DETAIL PRODUK:
-   - Jika pelanggan meminta, menanyakan, atau mengonfirmasi foto/gambar/detail karpet (misal: "kirim foto", "lihat gambar", "mau foto", "spill foto", "detail", "fotonya", "ada fotonya?"), berikan penjelasan ringkas dan WAJIB sertakan tag [KIRIM_FOTO: KODE_PRODUK] di akhir pesan agar sistem otomatis mengirimkan gambar fisik karpet ke pelanggan.
-   - Contoh kode produk: MASJID-TURKI-A, PERSIA-TABRIZ, NORDIC-SCANDI, SHAGGY-CLOUD, OFFICE-TILE-50.
-   - Jika pelanggan baru bertanya tentang karpet secara umum tanpa meminta foto, berikan penjelasan ringkas dan tawarkan konfirmasi:
-     "Bila Kakak ingin melihat foto fisik dan rincian spesifikasi lengkap karpet ini, silakan balas dengan 'FOTO' atau 'DETAIL'."
-   - Jangan pernah menggunakan tag [KIRIM_FOTO: ALL] untuk menghindari deteksi spam WhatsApp.`;
+=== ATURAN MUTLAK: JAWABAN PROFESIONAL, SIMPLE & FOKUS PADA RAG ===
+1. ETIKA & SAPAAN PROFESIONAL (SANGAT PENTING):
+   - DILARANG KERAS MENGULANG-ULANG SAPAAN WAKTU ("Selamat malam", "Selamat pagi", dll.) di setiap balasan pesan!
+   - Pada obrolan yang sedang berlangsung, JANGAN menyapa waktu lagi. Langsung jawab inti pesan dengan santun (misal: "Baik ${politeCustomer}, ...", "Tentu ${politeCustomer}, ...").
+   - Selalu panggil pelanggan dengan sebutan hormat "${politeCustomer}". JANGAN pernah memanggil nama tanpa sebutan "Kak".
+   - Nada bicara harus profesional, hangat, ramah, dan berkelas layaknya staf konsultan karpet resmi Rumah Indah Carpet Gallery.
+2. JAWABAN TO-THE-POINT & KELENGKAPAN DAFTAR PRODUK (SANGAT PENTING):
+   - Jawab secara to-the-point, jelas, dan ramah langsung ke inti pertanyaan pelanggan.
+   - HINDARI penjelasan bertele-tele dan DILARANG KERAS memuat informasi tambahan yang tidak ditanyakan (jangan sebut nomor telepon, promo, survey gratis, garansi, jam buka, atau alamat kecuali pelanggan secara spesifik menanyakannya).
+   - ATURAN MUTLAK DAFTAR / LIST / KATALOG PRODUK: Jika pelanggan meminta daftar, list, koleksi, atau menanyakan produk apa saja yang tersedia untuk suatu kategori (seperti karpet masjid, karpet ruang tamu, karpet bulu, karpet kantor, dll.), Anda WAJIB menyebutkan SELURUH produk yang terdaftar pada kategori tersebut di data RAG secara lengkap satu per satu beserta harga resminya tanpa ada produk yang terlewat atau dikurangi! Tampilkan dalam format daftar bernomor yang rapi dan mudah dibaca.
+   - Untuk pertanyaan umum selain permintaan list produk, jawab secara ringkas dalam 1-2 paragraf pendek.
+3. SERTAKAN HARGA RESMI JIKA MENJELASKAN PRODUK:
+   - Jika menyebutkan atau merekomendasikan produk karpet tertentu dari data RAG, selalu sertakan rincian harga resminya secara jelas dan transparan.
+4. DILARANG KERAS MENYEBUTKAN KODE PRODUK KEPADA PELANGGAN:
+   - Di katalog toko, TIDAK ADA kode produk untuk pelanggan. Jangan pernah menyebutkan kode (seperti MASJID-TURKI-A, NORDIC-SCANDI, dll.) dan JANGAN PERNAH menyuruh pelanggan menyebutkan kode produk.
+   - Selalu sebutkan produk dengan NAMA PRODUK resminya secara wajar dan alami (misal: "Karpet Masjid Turki Indah", "Karpet Scandinavia", "Karpet Bulu Shaggy").
+   - Kode produk HANYA dipakai di dalam tag sistem [KIRIM_FOTO: KODE] dan TIDAK BOLEH muncul dalam kalimat untuk pelanggan.
+5. FOKUS UTAMA PADA DATA RAG:
+   - Jawab HANYA berdasarkan fakta yang tertera pada bagian INFORMASI TERVERIFIKASI RAG di atas.
+   - Jika pelanggan bertanya produk karpet secara umum (misal: "saya ingin tahu produk karpet"), sebutkan ringkas 2-3 kategori karpet utama kami dari data RAG (misal: karpet masjid, karpet ruang tamu, dan karpet kantor) dan tanyakan kebutuhan mereka secara santun tanpa pernah menyebutkan kode produk.
+6. DILARANG KERAS MENGGUNAKAN SIMBOL BINTANG (*) UNTUK MENEBALKAN TEKS ATAU SIMBOL APAPUN. Tulis teks polos tanpa simbol bintang (*).
+7. DILARANG KERAS MENGGUNAKAN ICON EMOJI APAPUN. Pesan harus bersih dan profesional.
+8. DILARANG menyuruh pelanggan mengetik format kaku seperti 'Ketik ORDER', 'Ketik MENU', atau 'Ketik CS'. Berbicaralah santun dan luwes.
+9. FOTO PRODUK:
+   - HANYA cantumkan tag [KIRIM_FOTO: KODE_PRODUK] di akhir pesan jika pelanggan secara eksplisit meminta atau menanyakan foto/gambar fisik karpet (misal: "kirim foto", "minta foto", "lihat gambarnya").
+   - Jika pelanggan belum meminta foto, berikan penjelasan singkat biasa tanpa tag foto.
+10. PERTANYAAN DI LUAR KONTEKS TOKO / PRODUK (MUTLAK & WAJIB):
+   - Lingkup Anda HANYALAH seputar Rumah Indah Carpet Gallery, produk karpet, pemesanan, layanan survey/pemasangan, lokasi toko, jadwal buka, promo, garansi, komplain, dan layanan toko.
+   - Jika pelanggan menanyakan pertanyaan atau topik apapun DI LUAR KONTEKS TOKO (misalnya pengetahuan umum di luar toko, matematika, coding/pemrograman, politik, resep masakan, cuaca, olahraga, berita dunia, lelucon, atau hal lainnya yang tidak berkaitan dengan produk dan layanan toko), Anda WAJIB HANYA menjawab kalimat:
+     "Mohon maaf, saya tidak bisa menjawab pertanyaan tersebut."
+   - DILARANG KERAS mencoba menjawab pertanyaan di luar konteks tersebut, DILARANG berhalusinasi, DILARANG memberikan rekomendasi karpet jika topik tidak berkaitan, dan JANGAN menambahkan kalimat lain selain penolakan santun tersebut.`;
   }
 
   async generateReply(jid, userText, senderName = 'Kak') {
@@ -241,8 +196,11 @@ ${faqSummary}
       return null;
     }
 
+    let cleanSender = String(senderName || 'Kak').trim().replace(/^(kak|pak|bu|mas|mbak)\s+/i, '').trim();
+    const politeCustomer = cleanSender && cleanSender.toLowerCase() !== 'pelanggan' ? `Kak ${cleanSender}` : 'Kak';
+
     const model = this.getModel();
-    const systemInstruction = this.buildSystemInstruction(userText);
+    const systemInstruction = this.buildSystemInstruction(userText, politeCustomer);
 
     // Get conversation history for this JID
     let history = this.conversationHistories.get(jid) || [];
@@ -260,7 +218,7 @@ ${faqSummary}
 
     messages.push({
       role: 'user',
-      content: `[Pengirim: ${senderName}]: ${userText}`
+      content: `[Pelanggan: ${politeCustomer}]: ${userText}`
     });
 
     const candidateModels = Array.from(new Set([
@@ -285,7 +243,7 @@ ${faqSummary}
             temperature: 0.7,
             max_tokens: 800
           }),
-          signal: AbortSignal.timeout(8000)
+          signal: AbortSignal.timeout(15000)
         });
 
         if (response.ok) {
@@ -294,8 +252,22 @@ ${faqSummary}
 
           if (replyText) {
             // Strip asterisks and emojis
-            const cleanReply = stripStarsAndEmojis(replyText.trim());
+            let cleanReply = stripStarsAndEmojis(replyText.trim());
             this.activeModel = m;
+
+            // Pastikan tidak ada sapaan berulang pada percakapan lanjutan
+            if (history.length > 0) {
+              cleanReply = cleanReply.replace(/^(selamat\s+(pagi|siang|sore|malam)|halo\s+kak\s+[^,.!?\n]+|hai\s+kak\s+[^,.!?\n]+|halo\s+[^,.!?\n]+|hai\s+[^,.!?\n]+)[,.! ]\s*/i, '');
+              if (cleanReply.length > 0) {
+                cleanReply = cleanReply.charAt(0).toUpperCase() + cleanReply.slice(1);
+              }
+            } else {
+              // Jika baru turn pertama tetapi pada jam dini hari (00:00 - 04:59 WIB), ganti "Selamat malam" dengan "Halo Kak [Nama]"
+              const timeInfo = timeHelper.getWIBTime();
+              if (timeInfo.timeCategory === 'Dini Hari') {
+                cleanReply = cleanReply.replace(/^selamat\s+malam(,\s*kak\s+[^,.!?\n]+|,\s*[^,.!?\n]+)?[.!, ]\s*/i, `${politeCustomer ? `Halo ${politeCustomer}, ` : 'Halo Kak, '}`);
+              }
+            }
 
             // Update conversation history
             history.push({ role: 'user', text: userText });

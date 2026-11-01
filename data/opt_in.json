@@ -4,9 +4,44 @@
     "timestamp": "2026-10-02T16:24:50.929Z",
     "reason": "User command: mulai"
   },
-  "92011503861900@lid": {
+  "6282333893488@s.whatsapp.net": {
     "optedIn": true,
     "timestamp": "2026-10-02T17:25:46.353Z",
+    "reason": "First interaction"
+  },
+  "6285806645345@s.whatsapp.net": {
+    "optedIn": true,
+    "timestamp": "2026-10-23T14:10:34.585Z",
+    "reason": "First interaction"
+  },
+  "6281230294589@s.whatsapp.net": {
+    "optedIn": true,
+    "timestamp": "2026-10-24T14:59:13.533Z",
+    "reason": "First interaction"
+  },
+  "6285659751235@s.whatsapp.net": {
+    "optedIn": true,
+    "timestamp": "2026-10-26T00:11:17.635Z",
+    "reason": "First interaction"
+  },
+  "6281234567890@s.whatsapp.net": {
+    "optedIn": true,
+    "timestamp": "2026-10-31T15:05:53.875Z",
+    "reason": "First interaction"
+  },
+  "92011503861900@s.whatsapp.net": {
+    "optedIn": true,
+    "timestamp": "2026-10-31T16:45:48.935Z",
+    "reason": "First interaction"
+  },
+  "6281283881168@s.whatsapp.net": {
+    "optedIn": true,
+    "timestamp": "2026-11-01T07:12:42.201Z",
+    "reason": "First interaction"
+  },
+  "6283832199799@s.whatsapp.net": {
+    "optedIn": true,
+    "timestamp": "2026-11-01T07:55:16.182Z",
     "reason": "First interaction"
   }
 }

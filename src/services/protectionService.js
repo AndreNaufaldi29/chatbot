@@ -62,6 +62,14 @@ class ProtectionService extends EventEmitter {
 
   getDefaultConfig() {
     return {
+      smart_online: {
+        enabled: false,
+        mode: 'disabled', // 'schedule' | 'always' | 'disabled'
+        start_time: '08:45',
+        end_time: '17:00',
+        timezone: 'Asia/Jakarta',
+        heartbeat_interval_seconds: 0
+      },
       cooldown: { enabled: true, normal_delay_ms: 60000, long_delay_ms: 75000, min_delay_ms: 60000, max_delay_ms: 75000, long_threshold: 160, jitter_ms: 3000, typing_simulation: true, typing_speed_cpm: 300, global_max_per_minute: 20 },
       deduplication: { enabled: true, id_ttl_seconds: 300, content_window_ms: 3000, outbound_window_ms: 4000 },
       conversation_buffer: { enabled: true, debounce_ms: 3000, max_buffer_items: 10, max_context_turns: 6 },
@@ -86,6 +94,7 @@ class ProtectionService extends EventEmitter {
           return {
             ...defaults,
             ...userProt,
+            smart_online: { ...defaults.smart_online, ...(userProt.smart_online || {}) },
             cooldown: { ...defaults.cooldown, ...(userProt.cooldown || {}) },
             deduplication: { ...defaults.deduplication, ...(userProt.deduplication || {}) },
             conversation_buffer: { ...defaults.conversation_buffer, ...(userProt.conversation_buffer || {}) },
@@ -97,9 +106,58 @@ class ProtectionService extends EventEmitter {
           };
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     return defaults;
+  }
+
+  /**
+   * Evaluates if current time is within the configured Smart Online Schedule (e.g. 08:45 - 17:00 WIB)
+   */
+  isWithinOnlineSchedule() {
+    const config = this.getConfig().smart_online || {};
+    if (config.enabled === false || config.mode === 'disabled') return false;
+    if (config.mode === 'always') return true;
+
+    try {
+      const timeHelper = require('../utils/timeHelper');
+      const wib = timeHelper.getWIBTime();
+      const currentMinutes = wib.hour * 60 + wib.minute;
+
+      const [startHour, startMin] = String(config.start_time || '08:45').split(':').map(Number);
+      const [endHour, endMin] = String(config.end_time || '17:00').split(':').map(Number);
+
+      const startMinutes = (startHour || 0) * 60 + (startMin || 0);
+      const endMinutes = (endHour || 0) * 60 + (endMin || 0);
+
+      if (startMinutes <= endMinutes) {
+        return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+      } else {
+        // Cross-midnight schedule (e.g. 21:00 to 05:00)
+        return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Retrieves summary of Smart Online Presence state
+   */
+  getSmartOnlineStatus() {
+    const config = this.getConfig().smart_online || {};
+    const isOnline = this.isWithinOnlineSchedule();
+    const timeHelper = require('../utils/timeHelper');
+    const wib = timeHelper.getWIBTime();
+
+    return {
+      enabled: config.enabled !== false,
+      mode: config.mode || 'schedule',
+      start_time: config.start_time || '08:45',
+      end_time: config.end_time || '17:00',
+      currentTimeWIB: wib.timeStr,
+      isCurrentlyOnline: isOnline
+    };
   }
 
   // =========================================================================
@@ -139,34 +197,35 @@ class ProtectionService extends EventEmitter {
     if (config.enabled === false || !jid) return;
 
     // Deteksi tipe jawaban:
-    // Jawaban panjang (>160 karakter, misal penjelasan produk/AI/katalog) -> 75 detik (1m 15s)
-    // Jawaban normal (<=160 karakter, misal sapaan/konfirmasi/menu singkat) -> 60 detik (1m)
     const longThreshold = config.long_threshold || config.long_text_threshold || 160;
     const isLongAnswer = (textLength || 0) > longThreshold;
-    const normalDelay = config.normal_delay_ms || config.min_delay_ms || 60000;
-    const longDelay = config.long_delay_ms || config.max_delay_ms || 75000;
+    const normalDelay = config.normal_delay_ms ?? config.min_delay_ms ?? 2500;
+    const longDelay = config.long_delay_ms ?? config.max_delay_ms ?? 4000;
     const baseTarget = isLongAnswer ? longDelay : normalDelay;
 
-    // Variasi acak halus (Jitter) ±1.5 detik agar tidak terdeteksi sebagai robot statis oleh Meta
-    const jitterMax = config.jitter_ms !== undefined ? config.jitter_ms : 3000;
+    // Variasi acak halus (Jitter) agar tidak terdeteksi sebagai robot statis
+    const jitterMax = config.jitter_ms !== undefined ? config.jitter_ms : 500;
     const randomizedJitter = jitterMax > 0
       ? (Math.floor(Math.random() * (jitterMax + 1)) - Math.floor(jitterMax / 2))
       : 0;
-    const randomizedDelay = Math.max(30000, baseTarget + randomizedJitter);
+    const randomizedDelay = Math.max(500, baseTarget + randomizedJitter);
 
     const now = Date.now();
-    const startTime = inboundTimestamp || (now - 1500);
+    const startTime = inboundTimestamp || (now - 1000);
     const elapsedSinceInbound = Math.max(0, now - startTime);
 
-    const totalRemainingWait = Math.max(1000, randomizedDelay - elapsedSinceInbound);
+    const totalRemainingWait = Math.max(100, randomizedDelay - elapsedSinceInbound);
 
-    const label = isLongAnswer ? 'Jawaban panjang (1m 15s)' : 'Jawaban normal (1m)';
-    console.log(`[Protection:Cooldown] ⏳ Mengatur jeda respons ke ${jid} [${label}]: Target total ${(randomizedDelay / 1000).toFixed(1)}s. Waktu tunggu tersisa: ${(totalRemainingWait / 1000).toFixed(1)}s`);
+    const label = isLongAnswer ? 'Jawaban panjang' : 'Jawaban normal';
+    console.log(`[Protection:Cooldown] ⏳ Jeda respons ke ${jid} [${label}]: Target ${(randomizedDelay / 1000).toFixed(1)}s, sisa: ${(totalRemainingWait / 1000).toFixed(1)}s`);
 
     // Tahap 1: Waktu membaca pesan (Read Receipt / Centang Biru)
-    const readWait = Math.min(6000, Math.max(2500, Math.floor(totalRemainingWait * 0.08)));
-    if (totalRemainingWait > 6000 && sock && originalMsgKey) {
-      await new Promise(r => setTimeout(r, readWait));
+    let readWait = 0;
+    if (sock && originalMsgKey) {
+      if (totalRemainingWait >= 2000) {
+        readWait = Math.min(1000, Math.max(200, Math.floor(totalRemainingWait * 0.15)));
+        await new Promise(r => setTimeout(r, readWait));
+      }
       try {
         await sock.readMessages([originalMsgKey]);
       } catch (_) {}
@@ -175,15 +234,14 @@ class ProtectionService extends EventEmitter {
     // Tahap 2: Simulasi durasi mengetik alami (Composing presence)
     let typingDuration = 0;
     if (config.typing_simulation !== false && sock) {
+      const remainingForTyping = Math.max(100, totalRemainingWait - readWait);
       typingDuration = isLongAnswer
-        ? Math.min(12000, Math.max(6000, Math.floor(textLength * 20)))
-        : Math.min(6000, Math.max(3000, Math.floor(textLength * 20)));
-      const maxAllowedTyping = Math.max(1000, totalRemainingWait - readWait - 1000);
-      typingDuration = Math.min(typingDuration, maxAllowedTyping);
+        ? Math.min(4000, Math.max(800, Math.floor(remainingForTyping * 0.7)))
+        : Math.min(2500, Math.max(400, Math.floor(remainingForTyping * 0.6)));
     }
 
     // Tahap 3: Waktu hening / membaca & berpikir
-    const thinkingWait = Math.max(300, totalRemainingWait - readWait - typingDuration);
+    const thinkingWait = Math.max(0, totalRemainingWait - readWait - typingDuration);
     if (thinkingWait > 0) {
       await new Promise(r => setTimeout(r, thinkingWait));
     }
@@ -191,9 +249,9 @@ class ProtectionService extends EventEmitter {
     // Tahap 4: Mulai simulasi mengetik alami tepat sebelum pesan terkirim
     if (typingDuration > 0 && sock) {
       try {
-        await sock.sendPresenceUpdate('composing', jid);
+        await sock.sendPresenceUpdate('composing', jid).catch(() => {});
         await new Promise(r => setTimeout(r, typingDuration));
-        await sock.sendPresenceUpdate('paused', jid);
+        await sock.sendPresenceUpdate('paused', jid).catch(() => {});
       } catch (_) {}
     }
 
@@ -208,12 +266,12 @@ class ProtectionService extends EventEmitter {
     if (config.enabled === false || config.typing_simulation === false || !sock || !jid) return;
 
     try {
-      await sock.sendPresenceUpdate('composing', jid).catch(() => {});
+      await sock.sendPresenceUpdate('composing', jid).catch(() => { });
       const baseDelay = Math.min(8000, Math.max(3000, textLength * 20));
       const jitter = Math.floor(Math.random() * 800);
       await new Promise(r => setTimeout(r, baseDelay + jitter));
-      await sock.sendPresenceUpdate('paused', jid).catch(() => {});
-    } catch (e) {}
+      await sock.sendPresenceUpdate('paused', jid).catch(() => { });
+    } catch (e) { }
   }
 
   recordUserReply(jid) {
@@ -820,6 +878,8 @@ class ProtectionService extends EventEmitter {
   // =========================================================================
 
   checkUserFlood(jid) {
+    // Kebijakan: Nomor customer tidak boleh diblokir sama sekali
+    return { isBlocked: false };
     const config = this.getConfig().flood_protection || {};
     if (config.enabled === false || !jid) return { isBlocked: false };
 

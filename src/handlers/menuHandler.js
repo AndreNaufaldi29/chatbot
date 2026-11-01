@@ -14,7 +14,7 @@ class MenuHandler {
       console.error('[MenuHandler] Gagal membaca config.json:', err.message);
       return {
         business: {
-          name: "Sultan Carpet Gallery",
+          name: "Rumah Indah Carpet Gallery",
           owner: "H. Ahmad Fauzi & Hj. Maryam",
           tagline: "Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan",
           phone: "0812-9876-5432",
@@ -29,7 +29,9 @@ class MenuHandler {
 
   saveConfig(newConfig) {
     try {
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(newConfig, null, 2), 'utf8');
+      const current = this.getConfig();
+      const merged = { ...current, ...newConfig };
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2), 'utf8');
       return true;
     } catch (err) {
       console.error('[MenuHandler] Gagal menyimpan config.json:', err.message);
@@ -48,13 +50,30 @@ class MenuHandler {
     const catalog = this.getCatalog();
     if (!catalog || catalog.length === 0) return null;
 
+    const rawLower = String(identifier).toLowerCase();
+
+    // 0. Direct Title Match (prioritizing longer, specific titles like "karpet masjid 3" over "karpet")
+    const sortedByTitle = [...catalog].sort((a, b) => b.title.length - a.title.length);
+    for (const item of sortedByTitle) {
+      const tLower = item.title.toLowerCase();
+      if (clean === tLower || rawLower.includes(tLower)) {
+        return item;
+      }
+    }
+
     // 1. Direct ID, Index, or exact Code match
     const direct = catalog.find((item, idx) => 
       String(item.id).toLowerCase() === clean ||
       String(idx + 1) === clean ||
-      String(item.code || '').toLowerCase() === clean
+      (item.code && item.code.length >= 3 && String(item.code).toLowerCase() === clean)
     );
     if (direct) return direct;
+
+    // Check if this is a general list/catalog inquiry (do not force a single item match)
+    const isListQuery = /\b(list|daftar|katalog|apa saja|ada apa|koleksi|pilihan|semua produk|semuanya|macam)\b/i.test(rawLower);
+    if (isListQuery) {
+      return null;
+    }
 
     // 2. Clean out common prefix/filler words:
     // e.g. "foto no 1", "lihat nomor 2", "katalog 3", "karpet persia", "gambar karpet masjid"
@@ -67,12 +86,11 @@ class MenuHandler {
     const afterPrefix = catalog.find((item, idx) => 
       String(item.id).toLowerCase() === clean ||
       String(idx + 1) === clean ||
-      String(item.code || '').toLowerCase() === clean
+      (item.code && item.code.length >= 3 && String(item.code).toLowerCase() === clean)
     );
     if (afterPrefix) return afterPrefix;
 
     // 3. Keyword / Weighted matching against catalog items
-    const rawLower = String(identifier).toLowerCase();
     let bestItem = null;
     let highestScore = 0;
 
@@ -115,8 +133,8 @@ class MenuHandler {
         score += 15;
       }
 
-      // Check exact code in text
-      if (code && rawLower.includes(code)) {
+      // Check exact code in text (must be at least 3 characters)
+      if (code && code.length >= 3 && rawLower.includes(code)) {
         score += 25;
       }
 
@@ -128,7 +146,7 @@ class MenuHandler {
       }
 
       // Check title significant words (excluding generic words)
-      const stopWords = new Set(['karpet', 'sultan', 'gallery', 'grade', 'koleksi', 'produk', 'mewah', 'dan', 'yang', 'untuk', 'dengan']);
+      const stopWords = new Set(['karpet', 'rumah', 'indah', 'sultan', 'gallery', 'grade', 'koleksi', 'produk', 'mewah', 'dan', 'yang', 'untuk', 'dengan']);
       const titleWords = title.split(/\s+/).filter(w => w.length > 3 && !stopWords.has(w));
       for (const word of titleWords) {
         if (rawLower.includes(word)) {
@@ -208,27 +226,25 @@ Website: ${b.website || '-'}`);
   getWorkingHoursMenu() {
     const config = this.getConfig();
     const s = config.schedule_info || {};
-    const b = config.business;
+    const b = config.business || {};
     const status = timeHelper.getStoreStatus();
 
-    return stripStarsAndEmojis(`JADWAL DAN JAM KERJA OPERASIONAL
-${b.name.toUpperCase()}
+    return stripStarsAndEmojis(`JADWAL DAN JAM OPERASIONAL
+${(b.name || 'RUMAH INDAH CARPET GALLERY').toUpperCase()}
 
-Status Saat Ini: ${status.statusLabel} (Pukul ${status.timeStr}, Hari ${status.dayName})
+Status Saat Ini:
+- Toko Fisik (Showroom): ${status.statusLabel} (Pukul ${status.timeStr}, Hari ${status.dayName})
+- Pelayanan Admin CS: ${status.csStatusLabel}
 
-1. Jam Operasional Showroom:
-${s.store_hours || b.hours}
+1. Jam Operasional Toko (Showroom & Galeri):
+${s.store_hours || 'Senin - Sabtu: 08:30 - 20:00 WIB\nMinggu & Hari Libur: 09:00 - 18:00 WIB'}
+(Waktu kunjungan langsung untuk melihat sampel fisik karpet, memilih motif, dan konsultasi di tempat)
 
-2. Jadwal Layanan Survey & Ukur Lokasi:
-${s.survey_hours || 'Setiap Hari: 08:00 - 21:00 WIB (Gratis Jabodetabek, jadwal fleksibel mengikuti waktu pengurus masjid/konsumen)'}
+2. Jam Pelayanan Admin Customer Service:
+${s.cs_hours || 'Setiap Hari (Senin - Minggu): 08:00 - 21:00 WIB\n(Layanan chat di luar jam admin dibantu otomatis oleh AI Chatbot 24 jam nonstop)'}
+(Waktu aktif tim admin manusia memproses pesanan, penawaran resmi, dan konsultasi teknis via WhatsApp)
 
-3. Jadwal Pemasangan & Obras Karpet:
-${s.installation_hours || 'Tersedia 24 Jam teknisi khusus masjid & kantor (bisa malam hari setelah Isya agar tidak mengganggu ibadah/kerja)'}
-
-4. Jadwal Pengiriman:
-${s.shipping_schedule || 'Jabodetabek: Setiap hari kerja (Armada sendiri)\nLuar Kota/Pulau: Ekspedisi kargo terpercaya'}
-
-Silakan hubungi kami bila ingin membuat janji survey atau kunjungan ke showroom.`);
+Silakan hubungi kami untuk berkonsultasi atau berkunjung ke toko kami.`);
   }
 
   getLocationMenu() {
@@ -300,7 +316,7 @@ ${config.business.name.toUpperCase()}
       text += `Saat ini belum ada promo aktif. Hubungi tim sales kami untuk penawaran khusus.\n`;
     } else {
       promos.forEach((pr, idx) => {
-        text += `${idx + 1}. [${pr.badge || 'PROMO'}] ${pr.title}\n`;
+        text += pr.badge ? `${idx + 1}. [${pr.badge}] ${pr.title}\n` : `${idx + 1}. ${pr.title}\n`;
         text += `   Penawaran: ${pr.discount}\n`;
         text += `   Keterangan: ${pr.desc}\n`;
         text += `   Periode: ${pr.valid_until}\n\n`;
@@ -341,11 +357,11 @@ Alur Penanganan Komplain:
   getBranchesMenu() {
     const branches = this.getBranches();
 
-    let text = `DAFTAR CABANG DAN SHOWROOM SULTAN CARPET\n`;
+    let text = `DAFTAR CABANG DAN SHOWROOM RUMAH INDAH CARPET\n`;
     text += `Kunjungi toko fisik dan galeri karpet kami di kota Anda:\n\n`;
 
     branches.forEach((b, idx) => {
-      text += `${idx + 1}. Sultan Carpet ${b.city} (${b.area || 'Store'})\n`;
+      text += `${idx + 1}. Rumah Indah Carpet ${b.city} (${b.area || 'Store'})\n`;
       text += `   Alamat: ${b.address}\n`;
       text += `   Jam Buka: ${b.hours}\n`;
       text += `   Telepon: ${b.phone}\n\n`;
@@ -458,18 +474,20 @@ Silakan sampaikan jika Anda ingin melihat cabang lain atau membutuhkan jadwal su
     if (categoryIdentifier) {
       const selectedCategory = this.getCategoryByIdOrName(categoryIdentifier);
       if (selectedCategory) {
+        const cName = (selectedCategory.name || '').trim().toLowerCase();
+        const cSlug = (selectedCategory.slug || '').trim().toLowerCase();
         const productsInCategory = catalog.filter(p => {
-          const pCat = (p.category || '').toLowerCase();
-          return pCat.includes(selectedCategory.name.toLowerCase()) || 
-                 pCat.includes(selectedCategory.slug.toLowerCase()) ||
-                 selectedCategory.name.toLowerCase().includes(pCat);
+          const pCat = (p.category || '').trim().toLowerCase();
+          return pCat === cName || pCat === cSlug || (pCat.length > 5 && (cName.includes(pCat) || pCat.includes(cName)));
         });
 
         let text = `KOLEKSI ${selectedCategory.name.toUpperCase()}\n`;
         text += `${selectedCategory.description}\n\n`;
 
         if (productsInCategory.length === 0) {
-          text += `Belum ada produk terdaftar dalam kategori ini.\n\n`;
+          text += `Saat ini belum ada produk terdaftar dalam kategori ini.\n\n`;
+          text += `Ketik KATALOG untuk kembali ke daftar kategori atau pilih kategori lainnya.`;
+          return stripStarsAndEmojis(text);
         } else {
           productsInCategory.forEach((item, idx) => {
             text += `${idx + 1}. ${item.title}\n`;
@@ -485,12 +503,18 @@ Silakan sampaikan jika Anda ingin melihat cabang lain atau membutuhkan jadwal su
     }
 
     // Default: Display Category Options First
-    let text = `KATEGORI KOLEKSI KARPET SULTAN GALLERY\n`;
-    text += `${config.business.tagline}\n\n`;
+    let text = `KATEGORI KOLEKSI RUMAH INDAH CARPET GALLERY\n`;
+    const tagline = config.business?.tagline || config.business?.description || 'Pusat Karpet Masjid Turki, Karpet Ruang Tamu Mewah & Karpet Kantor Elegan';
+    text += `${tagline}\n\n`;
     text += `Silakan pilih kategori karpet yang Anda minati:\n\n`;
 
     categories.forEach((cat, idx) => {
-      const count = catalog.filter(p => (p.category || '').toLowerCase().includes(cat.name.toLowerCase().slice(0, 7))).length;
+      const cName = (cat.name || '').trim().toLowerCase();
+      const cSlug = (cat.slug || '').trim().toLowerCase();
+      const count = catalog.filter(p => {
+        const pCat = (p.category || '').trim().toLowerCase();
+        return pCat === cName || pCat === cSlug || (pCat.length > 5 && (cName.includes(pCat) || pCat.includes(cName)));
+      }).length;
       text += `${idx + 1}. ${cat.name} (${count} Produk)\n`;
       text += `   ${cat.description}\n\n`;
     });
@@ -506,7 +530,7 @@ Silakan sampaikan jika Anda ingin melihat cabang lain atau membutuhkan jadwal su
 
 Produk Pilihan:
 ${product.title}
-Kategori: ${product.category || 'Koleksi Karpet Sultan'}
+Kategori: ${product.category || 'Koleksi Rumah Indah Carpet'}
 Harga: ${product.price}
 Spesifikasi: ${product.subtitle}
 Varian / Ukuran: ${product.footer}
@@ -568,6 +592,35 @@ Silakan informasikan pilihan Anda.`);
     return stripStarsAndEmojis(text);
   }
 
+  getQueueTicketMessage(ticket, senderName = 'Pelanggan') {
+    const config = this.getConfig();
+    const b = config.business || { name: 'Rumah Indah Carpet Gallery' };
+
+    const cleanQueue = String(ticket.queueNumber || ticket.id).replace(/^#+/, '').trim();
+    const qNum = `#${cleanQueue}`;
+
+    const cleanDesc = ticket.description && ticket.description !== '-' 
+      ? ticket.description 
+      : 'Permintaan telah dicatat dalam antrian.';
+
+    const text = `TIKET ANTRIAN LAYANAN PELANGGAN
+${b.name.toUpperCase()}
+
+Nomor Antrian: ${qNum}
+ID Tiket: ${ticket.id}
+Kategori: ${ticket.category || 'Layanan Pelanggan'}
+Nama: ${ticket.name || senderName}
+Kontak: ${ticket.contact || '-'}
+Status: Menunggu Konfirmasi Admin
+
+Rincian:
+"${cleanDesc}"
+
+Chat ini sedang dialihkan ke admin, mohon ditunggu ya Kak.`;
+
+    return stripStarsAndEmojis(text);
+  }
+
   getTicketStatusMessage(ticket) {
     if (!ticket) {
       return stripStarsAndEmojis(`Tiket Tidak Ditemukan
@@ -578,10 +631,13 @@ Silakan periksa kembali nomor tiket Anda atau hubungi kami untuk bantuan lebih l
 
     const createdDate = ticket.createdAt ? new Date(ticket.createdAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-';
     const updatedDate = ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-';
+    const cleanQueue = String(ticket.queueNumber || ticket.id).replace(/^#+/, '').trim();
+    const qNum = `#${cleanQueue}`;
 
     return stripStarsAndEmojis(`STATUS TIKET LAYANAN
 
 ID Tiket: ${ticket.id}
+Nomor Antrian: ${qNum}
 Kategori: ${ticket.category || 'Layanan Umum'}
 Nama Pelapor: ${ticket.name}
 Status Saat Ini: ${ticket.status ? ticket.status.toUpperCase() : 'OPEN'}
@@ -593,7 +649,7 @@ Rincian:
 "${ticket.description}"
 
 Catatan Petugas:
-${ticket.notes || 'Tiket sedang dalam penanganan oleh tim support.'}`);
+${ticket.notes || 'Tiket sedang dalam antrian dan menunggu konfirmasi dari admin.'}`);
   }
 
   getHumanCsPrompt() {

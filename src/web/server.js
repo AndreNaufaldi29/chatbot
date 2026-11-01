@@ -51,6 +51,7 @@ bot.on('human_cs_requested', (data) => broadcastSSE('human_cs_requested', data))
 bot.on('chats_updated', (data) => broadcastSSE('chats_updated', data));
 protectionService.on('human_handoff_started', (data) => broadcastSSE('human_handoff_started', data));
 protectionService.on('human_handoff_ended', (data) => broadcastSSE('human_handoff_ended', data));
+bot.on('presence_status', (data) => broadcastSSE('presence_status', data));
 
 // Server-Sent Events Endpoint
 app.get('/api/events', (req, res) => {
@@ -80,6 +81,42 @@ app.get('/api/events', (req, res) => {
     clearInterval(heartbeat);
     sseClients = sseClients.filter(c => c.id !== clientId);
   });
+});
+
+// Evolution API Real-time Webhook Receiver
+app.post(['/api/webhook/evolution', '/webhook/evolution', '/webhook/whatsapp'], async (req, res) => {
+  try {
+    await bot.handleWebhook(req.body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Evolution API Webhook Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Evolution API Configuration & Status
+app.get('/api/evolution/config', (req, res) => {
+  res.json({
+    serverUrl: bot.serverUrl,
+    instanceName: bot.instanceName,
+    webhookUrl: bot.webhookUrl,
+    hasApiKey: Boolean(bot.apiKey)
+  });
+});
+
+app.post('/api/evolution/config', async (req, res) => {
+  try {
+    const { serverUrl, apiKey, instanceName, webhookUrl } = req.body;
+    if (serverUrl) bot.serverUrl = serverUrl.replace(/\/+$/, '');
+    if (apiKey) bot.apiKey = apiKey;
+    if (instanceName) bot.instanceName = instanceName.trim();
+    if (webhookUrl) bot.webhookUrl = webhookUrl.trim();
+
+    await bot.init();
+    res.json({ success: true, message: 'Konfigurasi Evolution API berhasil diperbarui.', status: bot.getStatus() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // API Status
@@ -179,8 +216,8 @@ app.post('/api/tickets', (req, res) => {
 
 app.patch('/api/tickets/:id', (req, res) => {
   const { id } = req.params;
-  const { status, notes, category, priority } = req.body;
-  const updated = ticketService.updateTicketStatus(id, status, notes, category, priority);
+  const { status, notes, category, priority, description } = req.body;
+  const updated = ticketService.updateTicketStatus(id, status, notes, category, priority, description);
   if (!updated) {
     return res.status(404).json({ error: 'Tiket tidak ditemukan.' });
   }
@@ -205,15 +242,17 @@ app.get('/api/protections', (req, res) => {
   const config = protectionService.getConfig();
   const stats = protectionService.getStats();
   const blockedUsers = typeof protectionService.getBlockedUsersList === 'function' ? protectionService.getBlockedUsersList() : [];
+  const smartOnlineStatus = protectionService.getSmartOnlineStatus();
   res.json({
     success: true,
     config,
     stats,
-    blockedUsers
+    blockedUsers,
+    smartOnlineStatus
   });
 });
 
-app.post('/api/protections/config', (req, res) => {
+app.post('/api/protections/config', async (req, res) => {
   try {
     const newConfig = req.body;
     const config = menuHandler.getConfig();
@@ -233,7 +272,12 @@ app.post('/api/protections/config', (req, res) => {
 
     menuHandler.saveConfig(config);
     broadcastSSE('protections_updated', config.protections);
-    res.json({ success: true, protections: config.protections, message: 'Pengaturan proteksi & anti-spam berhasil disimpan!' });
+    const smartOnlineStatus = protectionService.getSmartOnlineStatus();
+    broadcastSSE('smart_online_updated', smartOnlineStatus);
+    if (bot.syncPresenceNow) {
+      await bot.syncPresenceNow().catch(() => {});
+    }
+    res.json({ success: true, protections: config.protections, smartOnlineStatus, message: 'Pengaturan proteksi & anti-spam berhasil disimpan!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -331,16 +375,19 @@ app.get('/api/db/status', async (req, res) => {
   try {
     const prismaReady = !!(process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL);
     let isConnected = false;
-    let counts = { products: 0, tickets: 0, chats: 0 };
+    let counts = { products: 0, tickets: 0, chats: 0, businessProfile: 0, branches: 0, storeSettings: 0 };
 
     if (prismaReady) {
       try {
-        const [ticketCount, productCount, chatCount] = await Promise.all([
+        const [ticketCount, productCount, chatCount, bpCount, branchCount, settingsResult] = await Promise.all([
           prisma.serviceTicket.count().catch(() => 0),
           prisma.catalogProduct.count().catch(() => 0),
           prisma.chatMessage.count().catch(() => 0),
+          prisma.businessProfile.count().catch(() => 0),
+          prisma.branch.count().catch(() => 0),
+          prisma.$queryRawUnsafe(`SELECT COUNT(*)::int as count FROM store_settings`).then(r => r?.[0]?.count || 0).catch(() => 0)
         ]);
-        counts = { products: productCount, tickets: ticketCount, chats: chatCount };
+        counts = { products: productCount, tickets: ticketCount, chats: chatCount, businessProfile: bpCount, branches: branchCount, storeSettings: settingsResult };
         isConnected = true;
       } catch (e) {
         isConnected = false;
@@ -362,7 +409,8 @@ app.get('/api/db/status', async (req, res) => {
           'Faq',
           'ServiceTicket',
           'ChatMessage',
-          'PhoneMapping'
+          'PhoneMapping',
+          'store_settings'
         ]
       },
       counts
@@ -431,27 +479,70 @@ app.post('/api/db/config', async (req, res) => {
   }
 });
 
-// Bot & Business Configuration
-app.get('/api/config', (req, res) => {
-  res.json(menuHandler.getConfig());
+// Bot & Business Configuration (Informasi Toko Terintegrasi Database)
+app.get('/api/config', async (req, res) => {
+  try {
+    const config = await dbService.loadAllStoreInfo();
+    res.json(config);
+  } catch (err) {
+    res.json(menuHandler.getConfig());
+  }
 });
 
-app.post('/api/config', (req, res) => {
-  const newConfig = req.body;
-  if (!newConfig || (!newConfig.business && !newConfig.faqs && !newConfig.catalog)) {
-    return res.status(400).json({ error: 'Format konfigurasi tidak valid.' });
-  }
-  const saved = menuHandler.saveConfig(newConfig);
-  if (saved) {
+app.post('/api/config', async (req, res) => {
+  try {
+    const newConfig = req.body;
+    if (!newConfig || (!newConfig.business && !newConfig.faqs && !newConfig.catalog && !newConfig.schedule_info && !newConfig.warranty_info && !newConfig.promo_info && !newConfig.complaint_info && !newConfig.location_info && !newConfig.owner_info && !newConfig.branches)) {
+      return res.status(400).json({ error: 'Format konfigurasi tidak valid.' });
+    }
+
+    // Validasi Nomor WhatsApp & Email toko
+    if (newConfig.business) {
+      if (newConfig.business.phone) {
+        newConfig.business.phone = String(newConfig.business.phone).replace(/\D/g, '');
+      }
+      if (newConfig.business.email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const cleanEmail = String(newConfig.business.email).trim();
+        if (!emailRegex.test(cleanEmail)) {
+          return res.status(400).json({ error: 'Format email tidak valid (contoh: info@rumahindahcarpet.co.id)' });
+        }
+        newConfig.business.email = cleanEmail;
+      }
+    }
+    if (newConfig.owner_info) {
+      if (newConfig.owner_info.phone) {
+        newConfig.owner_info.phone = String(newConfig.owner_info.phone).replace(/\D/g, '');
+      }
+      if (newConfig.owner_info.email) {
+        newConfig.owner_info.email = String(newConfig.owner_info.email).trim();
+      }
+    }
+    // 1. Simpan ke database PostgreSQL & mirror ke config.json
+    await dbService.saveAllStoreInfo(newConfig);
+    // 2. Simpan juga ke cache runtime bot
+    menuHandler.saveConfig(newConfig);
+
     if (newConfig.ai) {
       aiService.syncConfig(newConfig.ai);
     }
     if (newConfig.faqs) {
       broadcastSSE('faqs_updated', newConfig.faqs);
     }
-    res.json({ success: true, message: 'Pengaturan berhasil disimpan!' });
-  } else {
-    res.status(500).json({ error: 'Gagal menyimpan pengaturan.' });
+    broadcastSSE('config_updated', newConfig);
+    res.json({ success: true, message: 'Informasi toko berhasil disimpan ke database dan disinkronkan!' });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal menyimpan pengaturan: ' + err.message });
+  }
+});
+
+// Status Database Informasi Toko
+app.get('/api/store-info/status', async (req, res) => {
+  try {
+    const status = await dbService.getStoreInfoDbStatus();
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -567,11 +658,11 @@ app.get('/api/faqs/template', (req, res) => {
     const templateData = [
       {
         'Pertanyaan': 'Apakah karpet masjid bisa dipotong dan diobras langsung di lokasi masjid?',
-        'Jawaban': 'Ya, betul. Tim teknisi Sultan Carpet membawa mesin obras portable langsung ke lokasi masjid Anda sehingga pemotongan dan obras dilakukan presisi mengikuti pilar dan arah shaf kiblat.',
+        'Jawaban': 'Ya, betul. Tim teknisi Rumah Indah Carpet membawa mesin obras portable langsung ke lokasi masjid Anda sehingga pemotongan dan obras dilakukan presisi mengikuti pilar dan arah shaf kiblat.',
         'Kategori': 'Pemasangan & Obras'
       },
       {
-        'Pertanyaan': 'Bagaimana ketentuan garansi karpet di Sultan Carpet Gallery?',
+        'Pertanyaan': 'Bagaimana ketentuan garansi karpet di Rumah Indah Carpet Gallery?',
         'Jawaban': 'Kami memberikan garansi keaslian 100% serat benang import Turki dan garansi kerapian jahitan obras selama 1 tahun. Jika ada sambungan obras lepas, tim kami siap servis gratis.',
         'Kategori': 'Garansi & Keaslian'
       },
@@ -581,7 +672,7 @@ app.get('/api/faqs/template', (req, res) => {
         'Kategori': 'Survey & Sampel'
       },
       {
-        'Pertanyaan': 'Berapa minimal pemesanan karpet custom roll di Sultan Carpet?',
+        'Pertanyaan': 'Berapa minimal pemesanan karpet custom roll di Rumah Indah Carpet?',
         'Jawaban': 'Minimal pemesanan karpet custom roll adalah 1 roll (panjang 6 meter x lebar 1.2 meter). Untuk ukuran ruangan khusus dapat dikonsultasikan langsung bersama CS kami.',
         'Kategori': 'Karpet Masjid & Musholla'
       }
@@ -747,10 +838,13 @@ app.get('/api/faqs/categories', (req, res) => {
     'Komplain & Retur',
     'Umum'
   ];
-  const stored = config.faq_categories || [];
+  if (!config.faq_categories || !Array.isArray(config.faq_categories) || config.faq_categories.length === 0) {
+    config.faq_categories = defaultCats;
+    menuHandler.saveConfig(config);
+  }
   const fromFaqs = (config.faqs || []).map(f => f.category).filter(Boolean);
-  const allUnique = Array.from(new Set([...defaultCats, ...stored, ...fromFaqs]));
-  res.json({ success: true, categories: allUnique, customCategories: stored });
+  const allUnique = Array.from(new Set([...config.faq_categories, ...fromFaqs]));
+  res.json({ success: true, categories: allUnique, customCategories: config.faq_categories });
 });
 
 app.post('/api/faqs/categories', (req, res) => {
@@ -761,7 +855,7 @@ app.post('/api/faqs/categories', (req, res) => {
     }
     const cleanName = name.trim();
     const config = menuHandler.getConfig();
-    if (!config.faq_categories) {
+    if (!config.faq_categories || !Array.isArray(config.faq_categories)) {
       config.faq_categories = [
         'Karpet Masjid & Musholla',
         'Pemasangan & Obras',
@@ -774,12 +868,89 @@ app.post('/api/faqs/categories', (req, res) => {
         'Umum'
       ];
     }
-    if (!config.faq_categories.includes(cleanName)) {
+    if (!config.faq_categories.some(c => c.toLowerCase() === cleanName.toLowerCase())) {
       config.faq_categories.push(cleanName);
     }
     menuHandler.saveConfig(config);
+    if (typeof ragService !== 'undefined' && ragService.buildIndex) {
+      ragService.buildIndex();
+    }
     broadcastSSE('faq_categories_updated', config.faq_categories);
     res.json({ success: true, category: cleanName, categories: config.faq_categories });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/faqs/categories/:oldName', (req, res) => {
+  try {
+    const { oldName } = req.params;
+    const { newName } = req.body;
+    if (!newName || typeof newName !== 'string' || !newName.trim()) {
+      return res.status(400).json({ error: 'Nama kategori baru wajib diisi.' });
+    }
+    const cleanOld = decodeURIComponent(oldName).trim();
+    const cleanNew = newName.trim();
+    const config = menuHandler.getConfig();
+    if (!config.faq_categories || !Array.isArray(config.faq_categories)) {
+      config.faq_categories = [];
+    }
+
+    const idx = config.faq_categories.findIndex(c => c.toLowerCase() === cleanOld.toLowerCase());
+    if (idx !== -1) {
+      config.faq_categories[idx] = cleanNew;
+    } else {
+      config.faq_categories.push(cleanNew);
+    }
+
+    // Update in all FAQs
+    if (Array.isArray(config.faqs)) {
+      config.faqs.forEach(f => {
+        if (f.category && f.category.toLowerCase() === cleanOld.toLowerCase()) {
+          f.category = cleanNew;
+        }
+      });
+    }
+
+    menuHandler.saveConfig(config);
+    if (typeof ragService !== 'undefined' && ragService.buildIndex) {
+      ragService.buildIndex();
+    }
+    broadcastSSE('faq_categories_updated', config.faq_categories);
+    broadcastSSE('faqs_updated', config.faqs);
+    res.json({ success: true, oldName: cleanOld, newName: cleanNew, categories: config.faq_categories, faqs: config.faqs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/faqs/categories/:name', (req, res) => {
+  try {
+    const { name } = req.params;
+    const cleanName = decodeURIComponent(name).trim();
+    const config = menuHandler.getConfig();
+    if (!config.faq_categories || !Array.isArray(config.faq_categories)) {
+      config.faq_categories = [];
+    }
+
+    config.faq_categories = config.faq_categories.filter(c => c.toLowerCase() !== cleanName.toLowerCase());
+
+    // Move any FAQs in this category to "Umum"
+    if (Array.isArray(config.faqs)) {
+      config.faqs.forEach(f => {
+        if (f.category && f.category.toLowerCase() === cleanName.toLowerCase()) {
+          f.category = 'Umum';
+        }
+      });
+    }
+
+    menuHandler.saveConfig(config);
+    if (typeof ragService !== 'undefined' && ragService.buildIndex) {
+      ragService.buildIndex();
+    }
+    broadcastSSE('faq_categories_updated', config.faq_categories);
+    broadcastSSE('faqs_updated', config.faqs);
+    res.json({ success: true, deleted: cleanName, categories: config.faq_categories, faqs: config.faqs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -907,7 +1078,7 @@ app.post('/api/categories', (req, res) => {
       slug: catSlug,
       name: name.trim(),
       icon: icon || '🏷️',
-      description: description ? description.trim() : `Koleksi karpet pilihan ${name.trim()} dari Sultan Carpet Gallery.`
+      description: description ? description.trim() : `Koleksi karpet pilihan ${name.trim()} dari Rumah Indah Carpet Gallery.`
     };
 
     let catalogChanged = false;
@@ -960,7 +1131,7 @@ app.put('/api/categories/:id', (req, res) => {
       slug: catSlug,
       name: name.trim(),
       icon: icon || '🏷️',
-      description: description ? description.trim() : `Koleksi karpet pilihan ${name.trim()} dari Sultan Carpet Gallery.`
+      description: description ? description.trim() : `Koleksi karpet pilihan ${name.trim()} dari Rumah Indah Carpet Gallery.`
     };
 
     let catalogChanged = false;
@@ -1036,9 +1207,60 @@ app.get('/api/catalog', (req, res) => {
   res.json(catalog);
 });
 
+// Helper to process up to 6 catalog images (saving base64 to files)
+function processCatalogImages(productId, imagesInput, singleImage, singleImageBase64) {
+  const publicCatalogDir = path.join(__dirname, '../../public/catalog');
+  const assetsCatalogDir = path.join(__dirname, '../../assets/catalog');
+
+  if (!fs.existsSync(publicCatalogDir)) fs.mkdirSync(publicCatalogDir, { recursive: true });
+  if (!fs.existsSync(assetsCatalogDir)) fs.mkdirSync(assetsCatalogDir, { recursive: true });
+
+  let rawList = [];
+  if (Array.isArray(imagesInput) && imagesInput.length > 0) {
+    rawList = imagesInput.slice(0, 6);
+  } else if (singleImageBase64 && typeof singleImageBase64 === 'string') {
+    rawList = [singleImageBase64];
+  } else if (singleImage && typeof singleImage === 'string') {
+    rawList = [singleImage];
+  }
+
+  const processedImages = [];
+  for (let idx = 0; idx < rawList.length; idx++) {
+    const item = rawList[idx];
+    if (!item || typeof item !== 'string') continue;
+
+    if (item.startsWith('data:')) {
+      const matches = item.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+        const ext = mimeType.split('/')[1] === 'jpeg' ? 'jpg' : (mimeType.split('/')[1] || 'png');
+        const fileName = `product-${productId}-${idx + 1}-${Date.now()}.${ext}`;
+
+        const buffer = Buffer.from(base64Data, 'base64');
+        fs.writeFileSync(path.join(publicCatalogDir, fileName), buffer);
+        fs.writeFileSync(path.join(assetsCatalogDir, fileName), buffer);
+
+        processedImages.push(`catalog/${fileName}`);
+      }
+    } else {
+      processedImages.push(item);
+    }
+  }
+
+  if (processedImages.length === 0) {
+    processedImages.push('catalog/karpet-masjid-turki.jpg');
+  }
+
+  return {
+    image: processedImages[0],
+    images: processedImages
+  };
+}
+
 app.post('/api/catalog', (req, res) => {
   try {
-    const { title, price, subtitle, footer, code, url, image, imageBase64, category } = req.body;
+    const { title, price, subtitle, footer, code, url, image, imageBase64, category, images } = req.body;
     if (!title || !price) {
       return res.status(400).json({ error: 'Nama produk (title) dan harga (price) wajib diisi.' });
     }
@@ -1054,46 +1276,23 @@ app.post('/api/catalog', (req, res) => {
       .filter(n => !isNaN(n));
     const nextId = numericIds.length > 0 ? String(Math.max(...numericIds) + 1) : "1";
 
-    let finalImagePath = image || 'catalog/karpet-masjid-turki.jpg';
-
-    // Handle base64 image upload if user uploaded a file
-    if (imageBase64 && typeof imageBase64 === 'string') {
-      const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        const mimeType = matches[1];
-        const base64Data = matches[2];
-        const ext = mimeType.split('/')[1] === 'jpeg' ? 'jpg' : (mimeType.split('/')[1] || 'png');
-        const fileName = `product-${nextId}-${Date.now()}.${ext}`;
-
-        const publicCatalogDir = path.join(__dirname, '../../public/catalog');
-        const assetsCatalogDir = path.join(__dirname, '../../assets/catalog');
-
-        if (!fs.existsSync(publicCatalogDir)) {
-          fs.mkdirSync(publicCatalogDir, { recursive: true });
-        }
-        if (!fs.existsSync(assetsCatalogDir)) {
-          fs.mkdirSync(assetsCatalogDir, { recursive: true });
-        }
-
-        const buffer = Buffer.from(base64Data, 'base64');
-        fs.writeFileSync(path.join(publicCatalogDir, fileName), buffer);
-        fs.writeFileSync(path.join(assetsCatalogDir, fileName), buffer);
-
-        finalImagePath = `catalog/${fileName}`;
-      }
-    }
+    const { image: finalImagePath, images: finalImages } = processCatalogImages(nextId, images, image, imageBase64);
 
     const newProduct = {
       id: nextId,
       category: (category || 'Karpet Masjid & Musholla').trim(),
       code: (code || title.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase()).slice(0, 25),
       title: title.trim(),
-      subtitle: subtitle ? subtitle.trim() : 'Karpet mutu tinggi berkualitas prima dari Sultan Carpet Gallery.',
+      subtitle: subtitle ? subtitle.trim() : 'Karpet mutu tinggi berkualitas prima dari Rumah Indah Carpet Gallery.',
       footer: footer ? footer.trim() : 'Tersedia berbagai pilihan ukuran dan warna eksklusif.',
-      price: price.trim().startsWith('Rp') ? price.trim() : `Rp ${price.trim()}`,
+      price: (() => {
+        const digits = String(price || '').replace(/\D/g, '');
+        return digits ? `Rp ${Number(digits).toLocaleString('id-ID')}` : (price.trim().startsWith('Rp') ? price.trim() : `Rp ${price.trim()}`);
+      })(),
       buttonText: 'Lihat Koleksi ›',
-      url: url ? url.trim() : `https://sultancarpet.co.id/products/${nextId}`,
-      image: finalImagePath
+      url: url ? url.trim() : `https://rumahindahcarpet.co.id/products/${nextId}`,
+      image: finalImagePath,
+      images: finalImages
     };
 
     config.catalog.push(newProduct);
@@ -1101,6 +1300,7 @@ app.post('/api/catalog', (req, res) => {
     if (!saved) {
       return res.status(500).json({ error: 'Gagal menyimpan produk baru ke database.' });
     }
+    dbService.saveAllStoreInfo(config).catch(() => {});
 
     broadcastSSE('catalog_updated', config.catalog);
     res.json({ success: true, product: newProduct, catalog: config.catalog });
@@ -1113,7 +1313,7 @@ app.post('/api/catalog', (req, res) => {
 app.put('/api/catalog/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { title, price, subtitle, footer, code, url, image, imageBase64, category } = req.body;
+    const { title, price, subtitle, footer, code, url, image, imageBase64, category, images } = req.body;
 
     const config = menuHandler.getConfig();
     if (!config.catalog) {
@@ -1125,48 +1325,32 @@ app.put('/api/catalog/:id', (req, res) => {
       return res.status(404).json({ error: 'Produk tidak ditemukan.' });
     }
 
-    let finalImagePath = image || config.catalog[index].image;
-
-    // Handle base64 image update
-    if (imageBase64 && typeof imageBase64 === 'string') {
-      const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        const mimeType = matches[1];
-        const base64Data = matches[2];
-        const ext = mimeType.split('/')[1] === 'jpeg' ? 'jpg' : (mimeType.split('/')[1] || 'png');
-        const fileName = `product-${id}-${Date.now()}.${ext}`;
-
-        const publicCatalogDir = path.join(__dirname, '../../public/catalog');
-        const assetsCatalogDir = path.join(__dirname, '../../assets/catalog');
-
-        if (!fs.existsSync(publicCatalogDir)) fs.mkdirSync(publicCatalogDir, { recursive: true });
-        if (!fs.existsSync(assetsCatalogDir)) fs.mkdirSync(assetsCatalogDir, { recursive: true });
-
-        const buffer = Buffer.from(base64Data, 'base64');
-        fs.writeFileSync(path.join(publicCatalogDir, fileName), buffer);
-        fs.writeFileSync(path.join(assetsCatalogDir, fileName), buffer);
-
-        finalImagePath = `catalog/${fileName}`;
-      }
-    }
-
     const existing = config.catalog[index];
+    const existingImages = existing.images || (existing.image ? [existing.image] : []);
+    const imagesToProcess = images !== undefined ? images : (imageBase64 ? [imageBase64] : existingImages);
+    const { image: finalImagePath, images: finalImages } = processCatalogImages(id, imagesToProcess, image || existing.image, imageBase64);
+
     config.catalog[index] = {
       ...existing,
       category: category !== undefined ? category.trim() : (existing.category || 'Karpet Masjid & Musholla'),
       title: title !== undefined ? title.trim() : existing.title,
-      price: price !== undefined ? (price.trim().startsWith('Rp') ? price.trim() : `Rp ${price.trim()}`) : existing.price,
+      price: price !== undefined ? (() => {
+        const digits = String(price || '').replace(/\D/g, '');
+        return digits ? `Rp ${Number(digits).toLocaleString('id-ID')}` : (price.trim().startsWith('Rp') ? price.trim() : `Rp ${price.trim()}`);
+      })() : existing.price,
       subtitle: subtitle !== undefined ? subtitle.trim() : existing.subtitle,
       footer: footer !== undefined ? footer.trim() : existing.footer,
       code: code !== undefined ? code.trim() : existing.code,
       url: url !== undefined ? url.trim() : existing.url,
-      image: finalImagePath
+      image: finalImagePath,
+      images: finalImages
     };
 
     const saved = menuHandler.saveConfig(config);
     if (!saved) {
       return res.status(500).json({ error: 'Gagal memperbarui produk.' });
     }
+    dbService.saveAllStoreInfo(config).catch(() => {});
 
     broadcastSSE('catalog_updated', config.catalog);
     res.json({ success: true, product: config.catalog[index], catalog: config.catalog });
@@ -1195,6 +1379,7 @@ app.delete('/api/catalog/:id', (req, res) => {
     if (!saved) {
       return res.status(500).json({ error: 'Gagal menghapus produk.' });
     }
+    dbService.saveAllStoreInfo(config).catch(() => {});
 
     broadcastSSE('catalog_updated', config.catalog);
     res.json({ success: true, catalog: config.catalog });
@@ -1213,10 +1398,25 @@ setInterval(() => {
   }
 }, 30000);
 
-// Send Custom WhatsApp Message (Supports direct web reply to JID / LID, phone, and optional images)
+// Send Custom WhatsApp Message (Supports direct web reply, phone, and optional images)
 app.post('/api/send', async (req, res) => {
   const { jid, phone, message, senderName, clientMessageId, image, imageBase64, imagePath } = req.body;
-  const target = jid || phone;
+
+  // Prioritaskan nomor HP asli dan hindari LID sepenuhnya (Anti-LID)
+  let target = null;
+  if (phone && phoneService.isRealPhone(phone)) {
+    target = phoneService.cleanPhoneNumber(phone);
+  } else if (jid && (jid.endsWith('@lid') || phoneService.isLid(jid))) {
+    const mapped = phoneService.getPhone(jid);
+    if (mapped && phoneService.isRealPhone(mapped)) {
+      target = mapped;
+    } else {
+      target = jid;
+    }
+  } else {
+    target = jid || phone;
+  }
+
   if (!target || (!message && !image && !imageBase64)) {
     return res.status(400).json({ error: 'Tujuan pengiriman (JID atau nomor telepon) dan pesan/gambar wajib diisi.' });
   }
@@ -1236,7 +1436,7 @@ app.post('/api/send', async (req, res) => {
       target,
       message,
       senderName || 'Admin (Balasan Web)',
-      phone,
+      phone || target,
       clientMessageId,
       { image, imageBase64, imagePath }
     );

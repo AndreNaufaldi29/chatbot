@@ -19,32 +19,17 @@
     "requestedAt": 0,
     "reason": "CS requested"
   },
-  "92011503861900@lid": {
+  "6282333893488@s.whatsapp.net": {
     "active": false,
-    "requestedAt": 0,
-    "reason": "CS requested"
-  },
-  "92011503861900": {
-    "active": false,
-    "requestedAt": 0,
-    "reason": "CS requested"
+    "requestedAt": 1793437532742,
+    "reason": "Balasan manual via Dashboard Admin"
   },
   "6282333893488": {
     "active": false,
-    "requestedAt": 0,
-    "reason": "CS requested"
+    "requestedAt": 1793437532742,
+    "reason": "Balasan manual via Dashboard Admin"
   },
-  "6282333893488@s.whatsapp.net": {
-    "active": false,
-    "requestedAt": 0,
-    "reason": "CS requested"
-  },
-  "16415549591602@lid": {
-    "active": false,
-    "requestedAt": 0,
-    "reason": "CS requested"
-  },
-  "16415549591602": {
+  "6283815445988@s.whatsapp.net": {
     "active": false,
     "requestedAt": 0,
     "reason": "CS requested"
@@ -54,9 +39,34 @@
     "requestedAt": 0,
     "reason": "CS requested"
   },
-  "6283815445988@s.whatsapp.net": {
+  "6281230294589@s.whatsapp.net": {
     "active": false,
-    "requestedAt": 0,
-    "reason": "CS requested"
+    "requestedAt": 1792854140085,
+    "reason": "Tiket TKT-5809 (Pemesanan Produk) dibuat - Hands-off menunggu konfirmasi admin"
+  },
+  "6281230294589": {
+    "active": false,
+    "requestedAt": 1792854140085,
+    "reason": "Tiket TKT-5809 (Pemesanan Produk) dibuat - Hands-off menunggu konfirmasi admin"
+  },
+  "6281283881168@s.whatsapp.net": {
+    "active": false,
+    "requestedAt": 1793518576547,
+    "reason": "Tiket TKT-5719 (Pemesanan Produk) dibuat - Hands-off menunggu konfirmasi admin"
+  },
+  "6281283881168": {
+    "active": false,
+    "requestedAt": 1793518576547,
+    "reason": "Tiket TKT-5719 (Pemesanan Produk) dibuat - Hands-off menunggu konfirmasi admin"
+  },
+  "6283832199799@s.whatsapp.net": {
+    "active": false,
+    "requestedAt": 1793520113545,
+    "reason": "Tiket TKT-2083 (Pemesanan Produk) dibuat - Hands-off menunggu konfirmasi admin"
+  },
+  "6283832199799": {
+    "active": false,
+    "requestedAt": 1793520113545,
+    "reason": "Tiket TKT-2083 (Pemesanan Produk) dibuat - Hands-off menunggu konfirmasi admin"
   }
 }

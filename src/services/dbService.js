@@ -117,7 +117,7 @@ class DbService {
     return true;
   }
 
-  async updateTicketStatus(id, status, notes = null, category = null, priority = null) {
+  async updateTicketStatus(id, status, notes = null, category = null, priority = null, description = null) {
     const isReady = await this.checkPrisma();
     if (isReady) {
       try {
@@ -126,6 +126,7 @@ class DbService {
         if (notes !== null) data.notes = notes;
         if (category) data.category = category;
         if (priority) data.priority = priority;
+        if (description !== null && description !== undefined) data.description = description;
 
         const updated = await this.prisma.serviceTicket.update({
           where: { id },
@@ -295,7 +296,7 @@ class DbService {
             direction: msg.direction || 'in',
             text: msg.text || '',
             mediaType: msg.mediaType || 'text',
-            image: msg.image || null,
+            image: msg.image || msg.video || msg.audio || msg.mediaUrl || null,
             isAi: !!msg.isAi,
             createdAt: msg.timestamp ? new Date(msg.timestamp) : new Date()
           }
@@ -339,28 +340,39 @@ class DbService {
     }
   }
 
-  // ================= BUSINESS PROFILE =================
-  async getBusinessProfile() {
+  // ================= INFORMASI TOKO & STORE DATABASE =================
+  async ensureStoreTables() {
+    const isReady = await this.checkPrisma();
+    if (!isReady) return false;
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS store_settings (
+          id VARCHAR(100) PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      return true;
+    } catch (e) {
+      console.warn('[DbService] Gagal memastikan tabel store_settings:', e.message);
+      return false;
+    }
+  }
+
+  async getStoreSetting(key) {
     const isReady = await this.checkPrisma();
     if (isReady) {
       try {
-        const profile = await this.prisma.businessProfile.findFirst({
-          orderBy: { id: 'asc' }
-        });
-        if (profile) {
-          return {
-            name: profile.name,
-            tagline: profile.tagline,
-            phone: profile.phone,
-            email: profile.email,
-            website: profile.website,
-            address: profile.address,
-            maps_url: profile.mapsUrl,
-            hours: profile.hours
-          };
+        await this.ensureStoreTables();
+        const rows = await this.prisma.$queryRawUnsafe(
+          `SELECT value FROM store_settings WHERE id = $1 LIMIT 1`,
+          key
+        );
+        if (rows && rows.length > 0 && rows[0].value) {
+          return JSON.parse(rows[0].value);
         }
       } catch (e) {
-        this.isPrismaConnected = false;
+        console.warn(`[DbService] Gagal membaca store_setting ${key}:`, e.message);
       }
     }
 
@@ -368,10 +380,283 @@ class DbService {
       const configFile = path.join(__dirname, '../../config/config.json');
       if (fs.existsSync(configFile)) {
         const conf = JSON.parse(fs.readFileSync(configFile, 'utf8') || '{}');
-        return conf.business || {};
+        return conf[key] || null;
       }
     } catch (e) {}
-    return {};
+    return null;
+  }
+
+  async saveStoreSetting(key, data) {
+    const isReady = await this.checkPrisma();
+    const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
+
+    if (isReady) {
+      try {
+        await this.ensureStoreTables();
+        await this.prisma.$executeRawUnsafe(
+          `INSERT INTO store_settings (id, value, updated_at)
+           VALUES ($1, $2, CURRENT_TIMESTAMP)
+           ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP`,
+          key,
+          jsonStr
+        );
+      } catch (e) {
+        console.warn(`[DbService] Gagal menyimpan store_setting ${key} ke DB:`, e.message);
+      }
+    }
+
+    // Mirror to config.json
+    try {
+      const configFile = path.join(__dirname, '../../config/config.json');
+      let conf = {};
+      if (fs.existsSync(configFile)) {
+        conf = JSON.parse(fs.readFileSync(configFile, 'utf8') || '{}');
+      }
+      conf[key] = typeof data === 'string' ? JSON.parse(data) : data;
+      fs.writeFileSync(configFile, JSON.stringify(conf, null, 2), 'utf8');
+    } catch (e) {}
+
+    return true;
+  }
+
+  async saveAllStoreInfo(fullConfig) {
+    if (!fullConfig || typeof fullConfig !== 'object') return false;
+
+    const storeKeys = [
+      'business',
+      'owner_info',
+      'schedule_info',
+      'location_info',
+      'branches',
+      'warranty_info',
+      'promo_info',
+      'complaint_info',
+      'carpet_categories',
+      'catalog'
+    ];
+
+    const isReady = await this.checkPrisma();
+    if (isReady) {
+      try {
+        await this.ensureStoreTables();
+
+        // 1. Simpan ke tabel store_settings di PostgreSQL
+        for (const key of storeKeys) {
+          if (fullConfig[key] !== undefined) {
+            await this.prisma.$executeRawUnsafe(
+              `INSERT INTO store_settings (id, value, updated_at)
+               VALUES ($1, $2, CURRENT_TIMESTAMP)
+               ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP`,
+              key,
+              JSON.stringify(fullConfig[key])
+            );
+          }
+        }
+
+        // 2. Sinkronkan ke tabel business_profile bila ada perubahan profil toko
+        if (fullConfig.business) {
+          const b = fullConfig.business;
+          const first = await this.prisma.businessProfile.findFirst({ orderBy: { id: 'asc' } }).catch(() => null);
+          if (first) {
+            await this.prisma.businessProfile.update({
+              where: { id: first.id },
+              data: {
+                name: b.name || 'Rumah Indah Carpet Gallery',
+                tagline: b.tagline || '',
+                phone: b.phone || '',
+                email: b.email || '',
+                website: b.website || '',
+                address: b.address || '',
+                mapsUrl: b.maps_url || '',
+                hours: b.hours || '',
+                updatedAt: new Date()
+              }
+            }).catch(() => {});
+          } else {
+            await this.prisma.businessProfile.create({
+              data: {
+                name: b.name || 'Rumah Indah Carpet Gallery',
+                tagline: b.tagline || '',
+                phone: b.phone || '',
+                email: b.email || '',
+                website: b.website || '',
+                address: b.address || '',
+                mapsUrl: b.maps_url || '',
+                hours: b.hours || ''
+              }
+            }).catch(() => {});
+          }
+        }
+
+        // 3. Sinkronkan ke tabel branches bila ada data cabang
+        if (Array.isArray(fullConfig.branches) && fullConfig.branches.length > 0) {
+          try {
+            await this.prisma.branch.deleteMany({}).catch(() => {});
+            for (const br of fullConfig.branches) {
+              await this.prisma.branch.create({
+                data: {
+                  name: br.name || 'Cabang Galeri',
+                  city: br.city || '',
+                  area: br.area || '',
+                  address: br.address || '',
+                  hours: br.hours || '',
+                  phone: br.phone || '',
+                  mapsUrl: br.maps_url || ''
+                }
+              }).catch(() => {});
+            }
+          } catch (e) {}
+        }
+
+        // 4. Sinkronkan ke tabel catalog_products bila ada data katalog produk
+        if (Array.isArray(fullConfig.catalog) && fullConfig.catalog.length > 0) {
+          try {
+            for (const prod of fullConfig.catalog) {
+              const code = prod.code || prod.title.replace(/\s+/g, '-').toUpperCase();
+              await this.prisma.catalogProduct.upsert({
+                where: { code },
+                update: {
+                  title: prod.title,
+                  subtitle: prod.subtitle || '',
+                  footer: prod.footer || '',
+                  price: prod.price || '',
+                  buttonText: prod.buttonText || 'Lihat Koleksi ›',
+                  url: prod.url || '',
+                  image: prod.image || ''
+                },
+                create: {
+                  code,
+                  title: prod.title,
+                  subtitle: prod.subtitle || '',
+                  footer: prod.footer || '',
+                  price: prod.price || '',
+                  buttonText: prod.buttonText || 'Lihat Koleksi ›',
+                  url: prod.url || '',
+                  image: prod.image || ''
+                }
+              }).catch(() => {});
+            }
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.warn('[DbService] Error sync store info to DB:', err.message);
+      }
+    }
+
+    // Selalu simpan ke config.json sebagai cadangan lokal (mirroring)
+    try {
+      const configFile = path.join(__dirname, '../../config/config.json');
+      let conf = {};
+      if (fs.existsSync(configFile)) {
+        conf = JSON.parse(fs.readFileSync(configFile, 'utf8') || '{}');
+      }
+      const merged = { ...conf, ...fullConfig };
+      fs.writeFileSync(configFile, JSON.stringify(merged, null, 2), 'utf8');
+    } catch (e) {}
+
+    return true;
+  }
+
+  async loadAllStoreInfo() {
+    const isReady = await this.checkPrisma();
+    let dbConfig = {};
+
+    if (isReady) {
+      try {
+        await this.ensureStoreTables();
+        const rows = await this.prisma.$queryRawUnsafe(`SELECT id, value FROM store_settings`);
+        if (rows && Array.isArray(rows) && rows.length > 0) {
+          for (const row of rows) {
+            try {
+              dbConfig[row.id] = JSON.parse(row.value);
+            } catch (e) {}
+          }
+        }
+      } catch (err) {
+        console.warn('[DbService] Gagal membaca store_settings dari DB:', err.message);
+      }
+    }
+
+    let fileConfig = {};
+    try {
+      const configFile = path.join(__dirname, '../../config/config.json');
+      if (fs.existsSync(configFile)) {
+        fileConfig = JSON.parse(fs.readFileSync(configFile, 'utf8') || '{}');
+      }
+    } catch (e) {}
+
+    return {
+      ...fileConfig,
+      ...dbConfig
+    };
+  }
+
+  async syncStoreInfoToDb() {
+    const isReady = await this.checkPrisma();
+    if (!isReady) return false;
+
+    try {
+      await this.ensureStoreTables();
+      const countResult = await this.prisma.$queryRawUnsafe(`SELECT COUNT(*)::int as count FROM store_settings`);
+      const count = countResult?.[0]?.count || 0;
+
+      if (count === 0) {
+        console.log('[DbService] Melakukan inisialisasi awal database Informasi Toko ke PostgreSQL...');
+        const configFile = path.join(__dirname, '../../config/config.json');
+        if (fs.existsSync(configFile)) {
+          const conf = JSON.parse(fs.readFileSync(configFile, 'utf8') || '{}');
+          await this.saveAllStoreInfo(conf);
+          console.log('[DbService] Seluruh data Informasi Toko berhasil di-migrasi ke PostgreSQL!');
+        }
+      }
+      return true;
+    } catch (err) {
+      console.warn('[DbService] syncStoreInfoToDb error:', err.message);
+      return false;
+    }
+  }
+
+  async getStoreInfoDbStatus() {
+    const isConnected = await this.checkPrisma();
+    let tablesStatus = {
+      store_settings: 0,
+      business_profile: 0,
+      branches: 0,
+      catalog_products: 0
+    };
+
+    if (isConnected) {
+      try {
+        await this.ensureStoreTables();
+        const [settingsCount, bpCount, branchCount, prodCount] = await Promise.all([
+          this.prisma.$queryRawUnsafe(`SELECT COUNT(*)::int as count FROM store_settings`).then(r => r?.[0]?.count || 0).catch(() => 0),
+          this.prisma.businessProfile.count().catch(() => 0),
+          this.prisma.branch.count().catch(() => 0),
+          this.prisma.catalogProduct.count().catch(() => 0)
+        ]);
+        tablesStatus = {
+          store_settings: settingsCount,
+          business_profile: bpCount,
+          branches: branchCount,
+          catalog_products: prodCount
+        };
+      } catch (e) {}
+    }
+
+    return {
+      connected: isConnected,
+      databaseType: 'PostgreSQL (Prisma Cloud Database)',
+      tables: tablesStatus,
+      sectionsSavedInDb: [
+        'Profil Toko (business & owner_info)',
+        'Katalog Produk (catalog & carpet_categories)',
+        'Jadwal & Jam Kerja (schedule_info)',
+        'Lokasi & Alamat (location_info & branches)',
+        'Ketentuan Garansi (warranty_info)',
+        'Promo & Diskon (promo_info)',
+        'Pusat Komplain & CS (complaint_info)'
+      ]
+    };
   }
 }
 

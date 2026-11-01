@@ -1,70 +1,58 @@
 {
-  "92011503861900@lid": {
-    "name": "Andre N",
-    "updatedAt": "2026-10-11T15:45:48.000Z",
-    "jid": "92011503861900@lid",
-    "unreadCount": 1
-  },
-  "104307810656307@lid": {
-    "name": "Nadia",
-    "updatedAt": "2026-10-10T03:10:58.000Z",
-    "jid": "104307810656307@lid"
-  },
-  "133939108835460@lid": {
-    "name": null,
-    "updatedAt": "2026-10-10T03:28:41.000Z",
-    "jid": "133939108835460@lid"
-  },
-  "262126199406761@lid": {
-    "name": "Zaenal Arfan",
-    "updatedAt": "2026-10-10T05:22:54.000Z",
-    "jid": "262126199406761@lid"
-  },
-  "80805833494690@lid": {
-    "name": null,
-    "updatedAt": "2026-10-10T05:08:08.000Z",
-    "jid": "80805833494690@lid"
-  },
-  "116196514992366@lid": {
-    "name": "Anda",
-    "updatedAt": "2026-10-11T15:45:39.000Z",
-    "jid": "116196514992366@lid",
-    "unreadCount": 1
-  },
-  "6289696307402@s.whatsapp.net": {
-    "name": "Nopal",
-    "updatedAt": "2026-10-11T13:01:02.862Z",
-    "jid": "6289696307402@s.whatsapp.net"
+  "6282333893488@s.whatsapp.net": {
+    "name": "Yourself (Ritsu)",
+    "updatedAt": "2026-10-11T13:01:04.329Z",
+    "jid": "6282333893488@s.whatsapp.net"
   },
   "6281358383443@s.whatsapp.net": {
     "name": "Nadia",
     "updatedAt": "2026-10-11T13:01:03.785Z",
     "jid": "6281358383443@s.whatsapp.net"
   },
+  "628985356070@s.whatsapp.net": {
+    "name": null,
+    "updatedAt": "2026-10-10T03:28:41.000Z",
+    "jid": "628985356070@s.whatsapp.net"
+  },
   "6289697048388@s.whatsapp.net": {
     "name": "Mas Zaenal Arfan",
     "updatedAt": "2026-10-11T13:01:04.086Z",
     "jid": "6289697048388@s.whatsapp.net"
   },
-  "6282333893488@s.whatsapp.net": {
-    "name": "Yourself (Ritsu)",
-    "updatedAt": "2026-10-11T13:01:04.329Z",
-    "jid": "6282333893488@s.whatsapp.net"
+  "6285331964644@s.whatsapp.net": {
+    "name": null,
+    "updatedAt": "2026-10-10T05:08:08.000Z",
+    "jid": "6285331964644@s.whatsapp.net"
   },
-  "16415549591602@lid": {
+  "6289696307402@s.whatsapp.net": {
+    "name": "Nopal",
+    "updatedAt": "2026-10-11T13:01:02.862Z",
+    "jid": "6289696307402@s.whatsapp.net"
+  },
+  "6283815445988@s.whatsapp.net": {
     "name": "Jade",
     "unreadCount": 1,
     "updatedAt": "2026-10-11T15:45:57.000Z",
-    "jid": "16415549591602@lid"
+    "jid": "6283815445988@s.whatsapp.net"
   },
-  "66829707931889@lid": {
+  "6282233324644@s.whatsapp.net": {
     "name": null,
     "updatedAt": "2026-10-11T15:39:11.000Z",
-    "jid": "66829707931889@lid"
+    "jid": "6282233324644@s.whatsapp.net"
   },
-  "87866642284692@lid": {
+  "6285659751235@s.whatsapp.net": {
     "name": "陸霞",
     "updatedAt": "2026-10-11T15:46:08.000Z",
-    "jid": "87866642284692@lid"
+    "jid": "6285659751235@s.whatsapp.net"
+  },
+  "6285806645345@s.whatsapp.net": {
+    "name": "Dq",
+    "updatedAt": "2026-10-24T15:02:18.000Z",
+    "jid": "6285806645345@s.whatsapp.net"
+  },
+  "6281230294589@s.whatsapp.net": {
+    "name": "Andro",
+    "updatedAt": "2026-10-24T15:02:19.000Z",
+    "jid": "6281230294589@s.whatsapp.net"
   }
 }

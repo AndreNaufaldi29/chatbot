@@ -1,123 +1,48 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
+@source "../**/*.{js,jsx,ts,tsx}";
 
 @theme {
-  --color-brand-sidebar: #233858;
-  --color-brand-navbar: #233858;
-  --color-brand-bg: #F5F6F8;
-  --color-brand-card: #FFFFFF;
-  --color-brand-btn: #5A7194;
-  --color-brand-border: #A6AFC1;
-  --color-brand-highlight: #E8E6DB;
-  --color-brand-text: #233858;
-  --color-brand-text-sec: #5A7194;
-
-  /* STATUS SISTEM EXACT PALETTES */
-  --color-status-success: #2F855A;  /* Terhubung / berhasil */
-  --color-status-process: #D69E2E;  /* Menunggu / proses */
-  --color-status-danger: #C53030;   /* Gagal / error */
-  --color-status-info: #3182CE;     /* Informasi */
-  --color-status-disabled: #8A94A6; /* Nonaktif */
-
-  /* Primary Action Accents / Buttons -> Slate Blue #5A7194 */
-  --color-emerald-50: #F4F6F9;
-  --color-emerald-100: #E6EAF0;
-  --color-emerald-200: #CCD5E1;
-  --color-emerald-300: #A3B5CC;
-  --color-emerald-400: #7A93B3;
-  --color-emerald-500: #5A7194;
-  --color-emerald-600: #485E7E;
-  --color-emerald-700: #384A64;
-  --color-emerald-800: #29374B;
-  --color-emerald-900: #1B2533;
-  --color-emerald-950: #101720;
-
-  --color-teal-50: #F4F6F9;
-  --color-teal-100: #E6EAF0;
-  --color-teal-200: #CCD5E1;
-  --color-teal-300: #A3B5CC;
-  --color-teal-400: #7A93B3;
-  --color-teal-500: #5A7194;
-  --color-teal-600: #485E7E;
-  --color-teal-700: #384A64;
-
-  /* Status Terhubung / Berhasil: #2F855A */
-  --color-green-50: #F0FDF4;
-  --color-green-100: #DCFCE7;
-  --color-green-200: #BBF7D0;
-  --color-green-300: #86EFAC;
-  --color-green-400: #38A169;
-  --color-green-500: #2F855A;
-  --color-green-600: #276749;
-  --color-green-700: #1C4D35;
-
-  /* Status Menunggu / Proses: #D69E2E */
-  --color-amber-50: #FFFBEB;
-  --color-amber-100: #FEF3C7;
-  --color-amber-200: #FDE68A;
-  --color-amber-300: #FCD34D;
-  --color-amber-400: #ECC94B;
-  --color-amber-500: #D69E2E;
-  --color-amber-600: #B7791F;
-  --color-amber-700: #975A16;
-
-  /* Status Gagal / Error: #C53030 */
-  --color-rose-50: #FFF5F5;
-  --color-rose-100: #FED7D7;
-  --color-rose-200: #FEB2B2;
-  --color-rose-300: #FC8181;
-  --color-rose-400: #E53E3E;
-  --color-rose-500: #C53030;
-  --color-rose-600: #9B2C2C;
-  --color-rose-700: #742A2A;
-
-  --color-red-400: #E53E3E;
-  --color-red-500: #C53030;
-  --color-red-600: #9B2C2C;
-
-  /* Status Informasi: #3182CE */
-  --color-sky-400: #4299E1;
-  --color-sky-500: #3182CE;
-  --color-sky-600: #2B6CB0;
-  --color-blue-400: #4299E1;
-  --color-blue-500: #3182CE;
-  --color-blue-600: #2B6CB0;
-
-  /* Slate colors remapped for Light Dashboard with Deep Navy text */
-  --color-slate-950: #FFFFFF; /* White card surface */
-  --color-slate-900: #FFFFFF; /* White card surface */
-  --color-slate-850: #F8F9FA; /* Hover card surfaces */
-  --color-slate-800: #EDF0F4; /* Inner borders & subtle dividers */
-  --color-slate-700: #A6AFC1; /* Lavender Grey #A6AFC1 borders */
-  --color-slate-600: #8A94A6; /* Nonaktif / Neutral Muted Gray */
-  --color-slate-500: #5A7194; /* Slate Blue #5A7194 Teks sekunder */
-  --color-slate-400: #5A7194; /* Slate Blue #5A7194 Teks sekunder */
-  --color-slate-300: #384C66; /* Body text */
-  --color-slate-200: #233858; /* Deep Navy #233858 Teks utama */
-  --color-slate-100: #233858; /* Deep Navy #233858 Teks utama */
-  --color-slate-50: #142236;  /* Deepest Navy */
+  --color-slate-950: #0E0F12;
+  --color-slate-900: #141518;
+  --color-slate-850: #181A1F;
+  --color-slate-800: #22242A;
+  --color-slate-700: #2C2F36;
+  --color-slate-600: #52525B;
+  --color-slate-500: #71717A;
+  --color-slate-400: #A1A1AA;
+  --color-slate-300: #D4D4D8;
+  --color-slate-200: #E4E4E7;
+  --color-slate-100: #F4F4F5;
+  --color-slate-50: #FAFAFA;
 }
 
 @layer base {
   :root {
-    --sidebar-bg: #233858;
-    --navbar-bg: #233858;
-    --bg-main: #F5F6F8;
-    --bg-card: #FFFFFF;
-    --btn-primary: #5A7194;
-    --btn-hover: #485E7E;
-    --menu-active: #5A7194;
-    --border-color: #A6AFC1;
-    --card-highlight: #E8E6DB;
-    --text-primary: #233858;
-    --text-secondary: #5A7194;
+    --sidebar-bg: #141518;
+    --navbar-bg: #141518;
+    --bg-main: #0E0F12;
+    --bg-card: #141518;
+    --bg-elevated: #1C1E23;
+    --bg-pill: #22242A;
+    --btn-primary: #22242A;
+    --btn-hover: #2C2F36;
+    --menu-active: #22242A;
+    --border-color: rgba(255, 255, 255, 0.07);
+    --card-highlight: #1C1E23;
+    --text-primary: #F4F4F5;
+    --text-secondary: #A1A1AA;
 
-    /* STATUS SISTEM */
-    --status-success: #2F855A;  /* Terhubung / berhasil */
-    --status-process: #D69E2E;  /* Menunggu / proses */
-    --status-danger: #C53030;   /* Gagal / error */
-    --status-info: #3182CE;     /* Informasi */
-    --status-disabled: #8A94A6; /* Nonaktif */
+    /* STATUS & DOT ACCENTS */
+    --status-success: #10B981;
+    --status-process: #F59E0B;
+    --status-danger: #EF4444;
+    --status-info: #7C3AED;
+    --status-disabled: #71717A;
+  }
+
+  * {
+    border-color: rgba(255, 255, 255, 0.07);
   }
 
   body {
@@ -128,257 +53,195 @@
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    letter-spacing: -0.01em;
+    text-rendering: optimizeLegibility;
+    letter-spacing: -0.015em;
+    color-scheme: dark;
   }
 
-  /* Headings: Deep Navy #233858 (except when explicitly white) */
-  h1:not(.text-white):not([class*="text-white"]),
-  h2:not(.text-white):not([class*="text-white"]),
-  h3:not(.text-white):not([class*="text-white"]),
-  h4:not(.text-white):not([class*="text-white"]),
-  h5:not(.text-white):not([class*="text-white"]),
-  h6:not(.text-white):not([class*="text-white"]) {
-    color: #233858;
+  ::selection {
+    background-color: rgba(255, 255, 255, 0.18);
+    color: #FFFFFF;
   }
 
-  input, textarea, select {
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.02em;
+  }
+
+  /* Matte Carbon Input Controls */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  textarea,
+  select {
     font-family: inherit;
-    background-color: #FFFFFF !important;
-    color: #233858 !important;
-    border: 1px solid rgba(166, 175, 193, 0.6) !important;
-    border-radius: 0.75rem;
+    background-color: #181A1F !important;
+    color: #F4F4F5 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 1rem;
+    box-shadow: none;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  input:focus, textarea:focus, select:focus {
-    border-color: #5A7194 !important;
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):hover,
+  textarea:hover,
+  select:hover {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    background-color: #1C1E23 !important;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):focus,
+  textarea:focus,
+  select:focus {
+    background-color: #1C1E23 !important;
+    border-color: rgba(255, 255, 255, 0.28) !important;
     outline: none;
-    box-shadow: 0 0 0 2px rgba(90, 113, 148, 0.25) !important;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06) !important;
+    color: #FFFFFF !important;
   }
 
-  input::placeholder, textarea::placeholder {
-    color: rgba(90, 113, 148, 0.6) !important;
+  input::placeholder,
+  textarea::placeholder {
+    color: #71717A !important;
   }
 
-  option {
-    background-color: #FFFFFF;
-    color: #233858;
+  select option {
+    background-color: #141518 !important;
+    color: #F4F4F5 !important;
+  }
+
+  button {
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  button:active:not(:disabled) {
+    transform: scale(0.975);
   }
 }
 
-/* Sidebar: Deep Navy #233858 */
+/* Sidebar: Matte Carbon Dark (#141518) */
 aside {
-  background-color: #233858 !important;
-  border-right: 1px solid rgba(166, 175, 193, 0.25) !important;
-}
-
-aside p,
-aside label {
-  color: #A6AFC1;
-}
-
-aside span:not([class*="rounded"]):not([style*="color"]) {
-  color: #A6AFC1;
-}
-
-aside h1, aside h2, aside h3 {
-  color: #FFFFFF !important;
+  background: #141518 !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 8px 0 32px -4px rgba(0, 0, 0, 0.55) !important;
 }
 
 aside nav button {
-  color: #A6AFC1 !important;
-  transition: all 0.2s ease;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-aside nav button svg {
-  color: #A6AFC1 !important;
-  transition: all 0.2s ease;
-}
-
-/* Sidebar Navigation Item Labels (Excluding Badges) */
-aside nav button span:not(.sidebar-badge):not([class*="rounded"]) {
-  color: inherit !important;
-  font-weight: 500;
-}
-
-aside nav button:hover {
-  background-color: rgba(90, 113, 148, 0.25) !important;
-  color: #FFFFFF !important;
-}
-
-aside nav button:hover svg,
-aside nav button:hover span:not(.sidebar-badge):not([class*="rounded"]) {
-  color: #FFFFFF !important;
-}
-
-/* Menu aktif: Slate Blue #5A7194 */
-aside nav button.active,
-aside nav button[class*="bg-gradient-to-r"] {
-  background-color: #5A7194 !important;
-  color: #FFFFFF !important;
-  font-weight: 600;
-  border-color: rgba(166, 175, 193, 0.3) !important;
-}
-
-aside nav button.active span:not(.sidebar-badge):not([class*="rounded"]),
-aside nav button.active svg,
-aside nav button[class*="bg-gradient-to-r"] span:not(.sidebar-badge):not([class*="rounded"]),
-aside nav button[class*="bg-gradient-to-r"] svg {
-  color: #FFFFFF !important;
-}
-
-/* Dedicated Sidebar Badges (Immune to Button Color Overrides) */
-.sidebar-badge-ivory {
-  background-color: #E8E6DB !important;
-  color: #233858 !important;
-  border: 1px solid rgba(166, 175, 193, 0.6) !important;
-}
-
+/* Dedicated Sidebar Badges */
+.sidebar-badge-ivory,
 .sidebar-badge-blue {
-  background-color: #5A7194 !important;
-  color: #FFFFFF !important;
-  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  background-color: #FFFFFF !important;
+  color: #141518 !important;
+  border: none !important;
 }
 
 .sidebar-badge-red {
-  background-color: #C53030 !important;
+  background-color: #EF4444 !important;
   color: #FFFFFF !important;
-  border: 1px solid rgba(197, 48, 48, 0.6) !important;
+  border: none !important;
 }
 
 .sidebar-badge-amber {
-  background-color: #D69E2E !important;
-  color: #FFFFFF !important;
-  border: 1px solid rgba(214, 158, 46, 0.6) !important;
+  background-color: #F59E0B !important;
+  color: #141518 !important;
+  border: none !important;
 }
 
 .sidebar-badge-neutral {
-  background-color: #182840 !important;
-  color: #E8E6DB !important;
-  border: 1px solid rgba(90, 113, 148, 0.5) !important;
+  background-color: #22242A !important;
+  color: #D4D4D8 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
-/* Navbar: Deep Navy #233858 */
+/* Navbar: Matte Carbon Dark (#141518) */
 header {
-  background-color: #233858 !important;
-  border-bottom: 1px solid rgba(166, 175, 193, 0.25) !important;
+  background-color: #141518 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: none !important;
 }
 
-header h1, header h2, header h3 {
-  color: #FFFFFF !important;
-}
-
-header p, header span {
-  color: #A6AFC1;
-}
-
-header button {
-  border-color: rgba(166, 175, 193, 0.35) !important;
-}
-
-/* Tombol Utama: Slate Blue #5A7194 */
-/* Catatan: pakai ~= (token persis) agar class seperti hover:bg-[#5A7194]/10 tidak ikut terpaksa solid */
-button[class~="bg-[#5A7194]"] {
-  background-color: #5A7194 !important;
-  color: #FFFFFF !important;
-}
-
-button[class~="bg-[#5A7194]"]:hover {
-  background-color: #485E7E !important;
-  color: #FFFFFF !important;
-}
-
-button[class~="bg-[#5A7194]"] span,
-button[class~="bg-[#5A7194]"] svg {
-  color: #FFFFFF !important;
-}
-
-/* Card Sorotan: Warm Ivory #E8E6DB */
+/* Card Sorotan */
 .card-sorotan,
 .card-highlight {
-  background-color: #E8E6DB !important;
-  border: 1px solid rgba(166, 175, 193, 0.6) !important;
-  color: #233858 !important;
+  background: #1C1E23 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #F4F4F5 !important;
 }
 
-/* STATUS SISTEM BADGES & TOASTS */
-
-/* 1. Status Terhubung / Berhasil: #2F855A */
+/* STATUS SISTEM BADGES */
 .status-success,
 .badge-status-connected,
 .badge-status-success {
-  background-color: rgba(47, 133, 90, 0.15) !important;
-  border-color: rgba(47, 133, 90, 0.4) !important;
-  color: #2F855A !important;
+  background-color: #22242A !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #34D399 !important;
 }
 .dot-status-connected,
 .dot-status-success {
-  background-color: #2F855A !important;
+  background-color: #10B981 !important;
 }
 
-/* 2. Status Menunggu / Proses: #D69E2E */
 .status-process,
 .status-waiting,
 .badge-status-process {
-  background-color: rgba(214, 158, 46, 0.15) !important;
-  border-color: rgba(214, 158, 46, 0.4) !important;
-  color: #D69E2E !important;
+  background-color: #22242A !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #FBBF24 !important;
 }
 .dot-status-waiting,
 .dot-status-process {
-  background-color: #D69E2E !important;
+  background-color: #F59E0B !important;
 }
 
-/* 3. Status Gagal / Error: #C53030 */
 .status-danger,
 .status-error,
 .badge-status-failed {
-  background-color: rgba(197, 48, 48, 0.15) !important;
-  border-color: rgba(197, 48, 48, 0.4) !important;
-  color: #C53030 !important;
+  background-color: #22242A !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #F87171 !important;
 }
 .dot-status-failed,
 .dot-status-danger {
-  background-color: #C53030 !important;
+  background-color: #EF4444 !important;
 }
 
-/* 4. Status Informasi: #3182CE */
 .status-info,
 .badge-status-info {
-  background-color: rgba(49, 130, 206, 0.15) !important;
-  border-color: rgba(49, 130, 206, 0.4) !important;
-  color: #3182CE !important;
+  background-color: #22242A !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #A78BFA !important;
 }
 .dot-status-info {
-  background-color: #3182CE !important;
+  background-color: #7C3AED !important;
 }
 
-/* 5. Status Nonaktif: #8A94A6 */
 .status-disabled,
 .status-inactive,
 .badge-status-disabled {
-  background-color: rgba(138, 148, 166, 0.15) !important;
-  border-color: rgba(138, 148, 166, 0.4) !important;
-  color: #8A94A6 !important;
+  background-color: #1C1E23 !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  color: #71717A !important;
 }
 .dot-status-disabled,
 .dot-status-inactive {
-  background-color: #8A94A6 !important;
+  background-color: #71717A !important;
 }
 
-/* Custom Sleek Scrollbars */
+/* Ultra-Sleek Matte Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #F5F6F8;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(166, 175, 193, 0.6);
+  background: rgba(255, 255, 255, 0.14);
   border-radius: 9999px;
+  transition: background 0.2s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #5A7194;
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -386,11 +249,11 @@ button[class~="bg-[#5A7194]"] svg {
   height: 5px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(166, 175, 193, 0.5);
+  background: rgba(255, 255, 255, 0.14);
   border-radius: 9999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #5A7194;
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -401,116 +264,70 @@ button[class~="bg-[#5A7194]"] svg {
   scrollbar-width: none;
 }
 
-/* Cards & Glass Panels: Putih #FFFFFF */
+/* Matte Carbon Card Surfaces */
 .glass-panel,
 .card-stat {
-  background: #FFFFFF !important;
-  border: 1px solid rgba(166, 175, 193, 0.45) !important;
-  box-shadow: 0 4px 20px -2px rgba(35, 56, 88, 0.05);
+  background: #141518 !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 1.25rem;
 }
 
 .glass-panel-glow {
-  background: #FFFFFF !important;
-  border: 1px solid rgba(90, 113, 148, 0.5) !important;
-  box-shadow: 0 0 25px rgba(90, 113, 148, 0.1);
+  background: #141518 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 8px 28px -4px rgba(0, 0, 0, 0.6) !important;
+  border-radius: 1.25rem;
 }
 
 .gemini-gradient-text {
-  background: linear-gradient(135deg, #233858 0%, #5A7194 60%, #7B8CA2 100%);
+  background: linear-gradient(135deg, #FFFFFF 0%, #A1A1AA 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .gemini-card-glow {
-  border: 1px solid rgba(166, 175, 193, 0.5) !important;
-  box-shadow: 0 4px 25px rgba(35, 56, 88, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 28px -4px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 1.25rem;
 }
 
-/* WhatsApp Mesh Background on Putih Kebiruan #F5F6F8 */
+/* WhatsApp Matte Dark Mesh Background */
 .bg-chat-mesh {
-  background-color: #F5F6F8;
-  background-image: 
-    radial-gradient(circle at 50% 0%, rgba(166, 175, 193, 0.22) 0%, transparent 70%),
-    radial-gradient(circle at 100% 100%, rgba(90, 113, 148, 0.06) 0%, transparent 60%),
-    radial-gradient(rgba(166, 175, 193, 0.3) 1.2px, transparent 1.2px);
-  background-size: 100% 100%, 100% 100%, 22px 22px;
+  background-color: #0E0F12;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
-/* Ambient Subtle Lights on Background #F5F6F8 */
 .bg-ambient-grid {
-  background-color: #F5F6F8;
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(166, 175, 193, 0.2), transparent),
-    radial-gradient(ellipse 60% 40% at 85% 90%, rgba(90, 113, 148, 0.1), transparent);
+  background-color: #0E0F12;
 }
 
 /* Card Interactive Transitions */
 .card-interactive {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .card-interactive:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 28px -6px rgba(35, 56, 88, 0.08), 0 0 0 1px rgba(90, 113, 148, 0.3);
+  box-shadow: 0 14px 32px -6px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.15);
 }
 
 /* Badges & Pills */
 .badge-luxury-emerald,
-.badge-luxury-blue {
-  background: rgba(90, 113, 148, 0.15);
-  border: 1px solid rgba(90, 113, 148, 0.35);
-  color: #5A7194;
-}
-
+.badge-luxury-blue,
 .badge-luxury-purple,
-.badge-luxury-sand {
-  background: #E8E6DB;
-  border: 1px solid rgba(166, 175, 193, 0.6);
-  color: #233858;
-}
-
+.badge-luxury-sand,
 .badge-luxury-amber {
-  background: rgba(214, 158, 46, 0.15);
-  border: 1px solid rgba(214, 158, 46, 0.35);
-  color: #D69E2E;
+  background: #22242A;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #F4F4F5;
 }
 
-
-/* GUARANTEED VISIBILITY & CONTRAST RULES */
-/* Ensure all headings on white cards are Deep Navy, but never override explicit white text or dark headers */
-main div:not([class*="bg-[#233858]"]) > h1:not(.text-white):not([class*="text-white"]),
-main div:not([class*="bg-[#233858]"]) > h2:not(.text-white):not([class*="text-white"]),
-main div:not([class*="bg-[#233858]"]) > h3:not(.text-white):not([class*="text-white"]),
-main div:not([class*="bg-[#233858]"]) > h4:not(.text-white):not([class*="text-white"]),
-main div:not([class*="bg-[#233858]"]) > h5:not(.text-white):not([class*="text-white"]),
-main div:not([class*="bg-[#233858]"]) > h6:not(.text-white):not([class*="text-white"]),
-.modal-content h1:not(.text-white),
-.modal-content h2:not(.text-white),
-.modal-content h3:not(.text-white),
-.modal-content h4:not(.text-white) {
-  color: #233858;
-}
-
-/* Form input visibility */
-input, textarea, select {
-  background-color: #F5F6F8 !important;
-  color: #233858 !important;
-  border: 1px solid rgba(166, 175, 193, 0.6) !important;
-  border-radius: 0.75rem;
-}
-
-input:focus, textarea:focus, select:focus {
-  background-color: #FFFFFF !important;
-  border-color: #5A7194 !important;
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(90, 113, 148, 0.25) !important;
-  color: #233858 !important;
-}
-
-input::placeholder, textarea::placeholder {
-  color: rgba(90, 113, 148, 0.65) !important;
-}
-
-select option {
-  background-color: #FFFFFF !important;
-  color: #233858 !important;
+/* Modals & Dialog Frosted Backdrop Blur */
+.fixed.inset-0.bg-black\/75,
+.fixed.inset-0[class*="backdrop-blur"] {
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  background-color: rgba(0, 0, 0, 0.78) !important;
 }
